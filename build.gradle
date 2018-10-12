@@ -1,0 +1,221 @@
+/*
+ * Copyright (c) 2011-2018 Pivotal Software Inc, All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import org.gradle.api.internal.plugins.osgi.OsgiHelper
+
+buildscript {
+  repositories {
+    maven { url "http://repo.spring.io/plugins-release" }
+  }
+  dependencies {
+    classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7',
+            'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
+  }
+}
+
+plugins {
+  id "com.github.hierynomus.license" version "0.14.0"
+}
+
+description = 'Reactive Object Pool'
+
+ext {
+  if (project.hasProperty('versionBranch') && version.toString().endsWith(".BUILD-SNAPSHOT")) {
+    versionBranch = versionBranch.replaceAll("\"", "").trim()
+    if (!versionBranch.isEmpty()) {
+      realVersion = version.toString().replace("BUILD-SNAPSHOT", versionBranch + ".BUILD-SNAPSHOT")
+      project.version = realVersion
+      println "Building special snapshot ${project.version}"
+      println "OSGI version would be: ${new OsgiHelper().getVersion(project.version.toString())}"
+    }
+  }
+
+  gradleVersion = '4.10'
+  gradleScriptDir = "${rootProject.projectDir}/gradle"
+
+  reactorCoreVersion = "3.2.1.RELEASE"
+
+  // Languages
+  groovyVersion = '2.4.1'
+
+  // Logging
+  slf4jVersion = '1.7.12'
+  logbackVersion = '1.1.2'
+
+  // Testing
+  junit5Version = '5.3.1'
+  mockitoVersion = '1.10.19'
+  testAddonVersion = reactorCoreVersion
+  assertJVersion = '3.9.0'
+
+  javadocLinks = ["http://docs.oracle.com/javase/7/docs/api/",
+                  "http://docs.oracle.com/javaee/6/api/",
+                  "http://www.reactive-streams.org/reactive-streams-1.0.2-javadoc/",
+                  "http://projectreactor.io/docs/core/release/api/"] as String[]
+}
+
+
+configure(rootProject) { project ->
+  group = 'io.projectreactor.addons'
+
+  apply plugin: 'java'
+  apply plugin: 'jacoco'
+  apply from: "$gradleScriptDir/setup.gradle"
+  apply plugin: 'propdeps'
+  apply plugin: 'osgi'
+  apply from: "${gradleScriptDir}/errorprone.gradle"
+
+  jacoco {
+    toolVersion = '0.7.7.201606060606'
+  }
+
+  jacocoTestReport {
+    reports {
+      xml.enabled = true
+      html.enabled = true
+    }
+  }
+
+  ext.bundleImportPackages = [ '!javax.annotation', '*']
+
+  [compileJava, compileTestJava]*.options*.compilerArgs = ["-Xlint:varargs",
+                                                           "-Xlint:cast",
+                                                           "-Xlint:classfile",
+                                                           "-Xlint:dep-ann",
+                                                           "-Xlint:divzero",
+                                                           "-Xlint:empty",
+                                                           "-Xlint:finally",
+                                                           "-Xlint:overrides",
+                                                           "-Xlint:path",
+                                                           "-Xlint:processing",
+                                                           "-Xlint:static",
+                                                           "-Xlint:try",
+                                                           "-Xlint:deprecation",
+                                                           "-Xlint:unchecked",
+                                                           "-Xlint:-serial",      // intentionally disabled
+                                                           "-Xlint:-options",     // intentionally disabled
+                                                           "-Xlint:-fallthrough", // intentionally disabled
+                                                           "-Xlint:rawtypes"
+  ]
+
+  compileJava {
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+  }
+
+  compileTestJava {
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+  }
+
+  if (JavaVersion.current().isJava8Compatible()) {
+    compileTestJava.options.compilerArgs += "-parameters"
+    tasks.withType(Javadoc) {
+      options.addStringOption('Xdoclint:none', '-quiet')
+      options.addStringOption('encoding', 'UTF-8')
+    }
+  }
+
+  [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+  sourceSets.test.resources.srcDirs = ["src/test/resources", "src/test/java"]
+
+  configurations.all {
+    exclude group: 'commons-logging', module: 'commons-logging'
+  }
+
+  project.tasks.withType(Test).all {
+    systemProperty("java.awt.headless", "true")
+    systemProperty("testGroups", project.properties.get("testGroups"))
+    scanForTestClasses = false
+    include '**/*Tests.*'
+    include '**/*Test.*'
+    include '**/*Spec.*'
+    exclude '**/*Abstract*.*'
+  }
+
+  test {
+    useJUnitPlatform()
+    testLogging {
+      events  "passed", "failed"
+      showExceptions true
+      exceptionFormat "full"
+      maxGranularity 3
+    }
+  }
+
+  repositories {
+    if (version.endsWith('BUILD-SNAPSHOT') || project.hasProperty('platformVersion')) {
+      if (System.getenv ()["bamboo_buildNumber"] == null) {
+        mavenLocal()
+      } else {
+        println 'Bamboo CI detected, avoiding use of mavenLocal()'
+      }
+      maven { url 'http://repo.spring.io/libs-snapshot' }
+    }
+    maven { url 'http://repo.spring.io/libs-milestone' }
+    maven { url 'http://repo.spring.io/libs-release' }
+    maven { url "https://oss.sonatype.org/content/repositories/releases/" }
+    jcenter()
+    mavenCentral()
+  }
+
+  // dependencies that are common across all java projects
+  dependencies {
+    compile "io.projectreactor:reactor-core:$reactorCoreVersion"
+
+    // JSR-305 annotations
+    compileOnly "com.google.code.findbugs:jsr305:3.0.2"
+
+    // Logging
+    optional "org.slf4j:slf4j-api:$slf4jVersion"
+
+    // Testing
+    testCompile "org.assertj:assertj-core:$assertJVersion"
+    testCompile "io.projectreactor:reactor-test:$testAddonVersion"
+    testRuntime "org.slf4j:jcl-over-slf4j:$slf4jVersion"
+    testRuntime "ch.qos.logback:logback-classic:$logbackVersion"
+
+    testCompile "org.junit.jupiter:junit-jupiter-api:$junit5Version"
+    testCompile "org.junit.jupiter:junit-jupiter-params:$junit5Version"
+    testRuntime "org.junit.jupiter:junit-jupiter-engine:$junit5Version"
+  }
+
+  jar {
+    manifest {
+      instruction 'Import-Package', bundleImportPackages.join(',')
+      attributes("Created-By": "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})",
+              "Implementation-Title": project.name,
+              "Implementation-Version": project.version)
+    }
+  }
+
+  check.dependsOn jacocoTestReport
+}
+
+
+configurations.all {
+  // check for updates every build
+  resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+
+  license {
+    header rootProject.file('codequality/HEADER')
+    includes(["**/*.java", "**/*.css"])
+    strictCheck true
+    mapping {
+      java = 'SLASHSTAR_STYLE'
+      css = 'SLASHSTAR_STYLE'
+    }
+  }
+}

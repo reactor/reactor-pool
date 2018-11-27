@@ -195,7 +195,9 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
 
         private void deliver(T poolable) {
-            LOGGER.info("deliver(" + poolable + ") in state " + state);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.info("deliver(" + poolable + ") in state " + state);
+            }
             switch (state) {
                 case STATE_REQUESTED:
                     actual.onNext(poolable);

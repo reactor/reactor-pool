@@ -10,6 +10,7 @@ import reactor.util.Loggers;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,7 +55,7 @@ class QueuePoolTest {
         private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
             super(minSize, maxSize,
                     allocator,
-                    PoolableTest::clean,
+                    pt -> Mono.fromRunnable(pt::clean),
                     PoolableTest::isHealthy);
         }
 
@@ -62,10 +63,10 @@ class QueuePoolTest {
                                    Consumer<? super PoolableTest> additionalCleaner) {
             super(minSize, maxSize,
                     allocator,
-                    poolableTest -> {
+                    poolableTest -> Mono.fromRunnable(() -> {
                         poolableTest.clean();
                         additionalCleaner.accept(poolableTest);
-                    },
+                    }),
                     PoolableTest::isHealthy);
         }
     }
@@ -95,14 +96,14 @@ class QueuePoolTest {
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed1) {
-            pool.release(p);
+            pool.releaseSync(p);
         }
         assertThat(borrowed2).hasSize(3);
         assertThat(borrowed3).isEmpty();
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed2) {
-            pool.release(p);
+            pool.releaseSync(p);
         }
         assertThat(borrowed3).hasSize(3);
 
@@ -149,14 +150,14 @@ class QueuePoolTest {
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed1) {
-            pool.release(p);
+            pool.releaseSync(p);
         }
         assertThat(borrowed2).hasSize(3);
         assertThat(borrowed3).isEmpty();
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed2) {
-            pool.release(p);
+            pool.releaseSync(p);
         }
 
         if (latch3.await(2, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
@@ -196,13 +197,13 @@ class QueuePoolTest {
         assertThat(releasedCount).as("before returning").hasValue(0);
 
         //release the element, which should forward to the cancelled second borrow, itself also cleaning
-        pool.release(element);
+        pool.releaseSync(element);
 
         assertThat(releasedCount).as("after returning").hasValue(2);
     }
 
     @Test
-    void allocatedReleasedIfBorrowerCancelled() {
+    void allocatedReleasedIfBorrowerCancelled() throws InterruptedException {
         Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
         AtomicInteger newCount = new AtomicInteger();
         AtomicInteger releasedCount = new AtomicInteger();
@@ -215,6 +216,8 @@ class QueuePoolTest {
 
         //borrow the only element and immediately dispose
         pool.borrow().subscribe().dispose();
+
+        Thread.sleep(10);
 
         assertThat(newCount).as("created").hasValue(1);
         assertThat(releasedCount).as("released").hasValue(1);
@@ -272,8 +275,8 @@ class QueuePoolTest {
     void threadDeliveringWhenNoElementsAndFull() throws InterruptedException {
         AtomicReference<String> threadName = new AtomicReference<>();
         Scheduler borrowScheduler = Schedulers.newSingle("borrow");
-        Scheduler releaseScheduler = Schedulers.newSingle("release");
-        AtomicInteger newCount = new AtomicInteger();
+        Scheduler releaseScheduler = Schedulers.fromExecutorService(
+                Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));        AtomicInteger newCount = new AtomicInteger();
         PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
                 Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
@@ -291,11 +294,11 @@ class QueuePoolTest {
         borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()),
                 e -> latch.countDown(), latch::countDown));
         //after a short while, we release the borrowed unique element from a third thread
-        releaseScheduler.schedule(() -> pool.release(uniqueElement), 500, TimeUnit.MILLISECONDS);
+        releaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 500, TimeUnit.MILLISECONDS);
         latch.await(1, TimeUnit.SECONDS);
 
         assertThat(threadName.get())
-                .startsWith("release-");
+                .isEqualTo("release");
     }
 
     @Test
@@ -306,7 +309,8 @@ class QueuePoolTest {
         for (int i = 0; i < 100; i++) {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler borrow1Scheduler = Schedulers.newSingle("borrow1");
-            Scheduler racerReleaseScheduler = Schedulers.newSingle("racerRelease");
+            Scheduler racerReleaseScheduler = Schedulers.fromExecutorService(
+                    Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerBorrowScheduler = Schedulers.newSingle("racerBorrow");
 
             AtomicInteger newCount = new AtomicInteger();
@@ -330,13 +334,14 @@ class QueuePoolTest {
             //in parallel, we'll both attempt a second borrow AND release the unique element (each on their dedicated threads
             Mono<PoolableTest> otherBorrower = pool.borrow();
             racerBorrowScheduler.schedule(() -> otherBorrower.subscribe().dispose(), 100, TimeUnit.MILLISECONDS);
-            racerReleaseScheduler.schedule(() -> pool.release(uniqueElement), 100, TimeUnit.MILLISECONDS);
+            racerReleaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 100, TimeUnit.MILLISECONDS);
             latch.await(1, TimeUnit.SECONDS);
 
             //we expect that sometimes the race will let the second borrower thread drain, which would mean first borrower
             //will get the element delivered from racerBorrow thread. Yet the rest of the time it would get drained by racerRelease.
             if (threadName.get().startsWith("racerRelease")) releaserWins++;
             else if (threadName.get().startsWith("racerBorrow")) borrowerWins++;
+            else System.out.println(threadName.get());
         }
 
         //look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.

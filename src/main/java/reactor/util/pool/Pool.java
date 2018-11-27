@@ -18,9 +18,21 @@ public interface Pool<POOLABLE> {
     Mono<POOLABLE> borrow();
 
     /**
-     * Release the {@code POOLABLE} back to the pool.
+     * Release the {@code POOLABLE} back to the pool, asynchronously.
+     *
+     * @param poolable the {@code POOLABLE} to be released back to the pool
+     * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
+     * is always discarded.
+     */
+    Mono<Void> release(POOLABLE poolable);
+
+    /**
+     * Release the {@code POOLABLE} back to the pool and block for the termination of the release.
+     * In case of an error the object is always discarded.
+     *
      * @param poolable the {@code POOLABLE} to be released back to the pool
      */
-    void release(POOLABLE poolable);
+    void releaseSync(POOLABLE poolable);
+
 
 }

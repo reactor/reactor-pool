@@ -3,7 +3,7 @@ package reactor.util.pool.impl;
 import reactor.core.publisher.Mono;
 import reactor.util.pool.PoolConfig;
 
-import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -15,11 +15,11 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     private final int minSize;
     private final int maxSize;
     private final Mono<POOLABLE> allocator;
-    private final Consumer<POOLABLE> cleaner;
+    private final Function<POOLABLE, Mono<Void>> cleaner;
     private final Predicate<POOLABLE> validator;
 
     DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
-                      Consumer<POOLABLE> cleaner,
+                      Function<POOLABLE, Mono<Void>> cleaner,
                       Predicate<POOLABLE> validator) {
         this.minSize = minSize;
         this.maxSize = maxSize;
@@ -35,7 +35,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     }
 
     @Override
-    public Consumer<POOLABLE> cleaner() {
+    public Function<POOLABLE, Mono<Void>> cleaner() {
         return this.cleaner;
     }
 

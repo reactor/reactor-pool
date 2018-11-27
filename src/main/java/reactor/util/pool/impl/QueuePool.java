@@ -14,6 +14,8 @@ import reactor.util.concurrent.Queues;
 import reactor.util.pool.Pool;
 import reactor.util.pool.PoolConfig;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -61,18 +63,33 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         drain();
     }
 
-    public void release(POOLABLE poolable) {
+    @Override
+    public Mono<Void> release(final POOLABLE poolable) {
         BORROWED.decrementAndGet(this);
-        //TODO clean
-        try {
-            poolConfig.cleaner().accept(poolable);
-            //once cleaned, object returns to the pool
-            cleaned(poolable);
-        }
-        catch (Throwable cleanError) {
-            //TODO handle deallocation errors
-        }
+        return poolConfig.cleaner()
+                .apply(poolable)
+                .doOnSuccess(aVoid -> this.cleaned(poolable))
+                .doOnError(e -> discarded(poolable, e));
+    }
 
+    @Override
+    public void releaseSync(final POOLABLE poolable) {
+        release(poolable).block();
+    }
+
+    void discarded(POOLABLE poolable, Throwable cause) {
+        if (poolable instanceof Disposable) {
+            ((Disposable) poolable).dispose();
+        }
+        else if (poolable instanceof Closeable) {
+            try {
+                ((Closeable) poolable).close();
+            } catch (IOException e) {
+                e.printStackTrace(); //TODO logs
+            }
+        }
+        //TODO logs
+        //TODO anything else to throw away poolable?
     }
 
     void cleaned(POOLABLE poolable) {
@@ -204,12 +221,11 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                     actual.onComplete();
                     break;
                 case STATE_CANCELLED:
-                    parent.release(poolable);
+                    parent.release(poolable).subscribe(aVoid -> {}, actual::onError);
                     break;
                 default:
                     //shouldn't happen since the PoolInner isn't registered with the pool before having requested
-                    parent.release(poolable);
-                    actual.onError(Exceptions.failWithOverflow());
+                    parent.release(poolable).subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
             }
         }
 

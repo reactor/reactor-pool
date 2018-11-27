@@ -2,7 +2,7 @@ package reactor.util.pool;
 
 import reactor.core.publisher.Mono;
 
-import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -12,7 +12,7 @@ public interface PoolConfig<P> {
 
     Mono<P> allocator();
     Predicate<P> validator();
-    Consumer<P> cleaner();
+    Function<P, Mono<Void>> cleaner();
 
     int minSize();
     int maxSize();

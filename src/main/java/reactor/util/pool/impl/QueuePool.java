@@ -143,7 +143,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                     PoolInner<POOLABLE> inner = pending.poll();
                     if (inner != null) {
                         //there is a party currently borrowing
-                        inner.deliver(poolable);
+                        poolConfig.deliveryScheduler().schedule(() -> inner.deliver(poolable));
                         BORROWED.incrementAndGet(this);
                     }
                     else {

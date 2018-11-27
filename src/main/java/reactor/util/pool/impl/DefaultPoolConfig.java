@@ -1,6 +1,8 @@
 package reactor.util.pool.impl;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.pool.PoolConfig;
 
 import java.util.function.Function;
@@ -17,16 +19,26 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     private final Mono<POOLABLE> allocator;
     private final Function<POOLABLE, Mono<Void>> cleaner;
     private final Predicate<POOLABLE> validator;
+    private final Scheduler deliveryScheduler;
 
     DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
                       Function<POOLABLE, Mono<Void>> cleaner,
                       Predicate<POOLABLE> validator) {
+        this(minSize, maxSize, allocator, cleaner, validator, Schedulers.immediate());
+    }
+
+    DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
+                      Function<POOLABLE, Mono<Void>> cleaner,
+                      Predicate<POOLABLE> validator,
+                      Scheduler deliveryScheduler) {
         this.minSize = minSize;
         this.maxSize = maxSize;
 
         this.allocator = allocator;
         this.cleaner = cleaner;
         this.validator = validator;
+
+        this.deliveryScheduler = deliveryScheduler;
     }
 
     @Override
@@ -52,5 +64,10 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     @Override
     public int maxSize() {
         return this.maxSize;
+    }
+
+    @Override
+    public Scheduler deliveryScheduler() {
+        return this.deliveryScheduler;
     }
 }

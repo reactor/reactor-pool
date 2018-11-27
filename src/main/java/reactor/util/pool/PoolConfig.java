@@ -1,6 +1,7 @@
 package reactor.util.pool;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -16,4 +17,6 @@ public interface PoolConfig<P> {
 
     int minSize();
     int maxSize();
+
+    Scheduler deliveryScheduler();
 }

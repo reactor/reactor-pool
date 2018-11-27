@@ -110,6 +110,12 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
+    private void onAllocatorError(Throwable cause) {
+        if (LOGGER.isErrorEnabled()) {
+            LOGGER.error("Failure during allocation of a new Poolable", cause);
+        }
+    }
+
     private void drain() {
         if (WIP.getAndIncrement(this) == 0) {
             drainLoop();
@@ -127,7 +133,8 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             int borrowedCount = borrowed;
 
             if (elementCount == 0 && pendingCount > 0 && borrowedCount < maxElements) {
-                poolConfig.allocator().subscribe(this::doOffer); //FIXME what to do in case of error?
+                poolConfig.allocator().subscribe(this::doOffer,
+                        this::onAllocatorError);
             }
             else {
                 POOLABLE poolable = elements.poll();

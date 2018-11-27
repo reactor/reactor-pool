@@ -26,12 +26,12 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     private static final Logger LOGGER = Loggers.getLogger(QueuePool.class);
 
-    private final PoolConfig<POOLABLE> poolConfig;
-    private final Queue<POOLABLE> elements;
+    final PoolConfig<POOLABLE> poolConfig;
+    final Queue<POOLABLE> elements;
 
-    private volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
-    private volatile int borrowed;
-    private volatile int wip;
+    volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
+    volatile int borrowed;
+    volatile int wip;
 
     private static final AtomicIntegerFieldUpdater<QueuePool> BORROWED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "borrowed");
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
@@ -205,6 +205,8 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                     parent.release(poolable);
                     break;
                 default:
+                    //shouldn't happen since the PoolInner isn't registered with the pool before having requested
+                    parent.release(poolable);
                     actual.onError(Exceptions.failWithOverflow());
             }
         }

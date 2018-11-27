@@ -1,22 +1,18 @@
 package reactor.util.pool.impl;
 
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.omg.CORBA.TRANSACTION_UNAVAILABLE;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Logger;
 import reactor.util.Loggers;
-import reactor.util.pool.PoolConfig;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -60,10 +56,21 @@ class QueuePoolTest {
                     PoolableTest::clean,
                     PoolableTest::isHealthy);
         }
+
+        private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
+                                   Consumer<? super PoolableTest> additionalCleaner) {
+            super(minSize, maxSize,
+                    allocator,
+                    poolableTest -> {
+                        poolableTest.clean();
+                        additionalCleaner.accept(poolableTest);
+                    },
+                    PoolableTest::isHealthy);
+        }
     }
 
     @Test
-    public void smokeTest() throws InterruptedException {
+    void smokeTest() throws InterruptedException {
         AtomicInteger newCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new PoolableTestConfig(2, 3,
                 Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
@@ -109,7 +116,7 @@ class QueuePoolTest {
     }
 
     @Test
-    public void smokeTestAsync() throws InterruptedException {
+    void smokeTestAsync() throws InterruptedException {
         AtomicInteger newCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new PoolableTestConfig(2, 3,
                 Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
@@ -167,6 +174,49 @@ class QueuePoolTest {
         else {
             fail("not enough new elements generated, missing " + latch3.getCount());
         }
+    }
+
+    @Test
+    void returnedReleasedIfBorrowerCancelled() {
+        AtomicInteger newCount = new AtomicInteger();
+        AtomicInteger releasedCount = new AtomicInteger();
+
+        PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
+                Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")),
+                pt -> releasedCount.incrementAndGet());
+        QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
+
+        //borrow the only element
+        PoolableTest element = pool.borrow().block();
+
+        pool.borrow().subscribe().dispose();
+
+        assertThat(releasedCount).as("before returning").hasValue(0);
+
+        //release the element, which should forward to the cancelled second borrow, itself also cleaning
+        pool.release(element);
+
+        assertThat(releasedCount).as("after returning").hasValue(2);
+    }
+
+    @Test
+    void allocatedReleasedIfBorrowerCancelled() {
+        Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
+        AtomicInteger newCount = new AtomicInteger();
+        AtomicInteger releasedCount = new AtomicInteger();
+
+        PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
+                Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
+                        .subscribeOn(scheduler),
+                pt -> releasedCount.incrementAndGet());
+        QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
+
+        //borrow the only element and immediately dispose
+        pool.borrow().subscribe().dispose();
+
+        assertThat(newCount).as("created").hasValue(1);
+        assertThat(releasedCount).as("released").hasValue(1);
     }
 
 }

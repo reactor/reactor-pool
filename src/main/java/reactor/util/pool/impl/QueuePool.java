@@ -7,6 +7,7 @@ import reactor.core.Exceptions;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
+import reactor.core.publisher.SignalType;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
@@ -26,20 +27,24 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  */
 public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
-    private static final Logger LOGGER = Loggers.getLogger(QueuePool.class);
+    private static final Queue TERMINATED = Queues.empty().get();
+
+    //A pool should be rare enough that having instance loggers should be ok
+    //This helps with testability of some methods that for now mainly log
+    private final Logger logger = Loggers.getLogger(QueuePool.class);
 
     final PoolConfig<POOLABLE> poolConfig;
     final Queue<POOLABLE> elements;
 
-    volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
     volatile int borrowed;
-    volatile int wip;
-
     private static final AtomicIntegerFieldUpdater<QueuePool> BORROWED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "borrowed");
+
+    volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
+
+    volatile int wip;
     private static final AtomicIntegerFieldUpdater<QueuePool> WIP = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "wip");
 
-    private final Queue<PoolInner<POOLABLE>> TERMINATED = Queues.<PoolInner<POOLABLE>>empty().get();
 
     public QueuePool(PoolConfig<POOLABLE> poolConfig) {
         this.poolConfig = poolConfig;
@@ -50,26 +55,44 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
     }
 
-    void doBorrow(PoolInner<POOLABLE> s) {
-        if (pending != TERMINATED) {
-            pending.add(s);
-            drain();
-        }
-        //TODO handle mono subscription when pool is terminated
-    }
-
-    void doOffer(POOLABLE poolable) {
-        elements.offer(poolable);
-        drain();
+    @Override
+    public Mono<POOLABLE> borrow() {
+        return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
     @Override
     public Mono<Void> release(final POOLABLE poolable) {
+        //busy loop waiting for the drain loop to finish
+        // /!\ TAKE CARE TO ALWAYS RESET wip IN ALL EXIT PATHS
+        while (!WIP.compareAndSet(this, 0, 1)) {}
+
+        //once we are sure the drain loop isn't in the process of allocating or looking at BORROWED, we decrement
+        // BORROWED to indicate that the poolable was released by the user
         BORROWED.decrementAndGet(this);
-        return poolConfig.cleaner()
-                .apply(poolable)
-                .doOnSuccess(aVoid -> this.cleaned(poolable))
-                .doOnError(e -> discarded(poolable, e));
+
+        if (PENDING.get(this) == TERMINATED) {
+            dispose(poolable);
+            return Mono.fromRunnable(() -> WIP.set(this, 0));
+        }
+
+        try {
+            Mono<Void> recycler = poolConfig.cleaner().apply(poolable);
+            return recycler
+                    .doFinally(sig -> {
+                        if (sig == SignalType.ON_COMPLETE) {
+                            maybeRecycleAndDrain(poolable);
+                        }
+                        else {
+                            dispose(poolable);
+                            WIP.set(this, 0);
+                            drainLoop();
+                        }
+                    });
+        }
+        catch (Throwable e) {
+            WIP.set(this, 0);
+            return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
+        }
     }
 
     @Override
@@ -77,7 +100,30 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         release(poolable).block();
     }
 
-    void discarded(POOLABLE poolable, Throwable cause) {
+    final void registerPendingBorrower(PoolInner<POOLABLE> s) {
+        if (pending != TERMINATED) {
+            pending.add(s);
+            drain();
+        }
+        else {
+            s.fail(new RuntimeException("Pool has been shut down"));
+        }
+    }
+
+    final void maybeRecycleAndDrain(POOLABLE poolable) {
+        if (pending != TERMINATED) {
+            if (poolConfig.validator().test(poolable)) {
+                elements.offer(poolable);
+            }
+            WIP.set(this, 0);
+            drainLoop();
+        }
+        else {
+            dispose(poolable);
+        }
+    }
+
+    void dispose(POOLABLE poolable) {
         if (poolable instanceof Disposable) {
             ((Disposable) poolable).dispose();
         }
@@ -85,35 +131,10 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             try {
                 ((Closeable) poolable).close();
             } catch (IOException e) {
-                e.printStackTrace(); //TODO logs
+                logger.trace("Failure while discarding a released Poolable that is Closeable, could not close", e);
             }
         }
-        //TODO logs
-        //TODO anything else to throw away poolable?
-    }
-
-    void cleaned(POOLABLE poolable) {
-        if (pending != TERMINATED) {
-            if (poolConfig.validator().test(poolable)) {
-                doOffer(poolable);
-            }
-            else {
-                //the element was dirty, will replace with a new one
-                drain();
-            }
-        }
-        //TODO handle release when pool is terminated
-    }
-
-    @Override
-    public Mono<POOLABLE> borrow() {
-        return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
-    }
-
-    private void onAllocatorError(Throwable cause) {
-        if (LOGGER.isErrorEnabled()) {
-            LOGGER.error("Failure during allocation of a new Poolable", cause);
-        }
+        //TODO anything else to throw away the Poolable?
     }
 
     private void drain() {
@@ -126,31 +147,46 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         int missed = 1;
         int maxElements = poolConfig.maxSize();
 
-
         for (;;) {
-            int elementCount = elements.size();
+            int availableCount = elements.size();
             int pendingCount = pending.size();
-            int borrowedCount = borrowed;
+            int borrowedCount = BORROWED.get(this);
 
-            if (elementCount == 0 && pendingCount > 0 && borrowedCount < maxElements) {
-                poolConfig.allocator().subscribe(this::doOffer,
-                        this::onAllocatorError);
-            }
-            else {
-                POOLABLE poolable = elements.poll();
-                if (poolable != null) {
-                    //there are objects ready and unclaimed in the pool
-                    PoolInner<POOLABLE> inner = pending.poll();
-                    if (inner != null) {
-                        //there is a party currently borrowing
-                        poolConfig.deliveryScheduler().schedule(() -> inner.deliver(poolable));
-                        BORROWED.incrementAndGet(this);
+            if (availableCount == 0) {
+                if (pendingCount > 0 && borrowedCount < maxElements) {
+                    BORROWED.incrementAndGet(this);
+                    final PoolInner<POOLABLE> borrower = pending.poll(); //shouldn't be null
+                    if (borrower == null) {
+                        BORROWED.decrementAndGet(this);
+                        throw new NullPointerException("borrower null when pending " + pendingCount);
                     }
-                    else {
-                        //no party borrowing, return the element to the pool
-                        elements.offer(poolable);
+                    if (borrower.state == PoolInner.STATE_CANCELLED) {
+                        BORROWED.decrementAndGet(this);
+                        continue;
                     }
+
+                    poolConfig.allocator()
+                            .publishOn(poolConfig.deliveryScheduler())
+                            .subscribe(borrower::deliver,
+                                    e -> {
+                                        BORROWED.decrementAndGet(this);
+                                        borrower.fail(e);
+                                    });
                 }
+            }
+            else if (pendingCount > 0) {
+                //there are objects ready and unclaimed in the pool + a pending
+                POOLABLE poolable = elements.poll();
+                if (poolable == null) throw new NullPointerException("poolable null when available " + availableCount);
+
+                //there is a party currently pending borrowing
+                PoolInner<POOLABLE> inner = pending.poll();
+                if (inner == null) {
+                    elements.offer(poolable);
+                    throw new NullPointerException("inner null when pendingCount " + pendingCount + ", recomputed pending size is " + pending.size());
+                }
+                BORROWED.incrementAndGet(this);
+                poolConfig.deliveryScheduler().schedule(() -> inner.deliver(poolable));
             }
 
             missed = WIP.addAndGet(this, -missed);
@@ -167,6 +203,10 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         if (q != TERMINATED) {
             while(!q.isEmpty()) {
                 q.poll().fail(new RuntimeException("Pool has been shut down"));
+            }
+
+            while (!elements.isEmpty()) {
+                dispose(elements.poll());
             }
         }
     }
@@ -198,7 +238,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         @Override
         public void request(long n) {
             if (Operators.validate(n) && STATE.compareAndSet(this, STATE_INIT, STATE_REQUESTED)) {
-                parent.doBorrow(this);
+                parent.registerPendingBorrower(this);
             }
         }
 
@@ -219,8 +259,8 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
 
         private void deliver(T poolable) {
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.info("deliver(" + poolable + ") in state " + state);
+            if (parent.logger.isTraceEnabled()) {
+                parent.logger.info("deliver(" + poolable + ") in state " + state);
             }
             switch (state) {
                 case STATE_REQUESTED:

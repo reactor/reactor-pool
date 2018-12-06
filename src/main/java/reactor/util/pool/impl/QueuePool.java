@@ -39,6 +39,9 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     volatile int borrowed;
     private static final AtomicIntegerFieldUpdater<QueuePool> BORROWED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "borrowed");
 
+    volatile int live;
+    private static final AtomicIntegerFieldUpdater<QueuePool> LIVE = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "live");
+
     volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
 
@@ -53,6 +56,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         for (int i = 0; i < poolConfig.minSize(); i++) {
             elements.offer(poolConfig.allocator().block());
         }
+        this.live = elements.size();
     }
 
     @Override
@@ -62,35 +66,32 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     @Override
     public Mono<Void> release(final POOLABLE poolable) {
-        //busy loop waiting for the drain loop to finish
-        // /!\ TAKE CARE TO ALWAYS RESET wip IN ALL EXIT PATHS
-        while (!WIP.compareAndSet(this, 0, 1)) {}
-
-        //once we are sure the drain loop isn't in the process of allocating or looking at BORROWED, we decrement
-        // BORROWED to indicate that the poolable was released by the user
-        BORROWED.decrementAndGet(this);
-
         if (PENDING.get(this) == TERMINATED) {
+            BORROWED.decrementAndGet(this); //immediately clean up state
             dispose(poolable);
-            return Mono.fromRunnable(() -> WIP.set(this, 0));
+            return Mono.empty();
         }
 
         try {
             Mono<Void> recycler = poolConfig.cleaner().apply(poolable);
             return recycler
+                    .doOnSubscribe(s -> {
+                        // we decrement BORROWED to indicate that the poolable was released by the user
+                        BORROWED.decrementAndGet(this);
+                    })
                     .doFinally(sig -> {
                         if (sig == SignalType.ON_COMPLETE) {
                             maybeRecycleAndDrain(poolable);
                         }
                         else {
+                            LIVE.decrementAndGet(this);
                             dispose(poolable);
-                            WIP.set(this, 0);
-                            drainLoop();
+                            drain();
                         }
                     });
         }
         catch (Throwable e) {
-            WIP.set(this, 0);
+            BORROWED.decrementAndGet(this); //immediately clean up state
             return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
         }
     }
@@ -115,10 +116,13 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             if (poolConfig.validator().test(poolable)) {
                 elements.offer(poolable);
             }
-            WIP.set(this, 0);
-            drainLoop();
+            else {
+                LIVE.decrementAndGet(this);
+            }
+            drain();
         }
         else {
+            LIVE.decrementAndGet(this);
             dispose(poolable);
         }
     }
@@ -150,26 +154,25 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = pending.size();
-            int borrowedCount = BORROWED.get(this);
+            int total = LIVE.get(this);
 
             if (availableCount == 0) {
-                if (pendingCount > 0 && borrowedCount < maxElements) {
-                    BORROWED.incrementAndGet(this);
+                if (pendingCount > 0 && total < maxElements) {
                     final PoolInner<POOLABLE> borrower = pending.poll(); //shouldn't be null
                     if (borrower == null) {
-                        BORROWED.decrementAndGet(this);
-                        throw new NullPointerException("borrower null when pending " + pendingCount);
+                        continue;
                     }
-                    if (borrower.state == PoolInner.STATE_CANCELLED) {
+                    BORROWED.incrementAndGet(this);
+                    if (borrower.state == PoolInner.STATE_CANCELLED || !LIVE.compareAndSet(this, total, total + 1)) {
                         BORROWED.decrementAndGet(this);
                         continue;
                     }
-
                     poolConfig.allocator()
                             .publishOn(poolConfig.deliveryScheduler())
                             .subscribe(borrower::deliver,
                                     e -> {
                                         BORROWED.decrementAndGet(this);
+                                        LIVE.decrementAndGet(this);
                                         borrower.fail(e);
                                     });
                 }
@@ -177,13 +180,13 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             else if (pendingCount > 0) {
                 //there are objects ready and unclaimed in the pool + a pending
                 POOLABLE poolable = elements.poll();
-                if (poolable == null) throw new NullPointerException("poolable null when available " + availableCount);
+                if (poolable == null) continue;
 
                 //there is a party currently pending borrowing
                 PoolInner<POOLABLE> inner = pending.poll();
                 if (inner == null) {
                     elements.offer(poolable);
-                    throw new NullPointerException("inner null when pendingCount " + pendingCount + ", recomputed pending size is " + pending.size());
+                    continue;
                 }
                 BORROWED.incrementAndGet(this);
                 poolConfig.deliveryScheduler().schedule(() -> inner.deliver(poolable));

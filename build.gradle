@@ -219,11 +219,10 @@ configurations.all {
 
   license {
     header rootProject.file('codequality/HEADER')
-    includes(["**/*.java", "**/*.css"])
+    includes(["**/*.java"])
     strictCheck true
     mapping {
       java = 'SLASHSTAR_STYLE'
-      css = 'SLASHSTAR_STYLE'
     }
   }
 }

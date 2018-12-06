@@ -65,7 +65,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @Override
-    public Mono<Void> release(final POOLABLE poolable) {
+    public Mono<Void> releaseMono(final POOLABLE poolable) {
         if (PENDING.get(this) == TERMINATED) {
             BORROWED.decrementAndGet(this); //immediately clean up state
             dispose(poolable);
@@ -97,8 +97,8 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @Override
-    public void releaseSync(final POOLABLE poolable) {
-        release(poolable).block();
+    public void release(final POOLABLE poolable) {
+        releaseMono(poolable).subscribe(v -> {}, e -> logger.debug("error while releasing with release(POOLABLE)", e));
     }
 
     final void registerPendingBorrower(PoolInner<POOLABLE> s) {
@@ -271,11 +271,11 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                     actual.onComplete();
                     break;
                 case STATE_CANCELLED:
-                    parent.release(poolable).subscribe(aVoid -> {}, actual::onError);
+                    parent.releaseMono(poolable).subscribe(aVoid -> {}, actual::onError);
                     break;
                 default:
                     //shouldn't happen since the PoolInner isn't registered with the pool before having requested
-                    parent.release(poolable).subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
+                    parent.releaseMono(poolable).subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
             }
         }
 
@@ -289,7 +289,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     private static final class QueuePoolMono<T> extends Mono<T> {
 
-        QueuePool<T> parent;
+        final QueuePool<T> parent;
 
         QueuePoolMono(QueuePool<T> pool) {
             this.parent = pool;
@@ -297,7 +297,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         @Override
         public void subscribe(CoreSubscriber<? super T> actual) {
-            Objects.requireNonNull(actual, "subscribe");
+            Objects.requireNonNull(actual, "subscribing with null");
 
             PoolInner<T> p = new PoolInner<>(actual, parent);
             actual.onSubscribe(p);

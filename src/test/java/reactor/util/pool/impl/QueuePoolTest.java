@@ -130,14 +130,14 @@ class QueuePoolTest {
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed1) {
-            pool.releaseSync(p);
+            pool.releaseMono(p).block();
         }
         assertThat(borrowed2).hasSize(3);
         assertThat(borrowed3).isEmpty();
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed2) {
-            pool.releaseSync(p);
+            pool.releaseMono(p).block();
         }
         assertThat(borrowed3).hasSize(3);
 
@@ -184,14 +184,14 @@ class QueuePoolTest {
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed1) {
-            pool.releaseSync(p);
+            pool.releaseMono(p).block();
         }
         assertThat(borrowed2).hasSize(3);
         assertThat(borrowed3).isEmpty();
 
         Thread.sleep(1000);
         for (PoolableTest p : borrowed2) {
-            pool.releaseSync(p);
+            pool.releaseMono(p).block();
         }
 
         if (latch3.await(2, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
@@ -229,7 +229,7 @@ class QueuePoolTest {
         assertThat(releasedCount).as("before returning").hasValue(0);
 
         //release the element, which should forward to the cancelled second borrow, itself also cleaning
-        pool.releaseSync(element);
+        pool.releaseMono(element).block();
 
         assertThat(releasedCount).as("after returning").hasValue(2);
     }
@@ -323,7 +323,7 @@ class QueuePoolTest {
 
         PoolableTest poolable = pool.borrow().block();
 
-        StepVerifier.create(pool.release(poolable))
+        StepVerifier.create(pool.releaseMono(poolable))
                 .verifyErrorMessage("boom");
     }
 
@@ -395,7 +395,7 @@ class QueuePoolTest {
         borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()),
                 e -> latch.countDown(), latch::countDown));
         //after a short while, we release the borrowed unique element from a third thread
-        releaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 500, TimeUnit.MILLISECONDS);
+        releaseScheduler.schedule(pool.releaseMono(uniqueElement)::block, 500, TimeUnit.MILLISECONDS);
         latch.await(1, TimeUnit.SECONDS);
 
         assertThat(threadName.get())
@@ -457,7 +457,7 @@ class QueuePoolTest {
 
         //in parallel, we'll both attempt concurrent borrow AND release the unique element (each on their dedicated threads)
         racerBorrowScheduler.schedule(pool.borrow()::block, 100, TimeUnit.MILLISECONDS);
-        racerReleaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 100, TimeUnit.MILLISECONDS);
+        racerReleaseScheduler.schedule(pool.releaseMono(uniqueElement)::block, 100, TimeUnit.MILLISECONDS);
         latch.await(1, TimeUnit.SECONDS);
 
         assertThat(newCount).as("created 1 poolable in round " + round).hasValue(1);
@@ -543,7 +543,7 @@ class QueuePoolTest {
         borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()),
                 e -> latch.countDown(), latch::countDown));
         //after a short while, we release the borrowed unique element from a third thread
-        releaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 500, TimeUnit.MILLISECONDS);
+        releaseScheduler.schedule(pool.releaseMono(uniqueElement)::block, 500, TimeUnit.MILLISECONDS);
         latch.await(1, TimeUnit.SECONDS);
 
         assertThat(threadName.get())
@@ -594,7 +594,7 @@ class QueuePoolTest {
         //in parallel, we'll both attempt a second borrow AND release the unique element (each on their dedicated threads
         Mono<PoolableTest> otherBorrower = pool.borrow();
         racerBorrowScheduler.schedule(() -> otherBorrower.subscribe().dispose(), 100, TimeUnit.MILLISECONDS);
-        racerReleaseScheduler.schedule(() -> pool.releaseSync(uniqueElement), 100, TimeUnit.MILLISECONDS);
+        racerReleaseScheduler.schedule(pool.releaseMono(uniqueElement)::block, 100, TimeUnit.MILLISECONDS);
         latch.await(1, TimeUnit.SECONDS);
 
         //we expect that, consistently, the poolable is delivered on a `delivery` thread
@@ -669,9 +669,9 @@ class QueuePoolTest {
 
         assertThat(pool.elements).isEmpty();
 
-        pool.releaseSync(borrowed1);
-        pool.releaseSync(borrowed2);
-        pool.releaseSync(borrowed3);
+        pool.releaseMono(borrowed1).block();
+        pool.releaseMono(borrowed2).block();
+        pool.releaseMono(borrowed3).block();
 
         assertThat(cleanerCount).as("recycled elements").hasValue(0);
         assertThat(borrowed1.isDisposed()).as("borrowed1 disposed").isTrue();
@@ -694,9 +694,9 @@ class QueuePoolTest {
 
         assertThat(pool.borrowed).as("before releases").isEqualTo(3);
 
-        pool.releaseSync(borrowed1);
-        pool.releaseSync(borrowed2);
-        pool.releaseSync(borrowed3);
+        pool.releaseMono(borrowed1).block();
+        pool.releaseMono(borrowed2).block();
+        pool.releaseMono(borrowed3).block();
 
         assertThat(pool.borrowed).as("after releases").isEqualTo(0);
     }

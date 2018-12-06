@@ -18,21 +18,28 @@ public interface Pool<POOLABLE> {
     Mono<POOLABLE> borrow();
 
     /**
-     * Release the {@code POOLABLE} back to the pool, asynchronously.
+     * Return a {@link Mono} that, once subscribed, will release the {@code POOLABLE} back to the pool asynchronously.
+     * This method can be used if it is needed to wait for the recycling of the POOLABLE, but users should usually call
+     * {@link #release(Object)}.
      *
      * @param poolable the {@code POOLABLE} to be released back to the pool
      * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
      * is always discarded.
      */
-    Mono<Void> release(POOLABLE poolable);
+    Mono<Void> releaseMono(POOLABLE poolable);
 
     /**
-     * Release the {@code POOLABLE} back to the pool and block for the termination of the release.
-     * In case of an error the object is always discarded.
+     * Trigger the <strong>asynchronous</strong> release of the {@code POOLABLE} back to the pool and
+     * <strong>immediately return</strong>. The underlying {@link #releaseMono(Object)} is subscribed to but no blocking
+     * is performed to wait for it to signal completion. Note however that in case of a releasing error the object is
+     * always discarded.
+     * <p>
+     * When releasing, a borrowing party usually doesn't care that the release completed, which will have more impact on
+     * <strong>pending</strong> borrowers.
      *
      * @param poolable the {@code POOLABLE} to be released back to the pool
      */
-    void releaseSync(POOLABLE poolable);
+    void release(POOLABLE poolable);
 
 
 }

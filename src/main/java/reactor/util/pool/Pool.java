@@ -18,44 +18,49 @@ package reactor.util.pool;
 
 import reactor.core.publisher.Mono;
 
+import java.util.function.Function;
+
 /**
+ * A reactive pool of objects.
  * @author Simon Baslé
  */
 public interface Pool<POOLABLE> {
 
     /**
-     * Borrow a {@code POOLABLE} from the pool upon subscription. The resulting {@link Mono} emits the {@code POOLABLE}
-     * as it becomes available. Cancelling the {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has
-     * been emitted will either avoid object borrowing entirely or will result in immediate {@link PoolConfig#cleaner()} release}
-     * of the {@code POOLABLE}.
-     *
-     * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object
-     */
-    Mono<POOLABLE> borrow();
-
-    /**
-     * Return a {@link Mono} that, once subscribed, will release the {@code POOLABLE} back to the pool asynchronously.
-     * This method can be used if it is needed to wait for the recycling of the POOLABLE, but users should usually call
-     * {@link #release(Object)}.
-     *
-     * @param poolable the {@code POOLABLE} to be released back to the pool
-     * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
-     * is always discarded.
-     */
-    Mono<Void> releaseMono(POOLABLE poolable);
-
-    /**
-     * Trigger the <strong>asynchronous</strong> release of the {@code POOLABLE} back to the pool and
-     * <strong>immediately return</strong>. The underlying {@link #releaseMono(Object)} is subscribed to but no blocking
-     * is performed to wait for it to signal completion. Note however that in case of a releasing error the object is
-     * always discarded.
+     * Acquire a {@code POOLABLE}: borrow it from the pool upon subscription and become responsible for its release.
+     * The object is wrapped in a {@link PoolSlot} which can be used for manually releasing the object back to the pool
+     * or invalidating it.
      * <p>
-     * When releasing, a borrowing party usually doesn't care that the release completed, which will have more impact on
-     * <strong>pending</strong> borrowers.
+     * The resulting {@link Mono} emits the {@link PoolSlot} as the {@code POOLABLE} becomes available. Cancelling the
+     * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
+     * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
+     * It is the responsibility of the caller to release the poolable object via the {@link PoolSlot} when the object
+     * is not used anymore.
      *
-     * @param poolable the {@code POOLABLE} to be released back to the pool
+     * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object and manually
+     * managing its lifecycle from there
+     * @see #borrow(Function)
      */
-    void release(POOLABLE poolable);
+    Mono<? extends PoolSlot<POOLABLE>> acquire();
+
+    /**
+     * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
+     * the object back to the pool once the derived usage pipeline terminates or is cancelled.
+     * <p>
+     * The resulting {@link Mono} emits the {@code POOLABLE} as it becomes available. Cancelling the
+     * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
+     * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
+     * <p>
+     * The {@link Function} is a declarative way of implementing a processing pipeline on top of the poolable object,
+     * at the end of which the object is automatically released.
+     *
+     * @param processingFunction the {@link Function} to apply to the {@link Mono} delivering the POOLABLE to instantiate
+     *                           and trigger a processing pipeline around it.
+     * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object, processing it
+     * as declared in {@code processingFunction} and autmatically releasing it.
+     * @see #acquire()
+     */
+    Mono<POOLABLE> borrow(Function<Mono<POOLABLE>, Mono<POOLABLE>> processingFunction);
 
 
 }

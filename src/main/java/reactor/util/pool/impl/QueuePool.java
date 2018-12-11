@@ -30,6 +30,7 @@ import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
 import reactor.util.pool.Pool;
 import reactor.util.pool.PoolConfig;
+import reactor.util.pool.PoolSlot;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -38,8 +39,11 @@ import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.Function;
 
 /**
+ * A {@link Queues MPSC Queue}-based implementation of {@link Pool}.
+ *
  * @author Simon Baslé
  */
 public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
@@ -51,7 +55,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     private final Logger logger = Loggers.getLogger(QueuePool.class);
 
     final PoolConfig<POOLABLE> poolConfig;
-    final Queue<POOLABLE> elements;
+    final Queue<QueuePoolSlot<POOLABLE>> elements;
 
     volatile int borrowed;
     private static final AtomicIntegerFieldUpdater<QueuePool> BORROWED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "borrowed");
@@ -68,44 +72,29 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     public QueuePool(PoolConfig<POOLABLE> poolConfig) {
         this.poolConfig = poolConfig;
-        this.elements = Queues.<POOLABLE>get(poolConfig.maxSize()).get();
+        this.elements = Queues.<QueuePoolSlot<POOLABLE>>get(poolConfig.maxSize()).get();
 
         for (int i = 0; i < poolConfig.minSize(); i++) {
-            elements.offer(poolConfig.allocator().block());
+            POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
+            elements.offer(new QueuePoolSlot<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
         this.live = elements.size();
     }
 
     @Override
-    public Mono<POOLABLE> borrow() {
+    public Mono<PoolSlot<POOLABLE>> acquire() {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
     @Override
-    public Mono<Void> releaseMono(final POOLABLE poolable) {
-        if (PENDING.get(this) == TERMINATED) {
-            BORROWED.decrementAndGet(this); //immediately clean up state
-            dispose(poolable);
-            return Mono.empty();
-        }
-
-        Mono<Void> cleaner;
-        try {
-            cleaner = poolConfig.cleaner().apply(poolable);
-        }
-        catch (Throwable e) {
-            BORROWED.decrementAndGet(this); //immediately clean up state
-            return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
-        }
-        //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
-        return new QueuePoolRecyclerMono<>(cleaner, this, poolable);
+    public Mono<POOLABLE> borrow(Function<Mono<POOLABLE>, Mono<POOLABLE>> processingFunction) {
+        return Mono.usingWhen(acquire(),
+                slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
+                PoolSlot::releaseMono,
+                PoolSlot::releaseMono);
     }
 
-    @Override
-    public void release(final POOLABLE poolable) {
-        releaseMono(poolable).subscribe(v -> {}, e -> logger.debug("error while releasing with release(POOLABLE)", e));
-    }
-
+    @SuppressWarnings("WeakerAccess")
     final void registerPendingBorrower(PoolInner<POOLABLE> s) {
         if (pending != TERMINATED) {
             pending.add(s);
@@ -116,10 +105,11 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
     }
 
-    final void maybeRecycleAndDrain(POOLABLE poolable) {
+    @SuppressWarnings("WeakerAccess")
+    final void maybeRecycleAndDrain(QueuePoolSlot<POOLABLE> poolSlot) {
         if (pending != TERMINATED) {
-            if (poolConfig.validator().test(poolable)) {
-                elements.offer(poolable);
+            if (poolConfig.validator().test(poolSlot.poolable())) {
+                elements.offer(poolSlot);
             }
             else {
                 LIVE.decrementAndGet(this);
@@ -128,11 +118,12 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
         else {
             LIVE.decrementAndGet(this);
-            dispose(poolable);
+            dispose(poolSlot.poolable());
         }
     }
 
-    void dispose(POOLABLE poolable) {
+    @SuppressWarnings("WeakerAccess")
+    void dispose(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
             ((Disposable) poolable).dispose();
         }
@@ -174,7 +165,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                     }
                     poolConfig.allocator()
                             .publishOn(poolConfig.deliveryScheduler())
-                            .subscribe(borrower::deliver,
+                            .subscribe(newInstance -> borrower.deliver(new QueuePoolSlot<>(this, newInstance)),
                                     e -> {
                                         BORROWED.decrementAndGet(this);
                                         LIVE.decrementAndGet(this);
@@ -184,17 +175,17 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
             else if (pendingCount > 0) {
                 //there are objects ready and unclaimed in the pool + a pending
-                POOLABLE poolable = elements.poll();
-                if (poolable == null) continue;
+                QueuePoolSlot<POOLABLE> slot = elements.poll();
+                if (slot == null) continue;
 
                 //there is a party currently pending borrowing
                 PoolInner<POOLABLE> inner = pending.poll();
                 if (inner == null) {
-                    elements.offer(poolable);
+                    elements.offer(slot);
                     continue;
                 }
                 BORROWED.incrementAndGet(this);
-                poolConfig.deliveryScheduler().schedule(() -> inner.deliver(poolable));
+                poolConfig.deliveryScheduler().schedule(() -> inner.deliver(slot));
             }
 
             missed = WIP.addAndGet(this, -missed);
@@ -214,7 +205,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
 
             while (!elements.isEmpty()) {
-                dispose(elements.poll());
+                dispose(elements.poll().poolable());
             }
         }
     }
@@ -224,9 +215,93 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         return pending == TERMINATED;
     }
 
+
+    static final class QueuePoolSlot<T> implements PoolSlot<T> {
+
+        final QueuePool<T> pool;
+        final long creationTimestamp;
+
+        volatile T poolable;
+
+        volatile int borrowCount;
+
+        static final AtomicIntegerFieldUpdater<QueuePoolSlot> BORROW = AtomicIntegerFieldUpdater.newUpdater(QueuePoolSlot.class, "borrowCount");
+
+        QueuePoolSlot(QueuePool<T> pool, T poolable) {
+            this.pool = pool;
+            this.poolable = poolable;
+            this.creationTimestamp = System.currentTimeMillis();
+        }
+
+        @Override
+        public T poolable() {
+            return poolable;
+        }
+
+        /**
+         * Atomically increment the {@link #borrowCount()} of this slot, returning the new value.
+         *
+         * @return the incremented {@link #borrowCount()}
+         */
+        int borrowIncrement() {
+            return BORROW.incrementAndGet(this);
+        }
+
+        @Override
+        public int borrowCount() {
+            return BORROW.get(this);
+        }
+
+        @Override
+        public long age() {
+            return System.currentTimeMillis() - creationTimestamp;
+        }
+
+        @Override
+        public Mono<Void> releaseMono() {
+            if (PENDING.get(pool) == TERMINATED) {
+                BORROWED.decrementAndGet(pool); //immediately clean up state
+                pool.dispose(poolable);
+                return Mono.empty();
+            }
+
+            Mono<Void> cleaner;
+            try {
+                cleaner = pool.poolConfig.cleaner().apply(poolable);
+            }
+            catch (Throwable e) {
+                BORROWED.decrementAndGet(pool); //immediately clean up state
+                return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
+            }
+            //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
+            return new QueuePoolRecyclerMono<>(cleaner, this);
+        }
+
+        @Override
+        public void release() {
+            releaseMono().subscribe(v -> {}, e -> pool.logger.debug("error while releasing with release()", e));
+        }
+
+        @Override
+        public void invalidate() {
+            //immediately clean up state
+            BORROWED.decrementAndGet(pool);
+            pool.dispose(poolable);
+        }
+
+        @Override
+        public String toString() {
+            return "PoolSlot{" +
+                    "poolable=" + poolable +
+                    ", age=" + age() + "ms" +
+                    ", borrowCount=" + borrowCount +
+                    '}';
+        }
+    }
+
     private static final class PoolInner<T> implements Scannable, Subscription {
 
-        final CoreSubscriber<? super T> actual;
+        final CoreSubscriber<? super QueuePoolSlot<T>> actual;
 
         final QueuePool<T> parent;
 
@@ -238,7 +313,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         static final AtomicIntegerFieldUpdater<PoolInner> STATE = AtomicIntegerFieldUpdater.newUpdater(PoolInner.class, "state");
 
 
-        PoolInner(CoreSubscriber<? super T> actual, QueuePool<T> parent) {
+        PoolInner(CoreSubscriber<? super QueuePoolSlot<T>> actual, QueuePool<T> parent) {
             this.actual = actual;
             this.parent = parent;
         }
@@ -266,21 +341,22 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             return null;
         }
 
-        private void deliver(T poolable) {
+        private void deliver(QueuePoolSlot<T> poolSlot) {
             if (parent.logger.isTraceEnabled()) {
-                parent.logger.info("deliver(" + poolable + ") in state " + state);
+                parent.logger.info("deliver(" + poolSlot + ") in state " + state);
             }
             switch (state) {
                 case STATE_REQUESTED:
-                    actual.onNext(poolable);
+                    poolSlot.borrowIncrement();
+                    actual.onNext(poolSlot);
                     actual.onComplete();
                     break;
                 case STATE_CANCELLED:
-                    parent.releaseMono(poolable).subscribe(aVoid -> {}, actual::onError);
+                    poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError);
                     break;
                 default:
                     //shouldn't happen since the PoolInner isn't registered with the pool before having requested
-                    parent.releaseMono(poolable).subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
+                    poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
             }
         }
 
@@ -291,8 +367,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
 
     }
-
-    private static final class QueuePoolMono<T> extends Mono<T> {
+    private static final class QueuePoolMono<T> extends Mono<PoolSlot<T>> {
 
         final QueuePool<T> parent;
 
@@ -301,7 +376,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
 
         @Override
-        public void subscribe(CoreSubscriber<? super T> actual) {
+        public void subscribe(CoreSubscriber<? super PoolSlot<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
 
             PoolInner<T> p = new PoolInner<>(actual, parent);
@@ -311,21 +386,21 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     private static final class QueuePoolRecyclerInner<T> implements CoreSubscriber<Void>, Scannable, Subscription {
 
-        final QueuePool<T> pool;
         final CoreSubscriber<? super Void> actual;
+        final QueuePool<T> pool;
 
         //poolable can be checked for null to protect against protocol errors
-        T poolable;
+        QueuePoolSlot<T> poolSlot;
         Subscription upstream;
 
         //once protects against multiple requests
         volatile int once;
         static final AtomicIntegerFieldUpdater<QueuePoolRecyclerInner> ONCE = AtomicIntegerFieldUpdater.newUpdater(QueuePoolRecyclerInner.class, "once");
 
-        QueuePoolRecyclerInner(CoreSubscriber<? super Void> actual, QueuePool<T> pool, T poolable) {
+        QueuePoolRecyclerInner(CoreSubscriber<? super Void> actual, QueuePoolSlot<T> poolSlot) {
             this.actual = actual;
-            this.pool = pool;
-            this.poolable = Objects.requireNonNull(poolable, "poolable");
+            this.poolSlot = Objects.requireNonNull(poolSlot, "poolSlot");
+            this.pool = poolSlot.pool;
         }
 
         @Override
@@ -343,9 +418,9 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         @Override
         public void onError(Throwable throwable) {
-            T p = poolable;
-            poolable = null;
-            if (p == null) {
+            QueuePoolSlot<T> slot = poolSlot;
+            poolSlot = null;
+            if (slot == null) {
                 Operators.onErrorDropped(throwable, actual.currentContext());
                 return;
             }
@@ -357,7 +432,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
 
             LIVE.decrementAndGet(pool);
-            pool.dispose(p);
+            pool.dispose(slot.poolable);
             pool.drain();
 
             actual.onError(throwable);
@@ -365,9 +440,9 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         @Override
         public void onComplete() {
-            T p = poolable;
-            poolable = null;
-            if (p == null) {
+            QueuePoolSlot<T> slot = poolSlot;
+            poolSlot = null;
+            if (slot == null) {
                 return;
             }
 
@@ -377,7 +452,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                 BORROWED.decrementAndGet(pool);
             }
 
-            pool.maybeRecycleAndDrain(p);
+            pool.maybeRecycleAndDrain(slot);
             actual.onComplete();
         }
 
@@ -403,32 +478,29 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             if (key == Attr.ACTUAL) return actual;
             if (key == Attr.PARENT) return upstream;
             if (key == Attr.CANCELLED) return false;
-            if (key == Attr.TERMINATED) return poolable == null;
-            if (key == Attr.BUFFERED) return (poolable == null) ? 0 : 1;
-            if (key == Attr.CAPACITY) return (poolable == null) ? 1 : 0;
+            if (key == Attr.TERMINATED) return poolSlot == null;
+            if (key == Attr.BUFFERED) return (poolSlot == null) ? 0 : 1;
             return null;
         }
     }
 
     private static final class QueuePoolRecyclerMono<T> extends MonoOperator<Void, Void> {
 
-        final QueuePool<T> pool;
-        final AtomicReference<T> poolable;
+        final AtomicReference<QueuePoolSlot<T>> slotRef;
 
-        protected QueuePoolRecyclerMono(Mono<? extends Void> source, QueuePool<T> pool, T poolable) {
+        QueuePoolRecyclerMono(Mono<? extends Void> source, QueuePoolSlot<T> poolSlot) {
             super(source);
-            this.pool = pool;
-            this.poolable = new AtomicReference<>(poolable);
+            this.slotRef = new AtomicReference<>(poolSlot);
         }
 
         @Override
         public void subscribe(CoreSubscriber<? super Void> actual) {
-            T p = poolable.getAndSet(null);
-            if (p == null) {
+            QueuePoolSlot<T> slot = slotRef.getAndSet(null);
+            if (slot == null) {
                 Operators.complete(actual);
             }
             else {
-                QueuePoolRecyclerInner<T> qpr = new QueuePoolRecyclerInner<T>(actual, pool, p);
+                QueuePoolRecyclerInner<T> qpr = new QueuePoolRecyclerInner<>(actual, slot);
                 source.subscribe(qpr);
             }
         }

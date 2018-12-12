@@ -56,7 +56,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     //This helps with testability of some methods that for now mainly log
     private final Logger logger = Loggers.getLogger(QueuePool.class);
 
-    final PoolConfig<POOLABLE> poolConfig;
+    private final PoolConfig<POOLABLE> poolConfig;
     final Queue<QueuePoolSlot<POOLABLE>> elements;
 
     volatile int borrowed;
@@ -72,7 +72,7 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     private static final AtomicIntegerFieldUpdater<QueuePool> WIP = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "wip");
 
 
-    public QueuePool(PoolConfig<POOLABLE> poolConfig) {
+    QueuePool(PoolConfig<POOLABLE> poolConfig) {
         this.poolConfig = poolConfig;
         this.elements = Queues.<QueuePoolSlot<POOLABLE>>get(poolConfig.maxSize()).get();
 

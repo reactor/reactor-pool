@@ -16,6 +16,8 @@
 
 package reactor.util.pool;
 
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.function.Function;
@@ -47,8 +49,8 @@ public interface Pool<POOLABLE> {
      * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
      * the object back to the pool once the derived usage pipeline terminates or is cancelled.
      * <p>
-     * The resulting {@link Mono} emits the {@code POOLABLE} as it becomes available. Cancelling the
-     * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
+     * The {@link Mono} provided to the {@link Function} emits the {@code POOLABLE} as it becomes available. Cancelling
+     * the {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
      * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
      * <p>
      * The {@link Function} is a declarative way of implementing a processing pipeline on top of the poolable object,
@@ -56,11 +58,10 @@ public interface Pool<POOLABLE> {
      *
      * @param processingFunction the {@link Function} to apply to the {@link Mono} delivering the POOLABLE to instantiate
      *                           and trigger a processing pipeline around it.
-     * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object, processing it
-     * as declared in {@code processingFunction} and autmatically releasing it.
+     * @return a {@link Flux}, each subscription to which represents the act of borrowing a pooled object, processing it
+     * as declared in {@code processingFunction} and automatically releasing it.
      * @see #acquire()
      */
-    Mono<POOLABLE> borrow(Function<Mono<POOLABLE>, Mono<POOLABLE>> processingFunction);
-
+    <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction);
 
 }

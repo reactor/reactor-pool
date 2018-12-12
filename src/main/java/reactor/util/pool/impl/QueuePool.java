@@ -16,11 +16,13 @@
 
 package reactor.util.pool.impl;
 
+import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
 import reactor.core.Scannable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
@@ -87,8 +89,8 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @Override
-    public Mono<POOLABLE> borrow(Function<Mono<POOLABLE>, Mono<POOLABLE>> processingFunction) {
-        return Mono.usingWhen(acquire(),
+    public <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
+        return Flux.usingWhen(acquire(),
                 slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
                 PoolSlot::releaseMono,
                 PoolSlot::releaseMono);

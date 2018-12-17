@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -37,10 +38,7 @@ import reactor.util.pool.api.PoolSlot;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Formatter;
-import java.util.FormatterClosedException;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -129,6 +127,37 @@ class QueuePoolTest {
         }
     }
 
+    @Test
+    void demonstrateBorrowPipeline() throws InterruptedException {
+        AtomicInteger counter = new AtomicInteger();
+        AtomicReference<String> releaseRef = new AtomicReference<>();
+
+        QueuePool<String> pool = new QueuePool<>(new DefaultPoolConfig<>(0, 1, Mono.just("Hello Reactive World"),
+                s -> Mono.fromRunnable(()-> releaseRef.set(s)), null, null));
+
+        Flux<String> words = pool.borrow(m -> m
+                //simulate deriving a value from the resource (ie. query from DB connection)
+                .map(resource -> resource.split(" "))
+                //then further process the derived value to produce multiple values (ie. rows from a query)
+                .flatMapIterable(Arrays::asList)
+                //and all that with latency
+                .delayElements(Duration.ofMillis(500)));
+
+        words.subscribe(v -> counter.incrementAndGet());
+        assertThat(counter).hasValue(0);
+
+        Thread.sleep(1000);
+        //we're in the middle of processing the "rows"
+        assertThat(counter).as("before all emitted").hasValue(2);
+        assertThat(releaseRef).as("still borrowing").hasValue(null);
+
+        Thread.sleep(500);
+        //we've finished processing, let's check resource has been automatically released
+        assertThat(counter).as("after all emitted").hasValue(3);
+        assertThat(pool.live).as("live").isOne();
+        assertThat(pool.elements).as("available").hasSize(1);
+        assertThat(releaseRef).as("released").hasValue("Hello Reactive World");
+    }
 
     @Nested
     @DisplayName("Tests around the acquire() manual mode of borrowing")

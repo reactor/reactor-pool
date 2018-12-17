@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.impl;
+package reactor.util.pool.builder;
 
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +32,7 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
 import reactor.util.function.Tuple2;
-import reactor.util.pool.PoolSlot;
+import reactor.util.pool.api.PoolSlot;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -104,14 +104,15 @@ class QueuePoolTest {
             super(minSize, maxSize,
                     allocator,
                     pt -> Mono.fromRunnable(pt::clean),
-                    PoolableTest::isHealthy);
+                    slot -> !slot.poolable().isHealthy(),
+                    null);
         }
 
         private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
             super(minSize, maxSize,
                     allocator,
                     pt -> Mono.fromRunnable(pt::clean),
-                    PoolableTest::isHealthy,
+                    slot -> !slot.poolable().isHealthy(),
                     deliveryScheduler);
         }
 
@@ -123,7 +124,8 @@ class QueuePoolTest {
                         poolableTest.clean();
                         additionalCleaner.accept(poolableTest);
                     }),
-                    PoolableTest::isHealthy);
+                    slot -> !slot.poolable().isHealthy(),
+                    null);
         }
     }
 
@@ -1158,7 +1160,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                PoolableTest::isHealthy));
+                slot -> !slot.poolable().isHealthy(), null));
 
         PoolableTest pt1 = new PoolableTest(1);
         PoolableTest pt2 = new PoolableTest(2);
@@ -1182,7 +1184,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                PoolableTest::isHealthy));
+                slot -> !slot.poolable().isHealthy(), null));
 
         PoolSlot<PoolableTest> slot1 = pool.acquire().block();
         PoolSlot<PoolableTest> slot2 = pool.acquire().block();
@@ -1216,7 +1218,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                PoolableTest::isHealthy));
+                slot -> !slot.poolable().isHealthy(), null));
 
         PoolSlot<PoolableTest> slot1 = pool.acquire().block();
         PoolSlot<PoolableTest> slot2 = pool.acquire().block();
@@ -1245,7 +1247,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                PoolableTest::isHealthy));
+                slot -> !slot.poolable().isHealthy(), null));
 
         PoolSlot<PoolableTest> borrowed1 = pool.acquire().block();
         PoolSlot<PoolableTest> borrowed2 = pool.acquire().block();
@@ -1271,7 +1273,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                PoolableTest::isHealthy));
+                slot -> !slot.poolable().isHealthy(), null));
 
         assertThat(pool.elements).isEmpty();
 
@@ -1286,7 +1288,8 @@ class QueuePoolTest {
     @Test
     void poolIsDisposed() {
         QueuePool<PoolableTest> pool = new QueuePool<>(new DefaultPoolConfig<>(0, 3,
-                Mono.fromCallable(PoolableTest::new), p -> Mono.empty(), PoolableTest::isHealthy));
+                Mono.fromCallable(PoolableTest::new), p -> Mono.empty(),
+                slot -> !slot.poolable().isHealthy(), null));
 
         assertThat(pool.isDisposed()).as("not yet disposed").isFalse();
 
@@ -1302,7 +1305,7 @@ class QueuePoolTest {
         QueuePool<Formatter> pool = new QueuePool<>(new DefaultPoolConfig<>(1, 1,
                 Mono.just(uniqueElement),
                 f -> Mono.empty(),
-                f -> false));
+                f -> true, null));
 
         pool.dispose();
 
@@ -1315,7 +1318,7 @@ class QueuePoolTest {
         QueuePool<String> pool = new QueuePool<>(new DefaultPoolConfig<>(0, 1,
                 Mono.error(new IllegalStateException("boom")),
                 f -> Mono.empty(),
-                f -> false));
+                f -> true, null));
 
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(pool.acquire()::block)
@@ -1327,7 +1330,7 @@ class QueuePoolTest {
         DefaultPoolConfig<Object> config = new DefaultPoolConfig<>(1, 1,
                 Mono.error(new IllegalStateException("boom")),
                 f -> Mono.empty(),
-                f -> false);
+                f -> true, null);
 
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(() -> new QueuePool<>(config))
@@ -1346,7 +1349,7 @@ class QueuePoolTest {
             QueuePool<Closeable> pool = new QueuePool<>(new DefaultPoolConfig<>(1, 1,
                     Mono.just(closeable),
                     f -> Mono.empty(),
-                    f -> false));
+                    f -> true, null));
 
             pool.dispose();
 

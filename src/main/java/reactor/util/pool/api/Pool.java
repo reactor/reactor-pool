@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool;
+package reactor.util.pool.api;
 
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;

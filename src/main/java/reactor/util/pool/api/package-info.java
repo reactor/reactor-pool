@@ -14,25 +14,12 @@
  * limitations under the License.
  */
 
-package reactor.util.pool;
-
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-
-import java.util.function.Function;
-import java.util.function.Predicate;
-
 /**
+ * API for reactive pooling of arbitrary objects using Reactor's {@link reactor.core.publisher.Mono}.
+ *
  * @author Simon Baslé
  */
-public interface PoolConfig<P> {
+@NonNullApi
+package reactor.util.pool.api;
 
-    Mono<P> allocator();
-    Predicate<P> validator();
-    Function<P, Mono<Void>> cleaner();
-
-    int minSize();
-    int maxSize();
-
-    Scheduler deliveryScheduler();
-}
+import reactor.util.annotation.NonNullApi;

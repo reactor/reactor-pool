@@ -15,11 +15,11 @@
  */
 
 /**
- * API for reactive pooling of arbitrary objects using Reactor's {@link reactor.core.publisher.Mono}.
+ * Builder for reactive pools and internal implementations of reactive pooling interfaces.
  *
  * @author Simon Baslé
  */
 @NonNullApi
-package reactor.util.pool;
+package reactor.util.pool.builder;
 
 import reactor.util.annotation.NonNullApi;

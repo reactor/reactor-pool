@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.impl;
+package reactor.util.pool.builder;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
@@ -30,9 +30,9 @@ import reactor.util.Logger;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
-import reactor.util.pool.Pool;
-import reactor.util.pool.PoolConfig;
-import reactor.util.pool.PoolSlot;
+import reactor.util.pool.api.Pool;
+import reactor.util.pool.api.PoolConfig;
+import reactor.util.pool.api.PoolSlot;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -48,7 +48,7 @@ import java.util.function.Function;
  *
  * @author Simon Baslé
  */
-public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
+final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     private static final Queue TERMINATED = Queues.empty().get();
 
@@ -110,11 +110,12 @@ public class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePoolSlot<POOLABLE> poolSlot) {
         if (pending != TERMINATED) {
-            if (poolConfig.validator().test(poolSlot.poolable())) {
+            if (!poolConfig.evictionPredicate().test(poolSlot)) {
                 elements.offer(poolSlot);
             }
             else {
                 LIVE.decrementAndGet(this);
+                dispose(poolSlot.poolable);
             }
             drain();
         }

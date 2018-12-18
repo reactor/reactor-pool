@@ -29,7 +29,7 @@ public interface PoolConfig<P> {
 
     Mono<P> allocator();
 
-    Predicate<? super PoolSlot<P>> evictionPredicate();
+    Predicate<PoolSlot<P>> evictionPredicate();
     Function<P, Mono<Void>> cleaner();
 
     int minSize();

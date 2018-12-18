@@ -20,6 +20,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.util.annotation.Nullable;
 import reactor.util.pool.api.Pool;
+import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PoolSlot;
 
 import java.util.function.Function;
@@ -36,7 +37,7 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
 
     Function<T, Mono<Void>> cleaner;
     @Nullable
-    Predicate<? super PoolSlot<T>> evictionPredicate;
+    Predicate<PoolSlot<T>> evictionPredicate;
     @Nullable
     Scheduler scheduler = null;
 
@@ -57,32 +58,24 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
     }
 
     @Override
-    public PoolBuilder.OtherPredicateStep<T> unlessSlotMatches(Predicate<? super PoolSlot<T>> slotPredicate) {
-        this.evictionPredicate = slotPredicate;
+    public PoolBuilder.OtherPredicateStep<T> unlessSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate) {
+        this.evictionPredicate = slotPredicate::test;
         return this;
     }
 
     @Override
     public PoolBuilder.OtherPredicateStep<T> orPoolableMatches(Predicate<? super T> poolablePredicate) {
-        //FIXME
+        assert this.evictionPredicate != null;
+        final Predicate<PoolSlot<T>> oldPredicate = this.evictionPredicate;
+        this.evictionPredicate = slot -> oldPredicate.test(slot) || poolablePredicate.test(slot.poolable());
         return this;
     }
 
     @Override
-    public PoolBuilder.OtherPredicateStep<T> orSlotMatches(Predicate<? super PoolSlot<T>> slotPredicate) {
-        //FIXME
-        return this;
-    }
-
-    @Override
-    public PoolBuilder.OtherPredicateStep<T> andPoolableMatches(Predicate<? super T> poolablePredicate) {
-        //FIXME
-        return this;
-    }
-
-    @Override
-    public PoolBuilder.OtherPredicateStep<T> andSlotMatches(Predicate<? super PoolSlot<T>> slotPredicate) {
-        //FIXME
+    public PoolBuilder.OtherPredicateStep<T> orSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate) {
+        assert this.evictionPredicate != null;
+        final Predicate<PoolSlot<T>> oldPredicate = this.evictionPredicate;
+        this.evictionPredicate = slot -> oldPredicate.test(slot) || slotPredicate.test(slot);
         return this;
     }
 
@@ -108,6 +101,11 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
 
         FinalStep(DefaultPoolConfig<T> config) {
             this.config = config;
+        }
+
+        @Override
+        public PoolConfig<T> toConfig() {
+            return this.config;
         }
 
         @Override

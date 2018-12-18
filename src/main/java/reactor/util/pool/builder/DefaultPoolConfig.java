@@ -37,12 +37,12 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     private final int maxSize;
     private final Mono<POOLABLE> allocator;
     private final Function<POOLABLE, Mono<Void>> cleaner;
-    private final Predicate<? super PoolSlot<POOLABLE>> evictionPredicate;
+    private final Predicate<PoolSlot<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
 
     DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
                       Function<POOLABLE, Mono<Void>> cleaner,
-                      @Nullable Predicate<? super PoolSlot<POOLABLE>> evictionPredicate,
+                      @Nullable Predicate<PoolSlot<POOLABLE>> evictionPredicate,
                       @Nullable Scheduler deliveryScheduler) {
         this.minSize = minSize;
         this.maxSize = maxSize;
@@ -65,7 +65,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     }
 
     @Override
-    public Predicate<? super PoolSlot<POOLABLE>> evictionPredicate() {
+    public Predicate<PoolSlot<POOLABLE>> evictionPredicate() {
         return this.evictionPredicate;
     }
 

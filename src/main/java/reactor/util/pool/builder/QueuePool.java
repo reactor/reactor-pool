@@ -74,7 +74,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     QueuePool(PoolConfig<POOLABLE> poolConfig) {
         this.poolConfig = poolConfig;
-        this.elements = Queues.<QueuePoolSlot<POOLABLE>>get(poolConfig.maxSize()).get();
+        this.elements = Queues.<QueuePoolSlot<POOLABLE>>unboundedMultiproducer().get();
 
         for (int i = 0; i < poolConfig.minSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");

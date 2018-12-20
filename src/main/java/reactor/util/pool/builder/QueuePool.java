@@ -345,9 +345,6 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
 
         private void deliver(QueuePoolSlot<T> poolSlot) {
-            if (parent.logger.isTraceEnabled()) {
-                parent.logger.info("deliver(" + poolSlot + ") in state " + state);
-            }
             switch (state) {
                 case STATE_REQUESTED:
                     poolSlot.borrowIncrement();

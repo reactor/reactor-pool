@@ -17,6 +17,7 @@
 package reactor.util.pool.api;
 
 import org.reactivestreams.Publisher;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -26,7 +27,7 @@ import java.util.function.Function;
  * A reactive pool of objects.
  * @author Simon Baslé
  */
-public interface Pool<POOLABLE> {
+public interface Pool<POOLABLE> extends Disposable {
 
     /**
      * Acquire a {@code POOLABLE}: borrow it from the pool upon subscription and become responsible for its release.

@@ -50,6 +50,13 @@ public interface PoolBuilder<POOLABLE> {
     Pool<POOLABLE> buildQueuePool();
 
     /**
+     * Reuse a {@link PoolConfig} to directly build a queue-based {@link Pool}
+     */
+    static <T> Pool<T> queuePoolFrom(PoolConfig<T> poolConfig) {
+        return new QueuePool<>(poolConfig);
+    }
+
+    /**
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
      * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
      * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#publishOn(Scheduler)}).

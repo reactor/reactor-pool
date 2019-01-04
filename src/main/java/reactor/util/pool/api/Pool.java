@@ -44,7 +44,7 @@ public interface Pool<POOLABLE> extends Disposable {
      * managing its lifecycle from there
      * @see #borrow(Function)
      */
-    Mono<? extends PoolSlot<POOLABLE>> acquire();
+    Mono<PoolSlot<POOLABLE>> acquire();
 
     /**
      * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing

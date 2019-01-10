@@ -88,14 +88,6 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
-    @Override
-    public <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
-        return Flux.usingWhen(acquire(),
-                slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
-                PoolSlot::releaseMono,
-                PoolSlot::releaseMono);
-    }
-
     @SuppressWarnings("WeakerAccess")
     final void registerPendingBorrower(PoolInner<POOLABLE> s) {
         if (pending != TERMINATED) {

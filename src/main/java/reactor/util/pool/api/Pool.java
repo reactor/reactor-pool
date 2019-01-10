@@ -63,6 +63,11 @@ public interface Pool<POOLABLE> extends Disposable {
      * as declared in {@code processingFunction} and automatically releasing it.
      * @see #acquire()
      */
-    <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction);
+    default <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
+        return Flux.usingWhen(acquire(),
+                slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
+                PoolSlot::releaseMono,
+                PoolSlot::releaseMono);
+    }
 
 }

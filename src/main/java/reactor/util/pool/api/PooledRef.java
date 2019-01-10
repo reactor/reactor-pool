@@ -22,21 +22,21 @@ import java.util.function.Function;
 
 /**
  * An abstraction over an object in a {@link Pool}, which holds the underlying {@code POOLABLE} object and allows one to
- * manually {@link #release()} it to the pool or {@link #invalidate()} it. Since the {@link PoolSlot} provides a few
+ * manually {@link #release()} it to the pool or {@link #invalidate()} it. Since the {@link PooledRef} provides a few
  * additional information about its lifecyle, namely its {@link #age()} and the number of times it has been {@link #borrowCount() borrowed},
  * the {@link Pool} may optionally use that information to automatically invalidate the object, and provide a simplified
- * borrow mechanism where the {@link PoolSlot} is not directly exposed (see {@link Pool#borrowInScope(Function)} vs {@link Pool#borrow()}).
+ * borrow mechanism where the {@link PooledRef} is not directly exposed (see {@link Pool#borrowInScope(Function)} vs {@link Pool#borrow()}).
  *
  * @author Simon Baslé
  */
-public interface PoolSlot<POOLABLE> {
+public interface PooledRef<POOLABLE> {
 
     /**
      * Returns the wrapped {@code POOLABLE}. This method is not thread-safe and the poolable should NEVER be accessed
      * concurrently.
      * <p>
-     * The reference is retained by the slot but the object might be in an intermediate or invalid state when one of
-     * the {@link #release()} or {@link #invalidate()} methods have been previously called.
+     * The reference is retained by the {@link PooledRef} but the object might be in an intermediate or invalid state
+     * when one of the {@link #release()} or {@link #invalidate()} methods have been previously called.
      *
      * @return the poolable
      */
@@ -85,7 +85,7 @@ public interface PoolSlot<POOLABLE> {
     int borrowCount();
 
     /**
-     * Returns the age of the {@link PoolSlot}: the wall-clock time (in milliseconds) since which the underlying object
+     * Returns the age of the {@link PooledRef}: the wall-clock time (in milliseconds) since which the underlying object
      * has been allocated.
      *
      * @return the wall-clock age of the underlying object in milliseconds

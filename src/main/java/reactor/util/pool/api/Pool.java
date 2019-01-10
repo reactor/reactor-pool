@@ -31,20 +31,20 @@ public interface Pool<POOLABLE> extends Disposable {
 
     /**
      * Acquire a {@code POOLABLE}: borrow it from the pool upon subscription and become responsible for its release.
-     * The object is wrapped in a {@link PoolSlot} which can be used for manually releasing the object back to the pool
+     * The object is wrapped in a {@link PooledRef} which can be used for manually releasing the object back to the pool
      * or invalidating it.
      * <p>
-     * The resulting {@link Mono} emits the {@link PoolSlot} as the {@code POOLABLE} becomes available. Cancelling the
+     * The resulting {@link Mono} emits the {@link PooledRef} as the {@code POOLABLE} becomes available. Cancelling the
      * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
      * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
-     * It is the responsibility of the caller to release the poolable object via the {@link PoolSlot} when the object
+     * It is the responsibility of the caller to release the poolable object via the {@link PooledRef} when the object
      * is not used anymore.
      *
      * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object and manually
      * managing its lifecycle from there
      * @see #borrowInScope(Function)
      */
-    Mono<PoolSlot<POOLABLE>> borrow();
+    Mono<PooledRef<POOLABLE>> borrow();
 
     /**
      * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
@@ -66,8 +66,8 @@ public interface Pool<POOLABLE> extends Disposable {
     default <V> Flux<V> borrowInScope(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
         return Flux.usingWhen(borrow(),
                 slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
-                PoolSlot::releaseMono,
-                PoolSlot::releaseMono);
+                PooledRef::releaseMono,
+                PooledRef::releaseMono);
     }
 
 }

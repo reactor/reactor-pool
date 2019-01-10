@@ -21,7 +21,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.util.annotation.Nullable;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolSlot;
+import reactor.util.pool.api.PooledRef;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -37,7 +37,7 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
 
     Function<T, Mono<Void>> cleaner;
     @Nullable
-    Predicate<PoolSlot<T>> evictionPredicate;
+    Predicate<PooledRef<T>> evictionPredicate;
     @Nullable
     Scheduler scheduler = null;
 
@@ -58,24 +58,24 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
     }
 
     @Override
-    public PoolBuilder.OtherPredicateStep<T> unlessSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate) {
-        this.evictionPredicate = slotPredicate::test;
+    public PoolBuilder.OtherPredicateStep<T> unlessRefMatches(Predicate<? super PooledRef<? super T>> refPredicate) {
+        this.evictionPredicate = refPredicate::test;
         return this;
     }
 
     @Override
     public PoolBuilder.OtherPredicateStep<T> orPoolableMatches(Predicate<? super T> poolablePredicate) {
         assert this.evictionPredicate != null;
-        final Predicate<PoolSlot<T>> oldPredicate = this.evictionPredicate;
+        final Predicate<PooledRef<T>> oldPredicate = this.evictionPredicate;
         this.evictionPredicate = slot -> oldPredicate.test(slot) || poolablePredicate.test(slot.poolable());
         return this;
     }
 
     @Override
-    public PoolBuilder.OtherPredicateStep<T> orSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate) {
+    public PoolBuilder.OtherPredicateStep<T> orRefMatches(Predicate<? super PooledRef<? super T>> refPredicate) {
         assert this.evictionPredicate != null;
-        final Predicate<PoolSlot<T>> oldPredicate = this.evictionPredicate;
-        this.evictionPredicate = slot -> oldPredicate.test(slot) || slotPredicate.test(slot);
+        final Predicate<PooledRef<T>> oldPredicate = this.evictionPredicate;
+        this.evictionPredicate = slot -> oldPredicate.test(slot) || refPredicate.test(slot);
         return this;
     }
 

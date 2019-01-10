@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolSlot;
+import reactor.util.pool.api.PooledRef;
 import reactor.util.pool.builder.PoolBuilder;
 
 import java.time.Duration;
@@ -55,23 +55,23 @@ import static reactor.util.pool.api.EvictionStrategies.borrowed;
 class PoolBuilderApiCombinationTest {
 
     /**
-     * Fake {@link PoolSlot} for tests, either wrapping value+age+borrowCount or just a
+     * Fake {@link PooledRef} for tests, either wrapping value+age+borrowCount or just a
      * value (in which case age defaults to 12s and borrowCount to 1000)
      * @param <T>
      */
-    final class TestSlot<T> implements PoolSlot<T> {
+    final class TestPooledRef<T> implements PooledRef<T> {
 
         final T poolable;
         final long age;
         final int borrowCount;
 
-        TestSlot(T poolable, long age, int borrowCount) {
+        TestPooledRef(T poolable, long age, int borrowCount) {
             this.poolable = poolable;
             this.age = age;
             this.borrowCount = borrowCount;
         }
 
-        TestSlot(T poolable) {
+        TestPooledRef(T poolable) {
             this(poolable, 12_000, 1000);
         }
 
@@ -103,7 +103,7 @@ class PoolBuilderApiCombinationTest {
 
         @Override
         public String toString() {
-            return "TestSlot{" +
+            return "TestPooledRef{" +
                     "poolable=" + poolable +
                     ", age=" + age +
                     ", borrowCount=" + borrowCount +
@@ -124,10 +124,10 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
@@ -143,18 +143,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
-    @DisplayName("SlotPredicate AllocatingBetween")
+    @DisplayName("PooledRefPredicate AllocatingBetween")
     void builderCombinationMinimal3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(borrowed(2))
+                .unlessRefMatches(borrowed(2))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
@@ -162,18 +162,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 2))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 3))
-                .rejects(new TestSlot<>(Collections.emptyList(), 10_000, 1));
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 3))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 10_000, 1));
     }
 
     @Test
-    @DisplayName("SlotPredicate AllocatingMax")
+    @DisplayName("PooledRefPredicate AllocatingMax")
     void builderCombinationMinimal4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(borrowed(2))
+                .unlessRefMatches(borrowed(2))
                 .allocatingMax(10)
                 .toConfig();
 
@@ -181,10 +181,10 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 2))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 3))
-                .rejects(new TestSlot<>(Collections.emptyList(), 10_000, 1));
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 3))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 10_000, 1));
     }
 
     @Test
@@ -202,10 +202,10 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
@@ -223,18 +223,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
-    @DisplayName("SlotPredicate Scheduler AllocatingBetween")
+    @DisplayName("PooledRefPredicate Scheduler AllocatingBetween")
     void builderCombinationWithScheduler3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(borrowed(2))
+                .unlessRefMatches(borrowed(2))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
@@ -244,18 +244,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 2))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 3))
-                .rejects(new TestSlot<>(Collections.emptyList(), 10_000, 1));
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 3))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 10_000, 1));
     }
 
     @Test
-    @DisplayName("SlotPredicate Scheduler AllocatingMax")
+    @DisplayName("PooledRefPredicate Scheduler AllocatingMax")
     void builderCombinationWithScheduler4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(borrowed(2))
+                .unlessRefMatches(borrowed(2))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
@@ -265,10 +265,10 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 2))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 10_000, 3))
-                .rejects(new TestSlot<>(Collections.emptyList(), 10_000, 1));
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 10_000, 3))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 10_000, 1));
     }
 
     //second predicate, but no scheduler
@@ -287,10 +287,10 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
@@ -308,19 +308,19 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .rejects(new TestSlot<>(Collections.emptyList()))
-                .rejects(new TestSlot<>(Collections.singletonList("A")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")));
+                .rejects(new TestPooledRef<>(Collections.emptyList()))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")));
     }
 
     @Test
-    @DisplayName("PoolablePredicate SlotSecondPredicate AllocatingBetween")
+    @DisplayName("PoolablePredicate PooledRefSecondPredicate AllocatingBetween")
     void builderCombinationSecondPredicate3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
@@ -330,22 +330,22 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 2))
                 //reject based on both
-                .rejects(new TestSlot<>(Collections.emptyList(), 100, 2));
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 100, 2));
     }
 
     @Test
-    @DisplayName("PoolablePredicate SlotSecondPredicate AllocatingMax")
+    @DisplayName("PoolablePredicate PooledRefSecondPredicate AllocatingMax")
     void builderCombinationSecondPredicate4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .allocatingMax(10)
                 .toConfig();
 
@@ -355,21 +355,21 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 2))
                 //reject based on both
-                .rejects(new TestSlot<>(Collections.emptyList(), 100, 2));
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 100, 2));
     }
 
     @Test
-    @DisplayName("SlotPredicate PoolableSecondPredicate AllocatingBetween")
+    @DisplayName("PooledRefPredicate PoolableSecondPredicate AllocatingBetween")
     void builderCombinationSecondPredicate5() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .allocatingBetween(1, 10)
                 .toConfig();
@@ -380,21 +380,21 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 2))
                 //reject based on both
-                .rejects(new TestSlot<>(Collections.emptyList(), 100, 2));
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 100, 2));
     }
 
     @Test
-    @DisplayName("SlotPredicate PoolableSecondPredicate AllocatingMax")
+    @DisplayName("PooledRefPredicate PoolableSecondPredicate AllocatingMax")
     void builderCombinationSecondPredicate6() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .allocatingMax(10)
                 .toConfig();
@@ -405,22 +405,22 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList()))
-                .accepts(new TestSlot<>(Collections.singletonList("A")))
+                .accepts(new TestPooledRef<>(Collections.emptyList()))
+                .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 2))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 2))
                 //reject based on both
-                .rejects(new TestSlot<>(Collections.emptyList(), 100, 2));
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 100, 2));
     }
 
     @Test
-    @DisplayName("SlotPredicate SlotSecondPredicate AllocatingBetween")
+    @DisplayName("PooledRefPredicate PooledRefSecondPredicate AllocatingBetween")
     void builderCombinationSecondPredicate7() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(10)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
@@ -430,19 +430,19 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .accepts(new TestSlot<>(Collections.emptyList(), 10000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 3000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 2000, 3));
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 2000, 3));
     }
 
     @Test
-    @DisplayName("SlotPredicate SlotSecondPredicate AllocatingMax")
+    @DisplayName("PooledRefPredicate PooledRefSecondPredicate AllocatingMax")
     void builderCombinationSecondPredicate8() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(10)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .allocatingMax(10)
                 .toConfig();
 
@@ -452,10 +452,10 @@ class PoolBuilderApiCombinationTest {
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 //accept based on age and borrow
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .accepts(new TestSlot<>(Collections.emptyList(), 10000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 3000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 2000, 3));
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 2000, 3));
     }
 
     //second predicate AND scheduler
@@ -475,9 +475,9 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")))
-                .rejects(new TestSlot<>(Collections.singletonList("A")));
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")));
     }
 
     @Test
@@ -496,18 +496,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B")))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C")))
-                .rejects(new TestSlot<>(Collections.singletonList("A")));
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B")))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C")))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A")));
     }
 
     @Test
-    @DisplayName("PoolablePredicate SlotSecondPredicate Scheduler AllocatingBetween")
+    @DisplayName("PoolablePredicate PooledRefSecondPredicate Scheduler AllocatingBetween")
     void builderCombinationSecondPredicateScheduler3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
@@ -517,20 +517,20 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 1))
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 3000, 2))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 100, 3));
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 1))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 100, 3));
     }
 
     @Test
-    @DisplayName("PoolablePredicate SlotSecondPredicate Scheduler AllocatingMax")
+    @DisplayName("PoolablePredicate PooledRefSecondPredicate Scheduler AllocatingMax")
     void builderCombinationSecondPredicateScheduler4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
@@ -540,19 +540,19 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 1))
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 3000, 2))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 100, 3));
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 1))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 100, 3));
     }
 
     @Test
-    @DisplayName("SlotPredicate PoolableSecondPredicate Scheduler AllocatingBetween")
+    @DisplayName("PooledRefPredicate PoolableSecondPredicate Scheduler AllocatingBetween")
     void builderCombinationSecondPredicateScheduler5() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
@@ -563,18 +563,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 1))
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 3000, 2))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 100, 3));    }
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 1))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 100, 3));    }
 
     @Test
-    @DisplayName("SlotPredicate PoolableSecondPredicate Scheduler AllocatingMax")
+    @DisplayName("PooledRefPredicate PoolableSecondPredicate Scheduler AllocatingMax")
     void builderCombinationSecondPredicateScheduler6() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
@@ -585,19 +585,19 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Arrays.asList("A", "B"), 100, 1))
-                .accepts(new TestSlot<>(Arrays.asList("A", "B", "C"), 100, 1))
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 3000, 2))
-                .rejects(new TestSlot<>(Collections.singletonList("A"), 100, 3));    }
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B"), 100, 1))
+                .accepts(new TestPooledRef<>(Arrays.asList("A", "B", "C"), 100, 1))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 3000, 2))
+                .rejects(new TestPooledRef<>(Collections.singletonList("A"), 100, 3));    }
 
     @Test
-    @DisplayName("SlotPredicate SlotSecondPredicate Scheduler AllocatingBetween")
+    @DisplayName("PooledRefPredicate PooledRefSecondPredicate Scheduler AllocatingBetween")
     void builderCombinationSecondPredicateScheduler7() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(10)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
@@ -607,18 +607,18 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .accepts(new TestSlot<>(Collections.emptyList(), 10000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 2000, 2));
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 2000, 2));
     }
 
     @Test
-    @DisplayName("SlotPredicate SlotSecondPredicate Scheduler AllocatingMax")
+    @DisplayName("PooledRefPredicate PooledRefSecondPredicate Scheduler AllocatingMax")
     void builderCombinationSecondPredicateScheduler8() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(10)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
@@ -628,31 +628,31 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                .accepts(new TestSlot<>(Collections.emptyList(), 3000, 3))
-                .accepts(new TestSlot<>(Collections.emptyList(), 10000, 2))
-                .rejects(new TestSlot<>(Collections.emptyList(), 2000, 2));
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
+                .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
+                .rejects(new TestPooledRef<>(Collections.emptyList(), 2000, 2));
     }
 
     @Test
     void builderMultipleOrAndPredicates() {
         final PoolConfig<String> config = PoolBuilder.allocatingWith(Mono.just("foo"))
                 .recycleWith(l -> Mono.empty())
-                .unlessSlotMatches(borrowed(10))
-                .orSlotMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(borrowed(10))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
                 .orPoolableMatches(str -> str.length() > 0 && str.length() < 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
         //borrow 10+ || age 3 && borrow 3+ || length > 0 && length < 2
-        TestSlot<String> ok1 = new TestSlot<>("HAHA", 100, 10);
-        TestSlot<String> ok2 = new TestSlot<>("HAHA", 3000, 3);
-        TestSlot<String> ok3 = new TestSlot<>("A", 100, 1);
+        TestPooledRef<String> ok1 = new TestPooledRef<>("HAHA", 100, 10);
+        TestPooledRef<String> ok2 = new TestPooledRef<>("HAHA", 3000, 3);
+        TestPooledRef<String> ok3 = new TestPooledRef<>("A", 100, 1);
 
-        TestSlot<String> nok1 = new TestSlot<>("HAHA", 3000, 2);
-        TestSlot<String> nok2 = new TestSlot<>("", 3000, 2);
-        TestSlot<String> nok3 = new TestSlot<>("HAHA", 100, 3);
-        TestSlot<String> nok4 = new TestSlot<>("", 100, 3);
+        TestPooledRef<String> nok1 = new TestPooledRef<>("HAHA", 3000, 2);
+        TestPooledRef<String> nok2 = new TestPooledRef<>("", 3000, 2);
+        TestPooledRef<String> nok3 = new TestPooledRef<>("HAHA", 100, 3);
+        TestPooledRef<String> nok4 = new TestPooledRef<>("", 100, 3);
 
         assertThat(config.evictionPredicate()).as("evictionPredicate")
                 .accepts(ok1, ok2, ok3)

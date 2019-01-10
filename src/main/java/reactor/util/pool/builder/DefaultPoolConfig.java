@@ -21,7 +21,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.annotation.Nullable;
 import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolSlot;
+import reactor.util.pool.api.PooledRef;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -37,12 +37,12 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     private final int maxSize;
     private final Mono<POOLABLE> allocator;
     private final Function<POOLABLE, Mono<Void>> cleaner;
-    private final Predicate<PoolSlot<POOLABLE>> evictionPredicate;
+    private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
 
     DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
                       Function<POOLABLE, Mono<Void>> cleaner,
-                      @Nullable Predicate<PoolSlot<POOLABLE>> evictionPredicate,
+                      @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
                       @Nullable Scheduler deliveryScheduler) {
         this.minSize = minSize;
         this.maxSize = maxSize;
@@ -65,7 +65,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     }
 
     @Override
-    public Predicate<PoolSlot<POOLABLE>> evictionPredicate() {
+    public Predicate<PooledRef<POOLABLE>> evictionPredicate() {
         return this.evictionPredicate;
     }
 

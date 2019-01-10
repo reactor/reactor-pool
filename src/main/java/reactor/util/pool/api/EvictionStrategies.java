@@ -20,33 +20,33 @@ import java.time.Duration;
 import java.util.function.Predicate;
 
 /**
- * {@link EvictionStrategies} are {@link Predicate} on a {@link PoolSlot} that return {@literal true} if the object held
- * by the {@link PoolSlot} should be discarded instead of recycled when released back to the {@link Pool}.
+ * {@link EvictionStrategies} are {@link Predicate} on a {@link PooledRef} that return {@literal true} if the object held
+ * by the {@link PooledRef} should be discarded instead of recycled when released back to the {@link Pool}.
  *
  * @author Simon Baslé
  */
 public final class EvictionStrategies {
 
     /**
-     * Return a {@link Predicate} that matches pool slots which age is greater than the {@code ttl} {@link Duration}.
+     * Return a {@link Predicate} that matches {@link PooledRef} which age is greater than the {@code ttl} {@link Duration}.
      * Such objects are to be discarded instead of recycled when released back to the {@link Pool}.
      *
      * @param ttl the {@link Duration} after which an object should not be recycled (resolution: ms)
      * @return the ttl eviction strategy
      */
-    public static Predicate<PoolSlot<?>> agedMoreThan(Duration ttl) {
+    public static Predicate<PooledRef<?>> agedMoreThan(Duration ttl) {
         return slot -> slot.age() >= ttl.toMillis();
     }
 
     /**
-     * Return a {@link Predicate} that matches pool slots which borrow counter is greater than or equal to the
+     * Return a {@link Predicate} that matches {@link PooledRef} which borrow counter is greater than or equal to the
      * {@code borrowMaxInclusive} int. Such objects are to be discarded instead of recycled when released back to the
      * {@link Pool}.
      *
      * @param borrowMaxInclusive the number of borrows after which an object should not be recycled
      * @return the borrowMax eviction strategy
      */
-    public static Predicate<PoolSlot<?>> borrowed(int borrowMaxInclusive) {
+    public static Predicate<PooledRef<?>> borrowed(int borrowMaxInclusive) {
         return slot -> slot.borrowCount() >= borrowMaxInclusive;
     }
 }

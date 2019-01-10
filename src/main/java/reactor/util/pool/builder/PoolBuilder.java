@@ -21,7 +21,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolSlot;
+import reactor.util.pool.api.PooledRef;
 
 import java.util.concurrent.Callable;
 import java.util.function.Function;
@@ -96,10 +96,10 @@ public interface PoolBuilder<POOLABLE> {
          * The object is to be recycled and released back to the {@link Pool} <strong>unless</strong> it matches the
          * given {@link Predicate}.
          * <p>
-         * Use {@link OtherPredicateStep#orPoolableMatches(Predicate)} and {@link OtherPredicateStep#orSlotMatches(Predicate)}
+         * Use {@link OtherPredicateStep#orPoolableMatches(Predicate)} and {@link OtherPredicateStep#orRefMatches(Predicate)}
          * to combine multiple predicates (OR). Use {@link Predicate#and(Predicate)} if you need to group multiple conditions (AND).
          *
-         * @param poolablePredicate a {@link Predicate} on the {@link PoolSlot} holding the object, {@literal true}
+         * @param poolablePredicate a {@link Predicate} on the {@link PooledRef} holding the object, {@literal true}
          *                          meaning it should prevent recycling.
          * @return the next step in building a {@link Pool}
          */
@@ -107,17 +107,17 @@ public interface PoolBuilder<POOLABLE> {
 
         /**
          * The object is to be recycled and released back to the {@link Pool} <strong>unless</strong> it matches the
-         * given {@link Predicate}, as applied to the {@link PoolSlot} holding it.
-         * See {@link reactor.util.pool.api.EvictionStrategies} for pre-made {@link PoolSlot} predicates.
+         * given {@link Predicate}, as applied to the {@link PooledRef} holding it.
+         * See {@link reactor.util.pool.api.EvictionStrategies} for pre-made {@link PooledRef} predicates.
          * <p>
-         * Use {@link OtherPredicateStep#orPoolableMatches(Predicate)} and {@link OtherPredicateStep#orSlotMatches(Predicate)}
+         * Use {@link OtherPredicateStep#orPoolableMatches(Predicate)} and {@link OtherPredicateStep#orRefMatches(Predicate)}
          * to combine multiple predicates (OR). Use {@link Predicate#and(Predicate)} if you need to group multiple conditions (AND).
          *
-         * @param slotPredicate a {@link Predicate} on the {@link PoolSlot} holding the object, {@literal true}
+         * @param refPredicate a {@link Predicate} on the {@link PooledRef} holding the object, {@literal true}
          *                          meaning it should prevent recycling.
          * @return the next step in building a {@link Pool}
          */
-        OtherPredicateStep<T> unlessSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate);
+        OtherPredicateStep<T> unlessRefMatches(Predicate<? super PooledRef<? super T>> refPredicate);
     }
 
     /**
@@ -132,10 +132,10 @@ public interface PoolBuilder<POOLABLE> {
          * The object is to be recycled and released back to the {@link Pool} <strong>unless</strong> any of the
          * previously set predicate match OR it matches the given {@link Predicate}.
          * <p>
-         * Use {@link #orSlotMatches(Predicate)} to combine multiple predicates (OR). Use {@link Predicate#and(Predicate)}
+         * Use {@link #orRefMatches(Predicate)} to combine multiple predicates (OR). Use {@link Predicate#and(Predicate)}
          * if you need to group multiple conditions (AND).
          *
-         * @param poolablePredicate a {@link Predicate} on the {@link PoolSlot} holding the object, {@literal true}
+         * @param poolablePredicate a {@link Predicate} on the {@link PooledRef} holding the object, {@literal true}
          *                          meaning it should prevent recycling.
          * @return the next step in building a {@link Pool}
          */
@@ -143,16 +143,16 @@ public interface PoolBuilder<POOLABLE> {
 
         /**
          * The object is to be recycled and released back to the {@link Pool} <strong>unless</strong> any of the
-         * previously set predicates match OR the {@link PoolSlot} which holds it matches the given {@link Predicate}.
-         * See {@link reactor.util.pool.api.EvictionStrategies} for pre-made {@link PoolSlot} predicates.
+         * previously set predicates match OR the {@link PooledRef} which holds it matches the given {@link Predicate}.
+         * See {@link reactor.util.pool.api.EvictionStrategies} for pre-made {@link PooledRef} predicates.
          * <p>
          * Use {@link #orPoolableMatches(Predicate)} to combine multiple predicates (OR). Use {@link Predicate#and(Predicate)}
          * if you need to group multiple conditions (AND).
          *
-         * @param slotPredicate a {@link Predicate} on the pooled object, {@literal true} meaning it should prevent recycling.
+         * @param refPredicate a {@link Predicate} on the pooled object, {@literal true} meaning it should prevent recycling.
          * @return the next step in building a {@link Pool}
          */
-        OtherPredicateStep<T> orSlotMatches(Predicate<? super PoolSlot<? super T>> slotPredicate);
+        OtherPredicateStep<T> orRefMatches(Predicate<? super PooledRef<? super T>> refPredicate);
 
     }
 

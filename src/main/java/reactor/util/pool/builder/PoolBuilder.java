@@ -164,7 +164,7 @@ public interface PoolBuilder<POOLABLE> {
 
         /**
          * Define a {@link Scheduler} onto which the pooled elements will be published once they become available,
-         * when borrowing from the {@link Pool} (either via {@link Pool#acquire()} or {@link Pool#borrow(Function)}).
+         * when borrowing from the {@link Pool} (either via {@link Pool#borrow()} or {@link Pool#borrowInScope(Function)}).
          *
          * @param scheduler the {@link Scheduler} to use. Default is {@link Schedulers#immediate()}.
          * @return the last step in building a {@link Pool}

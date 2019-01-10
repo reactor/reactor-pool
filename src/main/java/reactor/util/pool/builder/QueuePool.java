@@ -16,13 +16,11 @@
 
 package reactor.util.pool.builder;
 
-import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
 import reactor.core.Scannable;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
@@ -41,7 +39,6 @@ import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.function.Function;
 
 /**
  * A {@link Queues MPSC Queue}-based implementation of {@link Pool}.
@@ -84,7 +81,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @Override
-    public Mono<PoolSlot<POOLABLE>> acquire() {
+    public Mono<PoolSlot<POOLABLE>> borrow() {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 

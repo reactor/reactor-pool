@@ -42,9 +42,9 @@ public interface Pool<POOLABLE> extends Disposable {
      *
      * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object and manually
      * managing its lifecycle from there
-     * @see #borrow(Function)
+     * @see #borrowInScope(Function)
      */
-    Mono<PoolSlot<POOLABLE>> acquire();
+    Mono<PoolSlot<POOLABLE>> borrow();
 
     /**
      * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
@@ -61,10 +61,10 @@ public interface Pool<POOLABLE> extends Disposable {
      *                           and trigger a processing pipeline around it.
      * @return a {@link Flux}, each subscription to which represents the act of borrowing a pooled object, processing it
      * as declared in {@code processingFunction} and automatically releasing it.
-     * @see #acquire()
+     * @see #borrow()
      */
-    default <V> Flux<V> borrow(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
-        return Flux.usingWhen(acquire(),
+    default <V> Flux<V> borrowInScope(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
+        return Flux.usingWhen(borrow(),
                 slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
                 PoolSlot::releaseMono,
                 PoolSlot::releaseMono);

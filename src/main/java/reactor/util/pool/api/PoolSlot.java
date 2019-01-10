@@ -25,7 +25,7 @@ import java.util.function.Function;
  * manually {@link #release()} it to the pool or {@link #invalidate()} it. Since the {@link PoolSlot} provides a few
  * additional information about its lifecyle, namely its {@link #age()} and the number of times it has been {@link #borrowCount() borrowed},
  * the {@link Pool} may optionally use that information to automatically invalidate the object, and provide a simplified
- * borrow mechanism where the {@link PoolSlot} is not directly exposed (see {@link Pool#borrow(Function)} vs {@link Pool#acquire()}).
+ * borrow mechanism where the {@link PoolSlot} is not directly exposed (see {@link Pool#borrowInScope(Function)} vs {@link Pool#borrow()}).
  *
  * @author Simon Baslé
  */
@@ -77,7 +77,7 @@ public interface PoolSlot<POOLABLE> {
 
     /**
      * Return the number of times the underlying pooled object has been used by consumers of the {@link Pool}, via
-     * either of {@link Pool#acquire()} or {@link Pool#borrow(Function)}. The first time an object is allocated, this
+     * either of {@link Pool#borrow()} or {@link Pool#borrowInScope(Function)}. The first time an object is allocated, this
      * method returns {@literal 1}, so the number of times it has been "recycled" can be deduced as {@code borrowCount() - 1}.
      *
      * @return the number of times this object has been used by consumers of the pool

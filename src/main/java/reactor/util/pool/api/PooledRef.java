@@ -72,6 +72,9 @@ public interface PooledRef<POOLABLE> {
     /**
      * Trigger the <strong>asynchronous</strong> invalidation of the {@code POOLABLE} and <strong>immediately return</strong>.
      * The object is always discarded by the pool and not further reused.
+     * <p>
+     * This is useful when the unhealthy state of the resource (or lack of re-usability) is detected through the usage of
+     * the resource, as opposed to its exposed state.
      */
     void invalidate();
 

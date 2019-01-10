@@ -30,42 +30,50 @@ import java.util.function.Function;
 public interface Pool<POOLABLE> extends Disposable {
 
     /**
-     * Acquire a {@code POOLABLE}: borrow it from the pool upon subscription and become responsible for its release.
+     * Manually borrow a {@code POOLABLE} from the pool upon subscription and become responsible for its release.
      * The object is wrapped in a {@link PooledRef} which can be used for manually releasing the object back to the pool
-     * or invalidating it.
+     * or invalidating it. As a result, you MUST maintain a reference to it throughout the code that makes use of the
+     * underlying resource.
+     * <p>
+     * This is typically the case when one needs to wrap the actual resource into a decorator version, where the reference
+     * to the {@link PooledRef} can be stored. On the other hand, if the resource and its usage directly expose reactive
+     * APIs, you might want to prefer to use {@link #borrowInScope(Function)}.
      * <p>
      * The resulting {@link Mono} emits the {@link PooledRef} as the {@code POOLABLE} becomes available. Cancelling the
      * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
-     * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
-     * It is the responsibility of the caller to release the poolable object via the {@link PooledRef} when the object
-     * is not used anymore.
+     * borrowing entirely or will translate to a {@link PooledRef#releaseMono() release} of the {@code POOLABLE}.
+     * Once the resource is emitted though, it is the responsibility of the caller to release the poolable object via
+     * the {@link PooledRef} {@link PooledRef#release() release methods} when the resource is not used anymore
+     * (directly OR indirectly, eg. the results from multiple statements derived from a DB connection type of resource
+     * have all been processed).
      *
-     * @return a {@link Mono}, each subscription to which represents the act of borrowing a pooled object and manually
-     * managing its lifecycle from there
+     * @return a {@link Mono}, each subscription to which represents an individual act of borrowing a pooled object and
+     * manually managing its lifecycle from there on
      * @see #borrowInScope(Function)
      */
     Mono<PooledRef<POOLABLE>> borrow();
 
     /**
      * Borrow a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
-     * the object back to the pool once the derived usage pipeline terminates or is cancelled.
+     * the object back to the pool once the derived usage pipeline terminates or is cancelled. This borrow-use-and-release
+     * scope is represented by a user provided {@link Function}.
+     <p>
+     * This is typically useful when the resource (and its usage patterns) directly involve reactive APIs that can be
+     * composed within the {@link Function} scope.
      * <p>
      * The {@link Mono} provided to the {@link Function} emits the {@code POOLABLE} as it becomes available. Cancelling
      * the {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
-     * borrowing entirely or will result in immediate {@link PoolConfig#cleaner() cleanup} of the {@code POOLABLE}.
-     * <p>
-     * The {@link Function} is a declarative way of implementing a processing pipeline on top of the poolable object,
-     * at the end of which the object is automatically released.
+     * borrowing entirely or will translate to a {@link PooledRef#releaseMono() release} of the {@code POOLABLE}.
      *
-     * @param processingFunction the {@link Function} to apply to the {@link Mono} delivering the POOLABLE to instantiate
-     *                           and trigger a processing pipeline around it.
-     * @return a {@link Flux}, each subscription to which represents the act of borrowing a pooled object, processing it
-     * as declared in {@code processingFunction} and automatically releasing it.
+     * @param scopeFunction the {@link Function} to apply to the {@link Mono} delivering the POOLABLE to instantiate and
+     *                      trigger a processing pipeline around it.
+     * @return a {@link Flux}, each subscription to which represents an individual act of borrowing a pooled object,
+     * processing it as declared in {@code scopeFunction} and automatically releasing it.
      * @see #borrow()
      */
-    default <V> Flux<V> borrowInScope(Function<Mono<POOLABLE>, Publisher<V>> processingFunction) {
+    default <V> Flux<V> borrowInScope(Function<Mono<POOLABLE>, Publisher<V>> scopeFunction) {
         return Flux.usingWhen(borrow(),
-                slot -> processingFunction.apply(Mono.justOrEmpty(slot.poolable())),
+                slot -> scopeFunction.apply(Mono.justOrEmpty(slot.poolable())),
                 PooledRef::releaseMono,
                 PooledRef::releaseMono);
     }

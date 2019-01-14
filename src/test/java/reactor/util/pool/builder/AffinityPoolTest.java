@@ -23,11 +23,12 @@ import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.PublisherProbe;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
 import reactor.util.pool.api.PooledRef;
@@ -36,14 +37,11 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.logging.Level;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
@@ -51,7 +49,7 @@ import static org.awaitility.Awaitility.await;
 /**
  * @author Simon Baslé
  */
-class ThreadAffinityPoolTest {
+class AffinityPoolTest {
 
     public static final class PoolableTest implements Disposable {
 
@@ -126,35 +124,136 @@ class ThreadAffinityPoolTest {
     }
 
     @Test
-    void demonstrateBorrowInScopePipeline() throws InterruptedException {
-        AtomicInteger counter = new AtomicInteger();
-        AtomicReference<String> releaseRef = new AtomicReference<>();
+    void threadAffinityCanStarve() throws InterruptedException {
+        AtomicInteger source = new AtomicInteger();
+        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3,
+                Mono.fromCallable(source::incrementAndGet).map(v -> "value" + v),
+                s -> Mono.empty(), null, null));
 
-        ThreadAffinityPool<String> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(0, 1, Mono.just("Hello Reactive World"),
-                s -> Mono.fromRunnable(()-> releaseRef.set(s)), null, null));
+        AtomicInteger borrowOrder = new AtomicInteger();
+        final CountDownLatch firstBorrowsAll = new CountDownLatch(1);
+        final CountDownLatch latch = new CountDownLatch(2);
 
-        Flux<String> words = pool.borrowInScope(m -> m
-                //simulate deriving a value from the resource (ie. query from DB connection)
-                .map(resource -> resource.split(" "))
-                //then further process the derived value to produce multiple values (ie. rows from a query)
-                .flatMapIterable(Arrays::asList)
-                //and all that with latency
-                .delayElements(Duration.ofMillis(500)));
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executorService.submit(() -> {
+            final PooledRef<String> slot1 = pool.borrow().block();
+            final PooledRef<String> slot2 = pool.borrow().block();
+            final PooledRef<String> slot3 = pool.borrow().block();
 
-        words.subscribe(v -> counter.incrementAndGet());
-        assertThat(counter).hasValue(0);
+            firstBorrowsAll.countDown();
 
-        Thread.sleep(1000);
-        //we're in the middle of processing the "rows"
-        assertThat(counter).as("before all emitted").hasValue(2);
-        assertThat(releaseRef).as("still borrowing").hasValue(null);
+            for (int i = 0; i < 500; i++) {
+                Mono<PooledRef<String>> mono;
+                if (i == 0) {
+                    mono = Mono.just(slot1);
+                }
+                else {
+                    mono = pool.borrow();
+                }
+                mono.doOnSuccess(v -> borrowOrder.incrementAndGet())
+                        .log("foo", Level.INFO, SignalType.ON_NEXT)
+                        .flatMap(PooledRef::releaseMono)
+                        .subscribe();
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            latch.countDown();
+        });
+        executorService.submit(() -> {
+            try {
+                firstBorrowsAll.await(1, TimeUnit.MINUTES);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
 
-        Thread.sleep(500);
-        //we've finished processing, let's check resource has been automatically released
-        assertThat(counter).as("after all emitted").hasValue(3);
-        assertThat(pool.live).as("live").isOne();
-        assertThat(pool.available_mpmc).as("available").hasSize(1);
-        assertThat(releaseRef).as("released").hasValue("Hello Reactive World");
+            pool.borrow()
+                    .doOnSuccess(v -> borrowOrder.compareAndSet(500, -1000))
+                    .block();
+            latch.countDown();
+        });
+
+        boolean latchIsDone = latch.await(30, TimeUnit.SECONDS);
+        System.out.println(borrowOrder);
+        assertThat(latchIsDone).as("latch done").isTrue();
+        assertThat(borrowOrder).hasValue(-1000);
+    }
+
+    @Test
+    void threadAffinity() throws InterruptedException {
+        final CountDownLatch finalLatch = new CountDownLatch(3);
+
+        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
+                Mono.fromCallable(() -> Thread.currentThread().getName()),
+                s -> Mono.empty(), null, null));
+
+        Thread t1 = new Thread(() -> {
+            Map<String, Integer> borrowed = new HashMap<>(3);
+            try {
+                for (int i = 0; i < 10; i++) {
+                    PooledRef<String> slot = pool.borrow().block();
+                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                    if (!slot.poolable().equals("thread1")) {
+                        System.out.println("unexpected in t1: " + slot);
+                    }
+
+                    Thread.sleep(100);
+                    slot.release();
+                }
+            } catch (InterruptedException e) { }
+            finally {
+                finalLatch.countDown();
+                System.out.println("thread1 borrowed: " + borrowed);
+            }
+        }, "thread1");
+
+        Thread t2 = new Thread(() -> {
+            Map<String, Integer> borrowed = new HashMap<>(3);
+            try {
+                for (int i = 0; i < 10; i++) {
+                    PooledRef<String> slot = pool.borrow().block();
+                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                    if (!slot.poolable().equals("thread2")) {
+                        System.out.println("unexpected in t2: " + slot);
+                    }
+
+                    Thread.sleep(100);
+                    slot.release();
+                }
+            } catch (InterruptedException e) { }
+            finally {
+                finalLatch.countDown();
+                System.out.println("thread2 borrowed: " + borrowed);
+            }
+        }, "thread2");
+
+        Thread t3 = new Thread(() -> {
+            Map<String, Integer> borrowed = new HashMap<>(3);
+            try {
+                for (int i = 0; i < 10; i++) {
+                    PooledRef<String> slot = pool.borrow().block();
+                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                    if (!slot.poolable().equals("thread3")) {
+                        System.out.println("unexpected in t3: " + slot);
+                    }
+
+                    Thread.sleep(100);
+                    slot.release();
+                }
+            } catch (InterruptedException e) { }
+            finally {
+                finalLatch.countDown();
+                System.out.println("thread3 borrowed: " + borrowed);
+            }
+        }, "thread3");
+
+        t1.start();
+        t2.start();
+        t3.start();
+
+        finalLatch.await();
     }
 
     @Nested
@@ -164,7 +263,7 @@ class ThreadAffinityPoolTest {
         @Test
         void smokeTest() throws InterruptedException {
             AtomicInteger newCount = new AtomicInteger();
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new PoolableTestConfig(2, 3,
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(new PoolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
 
             List<PooledRef<PoolableTest>> borrowed1 = new ArrayList<>();
@@ -210,7 +309,7 @@ class ThreadAffinityPoolTest {
         @Test
         void smokeTestAsync() throws InterruptedException {
             AtomicInteger newCount = new AtomicInteger();
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new PoolableTestConfig(2, 3,
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(new PoolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator"))));
 
@@ -275,7 +374,7 @@ class ThreadAffinityPoolTest {
             PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new),
                     pt -> releasedCount.incrementAndGet());
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //borrow the only element
             PooledRef<PoolableTest> slot = pool.borrow().block();
@@ -301,7 +400,7 @@ class ThreadAffinityPoolTest {
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //borrow the only element and immediately dispose
             pool.borrow().subscribe().dispose();
@@ -341,7 +440,7 @@ class ThreadAffinityPoolTest {
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //borrow the only element and capture the subscription, don't request just yet
             CountDownLatch latch = new CountDownLatch(1);
@@ -376,7 +475,7 @@ class ThreadAffinityPoolTest {
         void cleanerFunctionError() {
             PoolableTestConfig testConfig = new PoolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             PooledRef<PoolableTest> slot = pool.borrow().block();
 
@@ -390,7 +489,7 @@ class ThreadAffinityPoolTest {
         void cleanerFunctionErrorDiscards() {
             PoolableTestConfig testConfig = new PoolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             PooledRef<PoolableTest> slot = pool.borrow().block();
 
@@ -409,7 +508,7 @@ class ThreadAffinityPoolTest {
             PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //the pool is started with one available element
             //we prepare to borrow it
@@ -431,7 +530,7 @@ class ThreadAffinityPoolTest {
             PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to borrow, which would allocate the element
@@ -456,7 +555,7 @@ class ThreadAffinityPoolTest {
             PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first borrow that element so that next borrow will wait for a release
@@ -517,7 +616,7 @@ class ThreadAffinityPoolTest {
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first borrow that element so that next borrow will wait for a release
@@ -545,149 +644,12 @@ class ThreadAffinityPoolTest {
             else if (threadName.get().startsWith("racerBorrow")) borrowerWins.incrementAndGet();
             else System.out.println(threadName.get());
         }
-
-        @Test
-        void consistentThreadDeliveringWhenHasElements() throws InterruptedException {
-            Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
-            AtomicReference<String> threadName = new AtomicReference<>();
-            Scheduler borrowScheduler = Schedulers.newSingle("borrow");
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                            .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
-
-            //the pool is started with one available element
-            //we prepare to borrow it
-            Mono<PooledRef<PoolableTest>> borrower = pool.borrow();
-            CountDownLatch latch = new CountDownLatch(1);
-
-            //we actually request the borrow from a separate thread and see from which thread the element was delivered
-            borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()), e -> latch.countDown(), latch::countDown));
-            latch.await(1, TimeUnit.SECONDS);
-
-            assertThat(threadName.get())
-                    .startsWith("delivery-");
-        }
-
-        @Test
-        void consistentThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
-            Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
-            AtomicReference<String> threadName = new AtomicReference<>();
-            Scheduler borrowScheduler = Schedulers.newSingle("borrow");
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                            .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
-
-            //the pool is started with no elements, and has capacity for 1
-            //we prepare to borrow, which would allocate the element
-            Mono<PooledRef<PoolableTest>> borrower = pool.borrow();
-            CountDownLatch latch = new CountDownLatch(1);
-
-            //we actually request the borrow from a separate thread, but the allocation also happens in a dedicated thread
-            //we look at which thread the element was delivered from
-            borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()), e -> latch.countDown(), latch::countDown));
-            latch.await(1, TimeUnit.SECONDS);
-
-            assertThat(threadName.get())
-                    .startsWith("delivery-");
-        }
-
-        @Test
-        void consistentThreadDeliveringWhenNoElementsAndFull() throws InterruptedException {
-            Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
-            AtomicReference<String> threadName = new AtomicReference<>();
-            Scheduler borrowScheduler = Schedulers.newSingle("borrow");
-            Scheduler releaseScheduler = Schedulers.fromExecutorService(
-                    Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                            .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
-
-            //the pool is started with one elements, and has capacity for 1.
-            //we actually first borrow that element so that next borrow will wait for a release
-            PooledRef<PoolableTest> uniqueSlot = pool.borrow().block();
-            assertThat(uniqueSlot).isNotNull();
-
-            //we prepare next borrow
-            Mono<PooledRef<PoolableTest>> borrower = pool.borrow();
-            CountDownLatch latch = new CountDownLatch(1);
-
-            //we actually perform the borrow from its dedicated thread, capturing the thread on which the element will actually get delivered
-            borrowScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()),
-                    e -> latch.countDown(), latch::countDown));
-            //after a short while, we release the borrowed unique element from a third thread
-            releaseScheduler.schedule(uniqueSlot.releaseMono()::block, 500, TimeUnit.MILLISECONDS);
-            latch.await(1, TimeUnit.SECONDS);
-
-            assertThat(threadName.get())
-                    .startsWith("delivery-");
-        }
-
-        @Test
-        @Tag("loops")
-        void consistentThreadDeliveringWhenNoElementsAndFullAndRaceDrain_loop() throws InterruptedException {
-            for (int i = 0; i < 100; i++) {
-                consistentThreadDeliveringWhenNoElementsAndFullAndRaceDrain(i);
-            }
-        }
-
-        @Test
-        void consistentThreadDeliveringWhenNoElementsAndFullAndRaceDrain() throws InterruptedException {
-            consistentThreadDeliveringWhenNoElementsAndFullAndRaceDrain(0);
-        }
-
-        void consistentThreadDeliveringWhenNoElementsAndFullAndRaceDrain(int i) throws InterruptedException {
-            Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
-            AtomicReference<String> threadName = new AtomicReference<>();
-            AtomicInteger newCount = new AtomicInteger();
-
-            Scheduler borrow1Scheduler = Schedulers.newSingle("borrow1");
-            Scheduler racerReleaseScheduler = Schedulers.fromExecutorService(
-                    Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
-            Scheduler racerBorrowScheduler = Schedulers.newSingle("racerBorrow");
-
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
-                    Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
-                            .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(testConfig);
-
-            //the pool is started with one elements, and has capacity for 1.
-            //we actually first borrow that element so that next borrow will wait for a release
-            PooledRef<PoolableTest> uniqueSlot = pool.borrow().block();
-            assertThat(uniqueSlot).isNotNull();
-
-            //we prepare next borrow
-            Mono<PooledRef<PoolableTest>> borrower = pool.borrow();
-            CountDownLatch latch = new CountDownLatch(1);
-
-            //we actually perform the borrow from its dedicated thread, capturing the thread on which the element will actually get delivered
-            borrow1Scheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
-                    , e -> latch.countDown(), latch::countDown));
-
-            //in parallel, we'll both attempt a second borrow AND release the unique element (each on their dedicated threads
-            Mono<PooledRef<PoolableTest>> otherBorrower = pool.borrow();
-            racerBorrowScheduler.schedule(() -> otherBorrower.subscribe().dispose(), 100, TimeUnit.MILLISECONDS);
-            racerReleaseScheduler.schedule(uniqueSlot.releaseMono()::block, 100, TimeUnit.MILLISECONDS);
-            latch.await(1, TimeUnit.SECONDS);
-
-            //we expect that, consistently, the poolable is delivered on a `delivery` thread
-            assertThat(threadName.get()).as("round #" + i).startsWith("delivery-");
-
-            //we expect that only 1 element was created
-            assertThat(newCount).as("elements created in round " + i).hasValue(1);
-        }
     }
 
     @Test
     void disposingPoolDisposesElements() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
                 slot -> !slot.poolable().isHealthy(), null));
 
@@ -695,9 +657,9 @@ class ThreadAffinityPoolTest {
         PoolableTest pt2 = new PoolableTest(2);
         PoolableTest pt3 = new PoolableTest(3);
 
-        pool.available_mpmc.offer(new ThreadAffinityPool.TAPooledRef<>(pool, pt1));
-        pool.available_mpmc.offer(new ThreadAffinityPool.TAPooledRef<>(pool, pt2));
-        pool.available_mpmc.offer(new ThreadAffinityPool.TAPooledRef<>(pool, pt3));
+        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt1));
+        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt2));
+        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt3));
 
         pool.dispose();
 
@@ -711,7 +673,7 @@ class ThreadAffinityPoolTest {
     @Test
     void disposingPoolFailsPendingBorrowers() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
                 slot -> !slot.poolable().isHealthy(), null));
 
@@ -745,7 +707,7 @@ class ThreadAffinityPoolTest {
     @Test
     void releasingToDisposedPoolDisposesElement() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
                 slot -> !slot.poolable().isHealthy(), null));
 
@@ -774,7 +736,7 @@ class ThreadAffinityPoolTest {
     @Test
     void borrowingFromDisposedPoolFailsBorrower() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
                 slot -> !slot.poolable().isHealthy(), null));
 
@@ -790,7 +752,7 @@ class ThreadAffinityPoolTest {
 
     @Test
     void poolIsDisposed() {
-        ThreadAffinityPool<PoolableTest> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(0, 3,
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
                 Mono.fromCallable(PoolableTest::new), p -> Mono.empty(),
                 slot -> !slot.poolable().isHealthy(), null));
 
@@ -805,7 +767,7 @@ class ThreadAffinityPoolTest {
     void disposingPoolClosesCloseable() {
         Formatter uniqueElement = new Formatter();
 
-        ThreadAffinityPool<Formatter> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(1, 1,
+        AffinityPool<Formatter> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
                 Mono.just(uniqueElement),
                 f -> Mono.empty(),
                 f -> true, null));
@@ -818,7 +780,7 @@ class ThreadAffinityPoolTest {
 
     @Test
     void allocatorErrorOutsideConstructorIsPropagated() {
-        ThreadAffinityPool<String> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(0, 1,
+        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 1,
                 Mono.error(new IllegalStateException("boom")),
                 f -> Mono.empty(),
                 f -> true, null));
@@ -836,7 +798,7 @@ class ThreadAffinityPoolTest {
                 f -> true, null);
 
         assertThatExceptionOfType(IllegalStateException.class)
-                .isThrownBy(() -> new ThreadAffinityPool<>(config))
+                .isThrownBy(() -> new AffinityPool<>(config))
                 .withMessage("boom");
     }
 
@@ -849,7 +811,7 @@ class ThreadAffinityPoolTest {
                 throw new IOException("boom");
             };
 
-            ThreadAffinityPool<Closeable> pool = new ThreadAffinityPool<>(new DefaultPoolConfig<>(1, 1,
+            AffinityPool<Closeable> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
                     Mono.just(closeable),
                     f -> Mono.empty(),
                     f -> true, null));

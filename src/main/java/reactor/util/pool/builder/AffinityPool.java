@@ -24,7 +24,6 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
@@ -35,45 +34,59 @@ import reactor.util.pool.api.PooledRef;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.LinkedList;
-import java.util.Objects;
-import java.util.Queue;
-import java.util.WeakHashMap;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.Consumer;
 
 /**
- * A implementation of {@link Pool} that tries to avoid crossing thread boundaries by favoring serving available
- * elements from a {@link ThreadLocal} queue.
+ * A implementation of {@link Pool} that tries to avoid crossing thread boundaries by favoring recycling elements
+ * to pending borrowers associated to the same {@link Thread}.
+ * <p>
+ * Note that the {@link Thread} in question defaults to being the one on which the borrower subscribed,
+ * but could optionally be another one (eg. one of the event loop threads in a netty EventLoop group).
  *
  * @author Simon Baslé
  */
-final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
+final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
+    Map<Thread, Queue<AtomicReference<AffinityPoolInner<POOLABLE>>>> pendingLocal =
+            new ConcurrentHashMap<>();
 
-    WeakHashMap<Thread, Queue<AtomicReference<TAPoolInner<POOLABLE>>>> pendingLocal = new WeakHashMap<>();
-
-    final Queue<TAPooledRef<POOLABLE>> available_mpmc;
+    final Queue<AffinityPooledRef<POOLABLE>> available_mpmc;
 
     private static final Queue TERMINATED = Queues.empty().get();
 
-    volatile Queue<AtomicReference<TAPoolInner<POOLABLE>>> allPendings_mpmc;
-    private static final AtomicReferenceFieldUpdater<ThreadAffinityPool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(ThreadAffinityPool.class, Queue.class, "allPendings_mpmc");
+    volatile Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> allPendings_mpmc;
+    private static final AtomicReferenceFieldUpdater<AffinityPool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(AffinityPool.class, Queue.class, "allPendings_mpmc");
 
 
     //A pool should be rare enough that having instance loggers should be ok
     //This helps with testability of some methods that for now mainly log
-    private final Logger logger = Loggers.getLogger(ThreadAffinityPool.class);
+    private final Logger logger = Loggers.getLogger(AffinityPool.class);
 
     private final PoolConfig<POOLABLE> poolConfig;
 
+    /**
+     * For threads that don't have a registered Queue, should we create one in an adhoc fashion
+     */
+    private final boolean adHocAffinity;
+    
     volatile int live;
-    private static final AtomicIntegerFieldUpdater<ThreadAffinityPool> LIVE = AtomicIntegerFieldUpdater.newUpdater(ThreadAffinityPool.class, "live");
+    private static final AtomicIntegerFieldUpdater<AffinityPool> LIVE = AtomicIntegerFieldUpdater.newUpdater(AffinityPool.class, "live");
 
+    AffinityPool(PoolConfig<POOLABLE> poolConfig) {
+        this(poolConfig, true, null);
+    }
 
-    ThreadAffinityPool(PoolConfig<POOLABLE> poolConfig) {
+    //FIXME integrate options to config
+    AffinityPool(PoolConfig<POOLABLE> poolConfig,
+                 boolean adHocAffinity,
+                 @Nullable
+                 Consumer<Consumer<Thread>> localBuilder) {
         this.poolConfig = poolConfig;
 
         //TODO replace with JCTools bounded MPMC queue MpmcArrayQueue?
@@ -82,9 +95,18 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         for (int i = 0; i < poolConfig.minSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-            available_mpmc.offer(new TAPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            available_mpmc.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
         this.live = available_mpmc.size();
+
+        if (localBuilder != null) {
+            localBuilder.accept(this::createLocalFor);
+        }
+        this.adHocAffinity = adHocAffinity;
+    }
+
+    private void createLocalFor(Thread thread) {
+        pendingLocal.putIfAbsent(thread, new LinkedList<>());
     }
 
     @Override
@@ -93,10 +115,10 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @SuppressWarnings("WeakerAccess")
-    final void registerPendingBorrower(TAPoolInner<POOLABLE> s) {
+    final void registerPendingBorrower(AffinityPoolInner<POOLABLE> s) {
         if (allPendings_mpmc != TERMINATED) {
             //first check if available
-            TAPooledRef<POOLABLE> item = available_mpmc.poll();
+            AffinityPooledRef<POOLABLE> item = available_mpmc.poll();
             if (item != null) {
                 s.deliver(item);
                 return;
@@ -108,7 +130,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                         // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
                         // but we'll still accommodate for the deliveryScheduler
                         .publishOn(poolConfig.deliveryScheduler())
-                        .subscribe(newInstance -> s.deliver(new TAPooledRef<>(this, newInstance)),
+                        .subscribe(newInstance -> s.deliver(new AffinityPooledRef<>(this, newInstance)),
                                 e -> {
                                     LIVE.decrementAndGet(this);
                                     s.fail(e);
@@ -120,22 +142,30 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             //first compensate the increment
             LIVE.decrementAndGet(this);
             //then update the local/global pending queues
-            AtomicReference<TAPoolInner<POOLABLE>> aRef = new AtomicReference<>(s);
+            AtomicReference<AffinityPoolInner<POOLABLE>> aRef = new AtomicReference<>(s);
             allPendings_mpmc.offer(aRef);
 
-            Queue<AtomicReference<TAPoolInner<POOLABLE>>> localQueue = pendingLocal.computeIfAbsent(Thread.currentThread(), it -> new LinkedList<>());
-            localQueue.offer(aRef);
+            if (this.adHocAffinity) {
+                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue =
+                        pendingLocal.computeIfAbsent(Thread.currentThread(), it -> new LinkedList<>());
+                localQueue.offer(aRef);
+            } else {
+                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+                if (localQueue != null) {
+                    localQueue.offer(aRef);
+                }
+            }
         }
         else {
             s.fail(new RuntimeException("Pool has been shut down"));
         }
     }
 
-    void slowPathRecycle(TAPooledRef<POOLABLE> pooledRef) {
-        TAPoolInner<POOLABLE> candidate = null;
+    void slowPathRecycle(AffinityPooledRef<POOLABLE> pooledRef) {
+        AffinityPoolInner<POOLABLE> candidate = null;
         //iterate over allPendings_mpmc, removing nulled out pendings
-        for (AtomicReference<TAPoolInner<POOLABLE>> pendingRef : allPendings_mpmc) {
-            TAPoolInner inner = pendingRef.get();
+        for (AtomicReference<AffinityPoolInner<POOLABLE>> pendingRef : allPendings_mpmc) {
+            AffinityPoolInner inner = pendingRef.get();
             if (inner != null && candidate == null) {
                 candidate = inner;
                 pendingRef.set(null);
@@ -158,13 +188,13 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     void tryRecreate() {
         if (allPendings_mpmc == TERMINATED) return;
 
-        Queue<AtomicReference<TAPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+        Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
         if (localQueue == null) return;
 
         if (LIVE.getAndIncrement(this) < poolConfig.maxSize()) {
 
-            TAPoolInner<POOLABLE> candidate = null;
-            AtomicReference<TAPoolInner<POOLABLE>> innerRef;
+            AffinityPoolInner<POOLABLE> candidate = null;
+            AtomicReference<AffinityPoolInner<POOLABLE>> innerRef;
             while((innerRef = localQueue.poll()) != null) {
                 candidate = innerRef.getAndSet(null);
                 if (candidate != null) {
@@ -178,18 +208,18 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
 
             //is there an available?
-            TAPooledRef<POOLABLE> item = available_mpmc.poll();
+            AffinityPooledRef<POOLABLE> item = available_mpmc.poll();
             if (item != null) {
                 candidate.deliver(item);
             }
             else {
-                TAPoolInner<POOLABLE> s = candidate;
+                AffinityPoolInner<POOLABLE> s = candidate;
                 poolConfig.allocator()
                         //we expect the allocator will publish in the same thread or a "compatible" one
                         // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
                         // but we'll still accommodate for the deliveryScheduler
                         .publishOn(poolConfig.deliveryScheduler())
-                        .subscribe(newInstance -> s.deliver(new TAPooledRef<>(this, newInstance)),
+                        .subscribe(newInstance -> s.deliver(new AffinityPooledRef<>(this, newInstance)),
                                 e -> {
                                     LIVE.decrementAndGet(this);
                                     s.fail(e);
@@ -199,19 +229,19 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     @SuppressWarnings("WeakerAccess")
-    final void maybeRecycleAndDrain(TAPooledRef<POOLABLE> pooledRef) {
+    final void maybeRecycleAndDrain(AffinityPooledRef<POOLABLE> pooledRef) {
         if (allPendings_mpmc != TERMINATED) {
             if (!poolConfig.evictionPredicate().test(pooledRef)) {
 
 
-                Queue<AtomicReference<TAPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
                 if (localQueue == null) {
                     slowPathRecycle(pooledRef);
                     return;
                 }
 
-                TAPoolInner<POOLABLE> candidate;
-                AtomicReference<TAPoolInner<POOLABLE>> innerRef;
+                AffinityPoolInner<POOLABLE> candidate;
+                AtomicReference<AffinityPoolInner<POOLABLE>> innerRef;
                 while ((innerRef = localQueue.poll()) != null) {
                     candidate = innerRef.getAndSet(null);
                     if (candidate != null) {
@@ -252,9 +282,9 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     @Override
     public void dispose() {
         @SuppressWarnings("unchecked")
-        Queue<AtomicReference<TAPoolInner<POOLABLE>>> q = PENDING.getAndSet(this, TERMINATED);
+        Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> q = PENDING.getAndSet(this, TERMINATED);
         if (q != TERMINATED) {
-            AtomicReference<TAPoolInner<POOLABLE>> ref;
+            AtomicReference<AffinityPoolInner<POOLABLE>> ref;
             while ((ref = q.poll()) != null) {
                 if (ref.get() != null) {
                     ref.get().fail(new RuntimeException("Pool has been shut down"));
@@ -263,7 +293,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
             pendingLocal.clear();
 
-            TAPooledRef<POOLABLE> element;
+            AffinityPooledRef<POOLABLE> element;
             while ((element = available_mpmc.poll()) != null) {
                 dispose(element.poolable());
             }
@@ -276,18 +306,18 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
 
-    static final class TAPooledRef<T> implements PooledRef<T> {
+    static final class AffinityPooledRef<T> implements PooledRef<T> {
 
-        final ThreadAffinityPool<T> pool;
+        final AffinityPool<T> pool;
         final long creationTimestamp;
 
         volatile T poolable;
 
         volatile int borrowCount;
 
-        static final AtomicIntegerFieldUpdater<TAPooledRef> BORROW = AtomicIntegerFieldUpdater.newUpdater(TAPooledRef.class, "borrowCount");
+        static final AtomicIntegerFieldUpdater<AffinityPooledRef> BORROW = AtomicIntegerFieldUpdater.newUpdater(AffinityPooledRef.class, "borrowCount");
 
-        TAPooledRef(ThreadAffinityPool<T> pool, T poolable) {
+        AffinityPooledRef(AffinityPool<T> pool, T poolable) {
             this.pool = pool;
             this.poolable = poolable;
             this.creationTimestamp = System.currentTimeMillis();
@@ -332,7 +362,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
             }
             //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
-            return new TAPoolRecyclerMono<>(cleaner, this);
+            return new AffinityPoolRecyclerMono<>(cleaner, this);
         }
 
         @Override
@@ -355,21 +385,21 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
     }
 
-    private static final class TAPoolInner<T> implements Scannable, Subscription {
+    private static final class AffinityPoolInner<T> implements Scannable, Subscription {
 
-        final CoreSubscriber<? super TAPooledRef<T>> actual;
+        final CoreSubscriber<? super AffinityPooledRef<T>> actual;
 
-        final ThreadAffinityPool<T> parent;
+        final AffinityPool<T> parent;
 
         private static final int STATE_INIT = 0;
         private static final int STATE_REQUESTED = 1;
         private static final int STATE_CANCELLED = 2;
 
         volatile int state;
-        static final AtomicIntegerFieldUpdater<TAPoolInner> STATE = AtomicIntegerFieldUpdater.newUpdater(TAPoolInner.class, "state");
+        static final AtomicIntegerFieldUpdater<AffinityPoolInner> STATE = AtomicIntegerFieldUpdater.newUpdater(AffinityPoolInner.class, "state");
 
 
-        TAPoolInner(CoreSubscriber<? super TAPooledRef<T>> actual, ThreadAffinityPool<T> parent) {
+        AffinityPoolInner(CoreSubscriber<? super AffinityPooledRef<T>> actual, AffinityPool<T> parent) {
             this.actual = actual;
             this.parent = parent;
         }
@@ -397,7 +427,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             return null;
         }
 
-        private void deliver(TAPooledRef<T> poolSlot) {
+        private void deliver(AffinityPooledRef<T> poolSlot) {
             switch (state) {
                 case STATE_REQUESTED:
                     poolSlot.borrowIncrement();
@@ -422,9 +452,9 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
     private static final class TAQueuePoolMono<T> extends Mono<PooledRef<T>> {
 
-        final ThreadAffinityPool<T> parent;
+        final AffinityPool<T> parent;
 
-        TAQueuePoolMono(ThreadAffinityPool<T> pool) {
+        TAQueuePoolMono(AffinityPool<T> pool) {
             this.parent = pool;
         }
 
@@ -432,7 +462,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
 
-            TAPoolInner<T> p = new TAPoolInner<>(actual, parent);
+            AffinityPoolInner<T> p = new AffinityPoolInner<>(actual, parent);
             actual.onSubscribe(p);
         }
     }
@@ -440,17 +470,17 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     private static final class TAQueuePoolRecyclerInner<T> implements CoreSubscriber<Void>, Scannable, Subscription {
 
         final CoreSubscriber<? super Void> actual;
-        final ThreadAffinityPool<T> pool;
+        final AffinityPool<T> pool;
 
         //poolable can be checked for null to protect against protocol errors
-        TAPooledRef<T> pooledRef;
+        AffinityPooledRef<T> pooledRef;
         Subscription upstream;
 
         //once protects against multiple requests
         volatile int once;
         static final AtomicIntegerFieldUpdater<TAQueuePoolRecyclerInner> ONCE = AtomicIntegerFieldUpdater.newUpdater(TAQueuePoolRecyclerInner.class, "once");
 
-        TAQueuePoolRecyclerInner(CoreSubscriber<? super Void> actual, TAPooledRef<T> pooledRef) {
+        TAQueuePoolRecyclerInner(CoreSubscriber<? super Void> actual, AffinityPooledRef<T> pooledRef) {
             this.actual = actual;
             this.pooledRef = Objects.requireNonNull(pooledRef, "pooledRef");
             this.pool = pooledRef.pool;
@@ -471,7 +501,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         @Override
         public void onError(Throwable throwable) {
-            TAPooledRef<T> slot = pooledRef;
+            AffinityPooledRef<T> slot = pooledRef;
             pooledRef = null;
             if (slot == null) {
                 Operators.onErrorDropped(throwable, actual.currentContext());
@@ -486,7 +516,7 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
         @Override
         public void onComplete() {
-            TAPooledRef<T> slot = pooledRef;
+            AffinityPooledRef<T> slot = pooledRef;
             pooledRef = null;
             if (slot == null) {
                 return;
@@ -520,18 +550,18 @@ final class ThreadAffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         }
     }
 
-    private static final class TAPoolRecyclerMono<T> extends MonoOperator<Void, Void> {
+    private static final class AffinityPoolRecyclerMono<T> extends MonoOperator<Void, Void> {
 
-        final AtomicReference<TAPooledRef<T>> slotRef;
+        final AtomicReference<AffinityPooledRef<T>> slotRef;
 
-        TAPoolRecyclerMono(Mono<? extends Void> source, TAPooledRef<T> poolSlot) {
+        AffinityPoolRecyclerMono(Mono<? extends Void> source, AffinityPooledRef<T> poolSlot) {
             super(source);
             this.slotRef = new AtomicReference<>(poolSlot);
         }
 
         @Override
         public void subscribe(CoreSubscriber<? super Void> actual) {
-            TAPooledRef<T> slot = slotRef.getAndSet(null);
+            AffinityPooledRef<T> slot = slotRef.getAndSet(null);
             if (slot == null) {
                 Operators.complete(actual);
             }

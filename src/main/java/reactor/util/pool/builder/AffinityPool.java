@@ -53,7 +53,7 @@ import java.util.function.Consumer;
  */
 final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
-    Map<Thread, Queue<AtomicReference<AffinityPoolInner<POOLABLE>>>> pendingLocal =
+    Map<Long, Queue<AtomicReference<AffinityPoolInner<POOLABLE>>>> pendingLocal =
             new ConcurrentHashMap<>();
 
     final Queue<AffinityPooledRef<POOLABLE>> available_mpmc;
@@ -106,7 +106,7 @@ final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
     private void createLocalFor(Thread thread) {
-        pendingLocal.putIfAbsent(thread, new LinkedList<>());
+        pendingLocal.putIfAbsent(thread.getId(), new LinkedList<>());
     }
 
     @Override
@@ -147,10 +147,10 @@ final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
             if (this.adHocAffinity) {
                 Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue =
-                        pendingLocal.computeIfAbsent(Thread.currentThread(), it -> new LinkedList<>());
+                        pendingLocal.computeIfAbsent(Thread.currentThread().getId(), it -> new LinkedList<>());
                 localQueue.offer(aRef);
             } else {
-                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread().getId());
                 if (localQueue != null) {
                     localQueue.offer(aRef);
                 }
@@ -188,7 +188,7 @@ final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     void tryRecreate() {
         if (allPendings_mpmc == TERMINATED) return;
 
-        Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+        Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread().getId());
         if (localQueue == null) return;
 
         if (LIVE.getAndIncrement(this) < poolConfig.maxSize()) {
@@ -234,7 +234,7 @@ final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             if (!poolConfig.evictionPredicate().test(pooledRef)) {
 
 
-                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread());
+                Queue<AtomicReference<AffinityPoolInner<POOLABLE>>> localQueue = pendingLocal.get(Thread.currentThread().getId());
                 if (localQueue == null) {
                     slowPathRecycle(pooledRef);
                     return;

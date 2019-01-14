@@ -165,7 +165,7 @@ final class AffinityPool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         AffinityPoolInner<POOLABLE> candidate = null;
         //iterate over allPendings_mpmc, removing nulled out pendings
         for (AtomicReference<AffinityPoolInner<POOLABLE>> pendingRef : allPendings_mpmc) {
-            AffinityPoolInner inner = pendingRef.get();
+            AffinityPoolInner<POOLABLE> inner = pendingRef.get();
             if (inner != null && candidate == null) {
                 candidate = inner;
                 pendingRef.set(null);

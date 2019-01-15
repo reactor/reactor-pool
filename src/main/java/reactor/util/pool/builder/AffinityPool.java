@@ -57,7 +57,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final AtomicIntegerFieldUpdater<AffinityPool> SLOWPATH_WIP = AtomicIntegerFieldUpdater.newUpdater(AffinityPool.class, "slowPathWip");
 
 
-    AffinityPool(PoolConfig<POOLABLE> poolConfig) {
+    public AffinityPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(AffinityPool.class));
         this.pools = new ConcurrentHashMap<>();
         this.availableElements = Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();

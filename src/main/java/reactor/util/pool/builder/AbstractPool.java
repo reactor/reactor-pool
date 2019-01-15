@@ -1,0 +1,65 @@
+/*
+ * Copyright (c) 2011-2019 Pivotal Software Inc, All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package reactor.util.pool.builder;
+
+import reactor.core.Disposable;
+import reactor.util.Logger;
+import reactor.util.annotation.Nullable;
+import reactor.util.pool.api.Pool;
+import reactor.util.pool.api.PoolConfig;
+
+import java.io.Closeable;
+import java.io.IOException;
+
+/**
+ * An abstract base version of a {@link Pool}, mutualizing small amounts of code and allowing to build common
+ * related classes like {@link AbstractPooledRef} or {@link Borrower}.
+ *
+ * @author Simon Baslé
+ */
+abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
+
+    //A pool should be rare enough that having instance loggers should be ok
+    //This helps with testability of some methods that for now mainly log
+    final Logger logger;
+
+    final PoolConfig<POOLABLE> poolConfig;
+
+
+    AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
+        this.poolConfig = poolConfig;
+        this.logger = logger;
+    }
+
+    @SuppressWarnings("WeakerAccess")
+    void disposePoolable(@Nullable POOLABLE poolable) {
+        if (poolable instanceof Disposable) {
+            ((Disposable) poolable).dispose();
+        }
+        else if (poolable instanceof Closeable) {
+            try {
+                ((Closeable) poolable).close();
+            } catch (IOException e) {
+                logger.trace("Failure while discarding a released Poolable that is Closeable, could not close", e);
+            }
+        }
+        //TODO anything else to throw away the Poolable?
+    }
+
+    abstract void doBorrow(Borrower<POOLABLE> borrower);
+
+}

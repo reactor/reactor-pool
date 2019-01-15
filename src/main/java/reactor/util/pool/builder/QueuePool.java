@@ -45,15 +45,10 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  *
  * @author Simon Baslé
  */
-final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
+final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     private static final Queue TERMINATED = Queues.empty().get();
 
-    //A pool should be rare enough that having instance loggers should be ok
-    //This helps with testability of some methods that for now mainly log
-    private final Logger logger = Loggers.getLogger(QueuePool.class);
-
-    private final PoolConfig<POOLABLE> poolConfig;
     final Queue<QueuePooledRef<POOLABLE>> elements;
 
     volatile int borrowed;
@@ -62,7 +57,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     volatile int live;
     private static final AtomicIntegerFieldUpdater<QueuePool> LIVE = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "live");
 
-    volatile Queue<PoolInner<POOLABLE>> pending = Queues.<PoolInner<POOLABLE>>unboundedMultiproducer().get();
+    volatile Queue<Borrower<POOLABLE>> pending = Queues.<Borrower<POOLABLE>>unboundedMultiproducer().get();
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
 
     volatile int wip;
@@ -70,7 +65,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
 
     QueuePool(PoolConfig<POOLABLE> poolConfig) {
-        this.poolConfig = poolConfig;
+        super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
         for (int i = 0; i < poolConfig.minSize(); i++) {
@@ -85,14 +80,14 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
-    @SuppressWarnings("WeakerAccess")
-    final void registerPendingBorrower(PoolInner<POOLABLE> s) {
+    @Override
+    void doBorrow(Borrower<POOLABLE> borrower) {
         if (pending != TERMINATED) {
-            pending.add(s);
+            pending.add(borrower);
             drain();
         }
         else {
-            s.fail(new RuntimeException("Pool has been shut down"));
+            borrower.fail(new RuntimeException("Pool has been shut down"));
         }
     }
 
@@ -104,29 +99,14 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
             else {
                 LIVE.decrementAndGet(this);
-                dispose(poolSlot.poolable);
+                disposePoolable(poolSlot.poolable);
             }
             drain();
         }
         else {
             LIVE.decrementAndGet(this);
-            dispose(poolSlot.poolable());
+            disposePoolable(poolSlot.poolable());
         }
-    }
-
-    @SuppressWarnings("WeakerAccess")
-    void dispose(@Nullable POOLABLE poolable) {
-        if (poolable instanceof Disposable) {
-            ((Disposable) poolable).dispose();
-        }
-        else if (poolable instanceof Closeable) {
-            try {
-                ((Closeable) poolable).close();
-            } catch (IOException e) {
-                logger.trace("Failure while discarding a released Poolable that is Closeable, could not close", e);
-            }
-        }
-        //TODO anything else to throw away the Poolable?
     }
 
     private void drain() {
@@ -146,12 +126,12 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
 
             if (availableCount == 0) {
                 if (pendingCount > 0 && total < maxElements) {
-                    final PoolInner<POOLABLE> borrower = pending.poll(); //shouldn't be null
+                    final Borrower<POOLABLE> borrower = pending.poll(); //shouldn't be null
                     if (borrower == null) {
                         continue;
                     }
                     BORROWED.incrementAndGet(this);
-                    if (borrower.state == PoolInner.STATE_CANCELLED || !LIVE.compareAndSet(this, total, total + 1)) {
+                    if (borrower.state == Borrower.STATE_CANCELLED || !LIVE.compareAndSet(this, total, total + 1)) {
                         BORROWED.decrementAndGet(this);
                         continue;
                     }
@@ -171,7 +151,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
                 if (slot == null) continue;
 
                 //there is a party currently pending borrowing
-                PoolInner<POOLABLE> inner = pending.poll();
+                Borrower<POOLABLE> inner = pending.poll();
                 if (inner == null) {
                     elements.offer(slot);
                     continue;
@@ -190,14 +170,14 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     @Override
     public void dispose() {
         @SuppressWarnings("unchecked")
-        Queue<PoolInner<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
+        Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
         if (q != TERMINATED) {
             while(!q.isEmpty()) {
                 q.poll().fail(new RuntimeException("Pool has been shut down"));
             }
 
             while (!elements.isEmpty()) {
-                dispose(elements.poll().poolable());
+                disposePoolable(elements.poll().poolable());
             }
         }
     }
@@ -208,52 +188,20 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
     }
 
 
-    static final class QueuePooledRef<T> implements PooledRef<T> {
+    static final class QueuePooledRef<T> extends AbstractPooledRef<T> {
 
         final QueuePool<T> pool;
-        final long creationTimestamp;
-
-        volatile T poolable;
-
-        volatile int borrowCount;
-
-        static final AtomicIntegerFieldUpdater<QueuePooledRef> BORROW = AtomicIntegerFieldUpdater.newUpdater(QueuePooledRef.class, "borrowCount");
 
         QueuePooledRef(QueuePool<T> pool, T poolable) {
+            super(poolable);
             this.pool = pool;
-            this.poolable = poolable;
-            this.creationTimestamp = System.currentTimeMillis();
-        }
-
-        @Override
-        public T poolable() {
-            return poolable;
-        }
-
-        /**
-         * Atomically increment the {@link #borrowCount()} of this slot, returning the new value.
-         *
-         * @return the incremented {@link #borrowCount()}
-         */
-        int borrowIncrement() {
-            return BORROW.incrementAndGet(this);
-        }
-
-        @Override
-        public int borrowCount() {
-            return BORROW.get(this);
-        }
-
-        @Override
-        public long age() {
-            return System.currentTimeMillis() - creationTimestamp;
         }
 
         @Override
         public Mono<Void> releaseMono() {
             if (PENDING.get(pool) == TERMINATED) {
                 BORROWED.decrementAndGet(pool); //immediately clean up state
-                pool.dispose(poolable);
+                pool.disposePoolable(poolable);
                 return Mono.empty();
             }
 
@@ -278,84 +226,10 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         public void invalidate() {
             //immediately clean up state
             BORROWED.decrementAndGet(pool);
-            pool.dispose(poolable);
-        }
-
-        @Override
-        public String toString() {
-            return "PooledRef{" +
-                    "poolable=" + poolable +
-                    ", age=" + age() + "ms" +
-                    ", borrowCount=" + borrowCount +
-                    '}';
+            pool.disposePoolable(poolable);
         }
     }
 
-    private static final class PoolInner<T> implements Scannable, Subscription {
-
-        final CoreSubscriber<? super QueuePooledRef<T>> actual;
-
-        final QueuePool<T> parent;
-
-        private static final int STATE_INIT = 0;
-        private static final int STATE_REQUESTED = 1;
-        private static final int STATE_CANCELLED = 2;
-
-        volatile int state;
-        static final AtomicIntegerFieldUpdater<PoolInner> STATE = AtomicIntegerFieldUpdater.newUpdater(PoolInner.class, "state");
-
-
-        PoolInner(CoreSubscriber<? super QueuePooledRef<T>> actual, QueuePool<T> parent) {
-            this.actual = actual;
-            this.parent = parent;
-        }
-
-        @Override
-        public void request(long n) {
-            if (Operators.validate(n) && STATE.compareAndSet(this, STATE_INIT, STATE_REQUESTED)) {
-                parent.registerPendingBorrower(this);
-            }
-        }
-
-        @Override
-        public void cancel() {
-            STATE.getAndSet(this, STATE_CANCELLED);
-        }
-
-        @Override
-        @Nullable
-        public Object scanUnsafe(Attr key) {
-            if (key == Attr.PARENT) return parent;
-            if (key == Attr.CANCELLED) return state == STATE_CANCELLED;
-            if (key == Attr.REQUESTED_FROM_DOWNSTREAM) return state == STATE_REQUESTED ? 1 : 0;
-            if (key == Attr.ACTUAL) return actual;
-
-            return null;
-        }
-
-        private void deliver(QueuePooledRef<T> poolSlot) {
-            switch (state) {
-                case STATE_REQUESTED:
-                    poolSlot.borrowIncrement();
-                    actual.onNext(poolSlot);
-                    actual.onComplete();
-                    break;
-                case STATE_CANCELLED:
-                    poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError);
-                    break;
-                default:
-                    //shouldn't happen since the PoolInner isn't registered with the pool before having requested
-                    poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
-            }
-        }
-
-        private void fail(Throwable error) {
-            if (state == STATE_REQUESTED) {
-                actual.onError(error);
-            }
-        }
-
-    }
     private static final class QueuePoolMono<T> extends Mono<PooledRef<T>> {
 
         final QueuePool<T> parent;
@@ -368,7 +242,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
 
-            PoolInner<T> p = new PoolInner<>(actual, parent);
+            Borrower<T> p = new Borrower<>(actual, parent);
             actual.onSubscribe(p);
         }
     }
@@ -421,7 +295,7 @@ final class QueuePool<POOLABLE> implements Pool<POOLABLE>, Disposable {
             }
 
             LIVE.decrementAndGet(pool);
-            pool.dispose(slot.poolable);
+            pool.disposePoolable(slot.poolable);
             pool.drain();
 
             actual.onError(throwable);

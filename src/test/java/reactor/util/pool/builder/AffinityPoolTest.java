@@ -24,11 +24,9 @@ import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
-import reactor.test.publisher.PublisherProbe;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
 import reactor.util.pool.api.PooledRef;
@@ -37,11 +35,13 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.logging.Level;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
@@ -124,136 +124,68 @@ class AffinityPoolTest {
     }
 
     @Test
-    void threadAffinityCanStarve() throws InterruptedException {
-        AtomicInteger source = new AtomicInteger();
-        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3,
-                Mono.fromCallable(source::incrementAndGet).map(v -> "value" + v),
-                s -> Mono.empty(), null, null));
-
-        AtomicInteger borrowOrder = new AtomicInteger();
-        final CountDownLatch firstBorrowsAll = new CountDownLatch(1);
-        final CountDownLatch latch = new CountDownLatch(2);
-
-        ExecutorService executorService = Executors.newFixedThreadPool(2);
-        executorService.submit(() -> {
-            final PooledRef<String> slot1 = pool.borrow().block();
-            final PooledRef<String> slot2 = pool.borrow().block();
-            final PooledRef<String> slot3 = pool.borrow().block();
-
-            firstBorrowsAll.countDown();
-
-            for (int i = 0; i < 500; i++) {
-                Mono<PooledRef<String>> mono;
-                if (i == 0) {
-                    mono = Mono.just(slot1);
-                }
-                else {
-                    mono = pool.borrow();
-                }
-                mono.doOnSuccess(v -> borrowOrder.incrementAndGet())
-                        .log("foo", Level.INFO, SignalType.ON_NEXT)
-                        .flatMap(PooledRef::releaseMono)
-                        .subscribe();
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            latch.countDown();
-        });
-        executorService.submit(() -> {
-            try {
-                firstBorrowsAll.await(1, TimeUnit.MINUTES);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-
-            pool.borrow()
-                    .doOnSuccess(v -> borrowOrder.compareAndSet(500, -1000))
-                    .block();
-            latch.countDown();
-        });
-
-        boolean latchIsDone = latch.await(30, TimeUnit.SECONDS);
-        System.out.println(borrowOrder);
-        assertThat(latchIsDone).as("latch done").isTrue();
-        assertThat(borrowOrder).hasValue(-1000);
-    }
-
-    @Test
     void threadAffinity() throws InterruptedException {
-        final CountDownLatch finalLatch = new CountDownLatch(3);
-
         AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
                 Mono.fromCallable(() -> Thread.currentThread().getName()),
                 s -> Mono.empty(), null, null));
 
-        Thread t1 = new Thread(() -> {
-            Map<String, Integer> borrowed = new HashMap<>(3);
-            try {
-                for (int i = 0; i < 10; i++) {
-                    PooledRef<String> slot = pool.borrow().block();
-                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                    if (!slot.poolable().equals("thread1")) {
-                        System.out.println("unexpected in t1: " + slot);
-                    }
+        Scheduler thread1 = Schedulers.newSingle("thread1");
+        Map<String, Integer> borrowed1 = new HashMap<>(3);
 
-                    Thread.sleep(100);
-                    slot.release();
-                }
-            } catch (InterruptedException e) { }
-            finally {
-                finalLatch.countDown();
-                System.out.println("thread1 borrowed: " + borrowed);
-            }
-        }, "thread1");
+        Scheduler thread2 = Schedulers.newSingle("thread2");
+        Map<String, Integer> borrowed2 = new HashMap<>(3);
 
-        Thread t2 = new Thread(() -> {
-            Map<String, Integer> borrowed = new HashMap<>(3);
-            try {
-                for (int i = 0; i < 10; i++) {
-                    PooledRef<String> slot = pool.borrow().block();
-                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                    if (!slot.poolable().equals("thread2")) {
-                        System.out.println("unexpected in t2: " + slot);
-                    }
+        Scheduler thread3 = Schedulers.newSingle("thread3");
+        Map<String, Integer> borrowed3 = new HashMap<>(3);
 
-                    Thread.sleep(100);
-                    slot.release();
-                }
-            } catch (InterruptedException e) { }
-            finally {
-                finalLatch.countDown();
-                System.out.println("thread2 borrowed: " + borrowed);
-            }
-        }, "thread2");
+        final CountDownLatch releaseLatch = new CountDownLatch(10 * 3);
+        for (int i = 0; i < 10; i++) {
+            thread1.schedule(() -> pool.borrow()
+                            .subscribe(slot -> {
+                                borrowed1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                if (!slot.poolable().equals("thread1-1")) {
+                                    System.out.println("unexpected in thread1: " + slot);
+                                }
 
-        Thread t3 = new Thread(() -> {
-            Map<String, Integer> borrowed = new HashMap<>(3);
-            try {
-                for (int i = 0; i < 10; i++) {
-                    PooledRef<String> slot = pool.borrow().block();
-                    borrowed.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                    if (!slot.poolable().equals("thread3")) {
-                        System.out.println("unexpected in t3: " + slot);
-                    }
+                                thread1.schedule(slot::release, 150, TimeUnit.MILLISECONDS);
+                            }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
-                    Thread.sleep(100);
-                    slot.release();
-                }
-            } catch (InterruptedException e) { }
-            finally {
-                finalLatch.countDown();
-                System.out.println("thread3 borrowed: " + borrowed);
-            }
-        }, "thread3");
+            thread2.schedule(() -> pool.borrow()
+                            .subscribe(slot -> {
+                                borrowed2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                if (!slot.poolable().equals("thread2-2")) {
+                                    System.out.println("unexpected in thread2: " + slot);
+                                }
+                                thread2.schedule(slot::release, 200, TimeUnit.MILLISECONDS);
+                            }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
-        t1.start();
-        t2.start();
-        t3.start();
+            thread3.schedule(() -> pool.borrow()
+                            .subscribe(slot -> {
+                                borrowed3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                if (!slot.poolable().equals("thread3-3")) {
+                                    System.out.println("unexpected in thread3: " + slot);
+                                }
 
-        finalLatch.await();
+
+                                thread3.schedule(slot::release, 100, TimeUnit.MILLISECONDS);
+                            }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+        }
+
+        if (releaseLatch.await(30, TimeUnit.SECONDS)) {
+            assertThat(borrowed1)
+                    .as("thread1 borrowed")
+                    .hasSize(1)
+                    .containsEntry("thread1-1", 10);
+            assertThat(borrowed2)
+                    .as("thread2 borrowed")
+                    .hasSize(1)
+                    .containsEntry("thread2-2", 10);
+            assertThat(borrowed3)
+                    .as("thread3 borrowed")
+                    .hasSize(1)
+                    .containsEntry("thread3-3", 10);
+        }
+        else fail("didn't release all, but " + releaseLatch.getCount());
     }
 
     @Nested
@@ -349,7 +281,7 @@ class AffinityPoolTest {
                 slot.releaseMono().block();
             }
 
-            if (latch3.await(2, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
+            if (latch3.await(5, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
 
                 assertThat(borrowed3).hasSize(3);
 
@@ -587,10 +519,10 @@ class AffinityPoolTest {
                 defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(i, releaserWins, borrowerWins);
             }
             //look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.
-            //we expect a subset of the deliveries to happen on the second borrower's thread
             String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
-            assertThat(borrowerWins.get()).as(stats).isPositive();
-            assertThat(releaserWins.get() + borrowerWins.get()).as(stats).isEqualTo(100);
+            assertThat(releaserWins).as(stats).hasValue(100);
+            assertThat(borrowerWins).as(stats).hasValue(0);
+            //TODO ensure this is congruent with the AffinityPool configuration
         }
 
         @Test
@@ -634,7 +566,10 @@ class AffinityPoolTest {
             //in parallel, we'll both attempt concurrent borrow AND release the unique element (each on their dedicated threads)
             racerBorrowScheduler.schedule(pool.borrow()::block, 100, TimeUnit.MILLISECONDS);
             racerReleaseScheduler.schedule(uniqueSlot.releaseMono()::block, 100, TimeUnit.MILLISECONDS);
-            latch.await(1, TimeUnit.SECONDS);
+
+            assertThat(
+                    latch.await(5, TimeUnit.SECONDS)
+            ).as("first borrow delivered within 5s").isTrue();
 
             assertThat(newCount).as("created 1 poolable in round " + round).hasValue(1);
 
@@ -657,13 +592,13 @@ class AffinityPoolTest {
         PoolableTest pt2 = new PoolableTest(2);
         PoolableTest pt3 = new PoolableTest(3);
 
-        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt1));
-        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt2));
-        pool.available_mpmc.offer(new AffinityPool.AffinityPooledRef<>(pool, pt3));
+        pool.availableElements.offer(new AffinityPool.AffinityPooledRef<>(pool, pt1));
+        pool.availableElements.offer(new AffinityPool.AffinityPooledRef<>(pool, pt2));
+        pool.availableElements.offer(new AffinityPool.AffinityPooledRef<>(pool, pt3));
 
         pool.dispose();
 
-        assertThat(pool.available_mpmc).isEmpty();
+        assertThat(pool.availableElements).hasSize(0);
         assertThat(cleanerCount).as("recycled elements").hasValue(0);
         assertThat(pt1.isDisposed()).as("pt1 disposed").isTrue();
         assertThat(pt2.isDisposed()).as("pt2 disposed").isTrue();
@@ -696,7 +631,7 @@ class AffinityPoolTest {
 
         pool.dispose();
 
-        assertThat(pool.available_mpmc).isEmpty();
+        assertThat(pool.availableElements).isEmpty();
         assertThat(cleanerCount).as("recycled elements").hasValue(0);
         assertThat(borrowed1.isDisposed()).as("borrowed1 held").isFalse();
         assertThat(borrowed2.isDisposed()).as("borrowed2 held").isFalse();
@@ -721,7 +656,7 @@ class AffinityPoolTest {
 
         pool.dispose();
 
-        assertThat(pool.available_mpmc).isEmpty();
+        assertThat(pool.availableElements).isEmpty();
 
         slot1.releaseMono().block();
         slot2.releaseMono().block();
@@ -740,7 +675,7 @@ class AffinityPoolTest {
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
                 slot -> !slot.poolable().isHealthy(), null));
 
-        assertThat(pool.available_mpmc).isEmpty();
+        assertThat(pool.availableElements).isEmpty();
 
         pool.dispose();
 

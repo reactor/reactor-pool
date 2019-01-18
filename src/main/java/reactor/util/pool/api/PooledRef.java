@@ -23,7 +23,7 @@ import java.util.function.Function;
 /**
  * An abstraction over an object in a {@link Pool}, which holds the underlying {@code POOLABLE} object and allows one to
  * manually {@link #release()} it to the pool or {@link #invalidate()} it. Since the {@link PooledRef} provides a few
- * additional information about its lifecyle, like its {@link #age()} and the number of times it has been
+ * additional information about its lifecyle, like its {@link #timeSinceAllocation()} and the number of times it has been
  * {@link #acquireCount() acquired}, the {@link Pool} may optionally use that information to automatically invalidate
  * the object, and provide a simplified acquire mechanism where the {@link PooledRef} is not directly exposed (see
  * {@link Pool#acquireInScope(Function)} vs {@link Pool#acquire()}).
@@ -76,14 +76,8 @@ public interface PooledRef<POOLABLE> {
      * Returns the age of the {@link PooledRef}: the wall-clock time (in milliseconds) since which the underlying object
      * has been allocated.
      *
-     * @return the wall-clock age of the underlying object in milliseconds
+     * @return the wall-clock age (time since allocation) of the underlying object in milliseconds
      */
-    long age(); //TODO timeSinceCreate
+    long timeSinceAllocation();
 
-    //TODO need a timeSinceAcquire
-    //TODO need a timeSinceRelease to do active idle eviction (some loadbalancers will terminate the TCP connection unilaterally after eg. a minute)
-
-    //TODO should a acquire finding an idle resource re-call acquire until availableQueue is drained, or should it call the allocator
-
-    //TODO have the opt-in possibility of a reaper thread for idle resources (NICE TO HAVE)
 }

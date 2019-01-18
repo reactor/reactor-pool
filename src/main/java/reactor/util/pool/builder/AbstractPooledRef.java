@@ -61,7 +61,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     }
 
     @Override
-    public long age() {
+    public long timeSinceAllocation() {
         return System.currentTimeMillis() - creationTimestamp;
     }
 
@@ -75,7 +75,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     public String toString() {
         return "PooledRef{" +
                 "poolable=" + poolable +
-                ", age=" + age() + "ms" +
+                ", timeSinceAllocation=" + timeSinceAllocation() + "ms" +
                 ", acquireCount=" + acquireCount +
                 '}';
     }

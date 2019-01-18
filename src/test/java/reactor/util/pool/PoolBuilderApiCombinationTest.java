@@ -55,8 +55,8 @@ import static reactor.util.pool.api.EvictionStrategies.acquired;
 class PoolBuilderApiCombinationTest {
 
     /**
-     * Fake {@link PooledRef} for tests, either wrapping value+age+acquireCount or just a
-     * value (in which case age defaults to 12s and acquireCount to 1000)
+     * Fake {@link PooledRef} for tests, either wrapping value+timeSinceAllocation+acquireCount or just a
+     * value (in which case timeSinceAllocation defaults to 12s and acquireCount to 1000)
      * @param <T>
      */
     final class TestPooledRef<T> implements PooledRef<T> {
@@ -96,7 +96,7 @@ class PoolBuilderApiCombinationTest {
         }
 
         @Override
-        public long age() {
+        public long timeSinceAllocation() {
             return age;
         }
 
@@ -104,7 +104,7 @@ class PoolBuilderApiCombinationTest {
         public String toString() {
             return "TestPooledRef{" +
                     "poolable=" + poolable +
-                    ", age=" + age +
+                    ", timeSinceAllocation=" + age +
                     ", acquireCount=" + acquireCount +
                     '}';
         }
@@ -328,7 +328,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -353,7 +353,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -378,7 +378,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -403,7 +403,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -428,7 +428,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
                 .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
@@ -450,7 +450,7 @@ class PoolBuilderApiCombinationTest {
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and acquire
+                //accept based on timeSinceAllocation and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
                 .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
@@ -643,7 +643,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingMax(10)
                 .toConfig();
 
-        //acquire 10+ || age 3 && acquire 3+ || length > 0 && length < 2
+        //acquire 10+ || timeSinceAllocation 3 && acquire 3+ || length > 0 && length < 2
         TestPooledRef<String> ok1 = new TestPooledRef<>("HAHA", 100, 10);
         TestPooledRef<String> ok2 = new TestPooledRef<>("HAHA", 3000, 3);
         TestPooledRef<String> ok3 = new TestPooledRef<>("A", 100, 1);

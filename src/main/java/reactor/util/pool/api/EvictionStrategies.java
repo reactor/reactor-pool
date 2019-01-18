@@ -36,7 +36,7 @@ public final class EvictionStrategies {
      * @return the ttl eviction strategy
      */
     public static Predicate<PooledRef<?>> agedMoreThan(Duration ttl) {
-        return slot -> slot.age() >= ttl.toMillis();
+        return slot -> slot.timeSinceAllocation() >= ttl.toMillis();
     }
 
     /**

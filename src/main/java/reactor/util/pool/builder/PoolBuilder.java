@@ -59,7 +59,7 @@ public interface PoolBuilder<POOLABLE> {
     /**
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
      * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
-     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#publishOn(Scheduler)}).
+     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
      *
      * @param allocator the asynchronous creator of poolable resources.
      * @param <T> the type of resource created and recycled by this {@link Pool}
@@ -70,13 +70,13 @@ public interface PoolBuilder<POOLABLE> {
     }
 
     /**
-     * Builder step for mandatory recycler/clearner
+     * Builder step for mandatory recycler/cleaner
      * @param <T>
      */
     interface RecyclingStep<T> {
 
         /**
-         * Continue building the {@link Pool} by providing a {@code cleaner}, a recycling {@link Function} that will
+         * Continue building the {@link Pool} by providing a recycling {@link Function} that will
          * be applied whenever an object is released, producing a {@link Mono Mono&lt;Void&gt;} that will asynchronously
          * recycle the object. AFTER the Mono has terminated, the object will be returned back to the pool...
          *
@@ -123,7 +123,7 @@ public interface PoolBuilder<POOLABLE> {
     /**
      * Builder step for additional optional conditions on the recycling {@link Predicate}. These can be omitted
      * in favor of either configuring a Scheduler for the {@link Pool} or finalizing the configuration by defining the
-     * {@link Pool} sizing (min and max allocated objects).
+     * {@link Pool} sizing (init and max allocated objects).
      * @param <T>
      */
     interface OtherPredicateStep<T> extends AfterPredicateStep<T> {
@@ -158,13 +158,13 @@ public interface PoolBuilder<POOLABLE> {
 
     /**
      * Builder step for optional configuration of a Scheduler for the {@link Pool}.
-     * Also allows direct final configuration of the {@link Pool} by defining its sizing (min and max allocated objects).
+     * Also allows direct final configuration of the {@link Pool} by defining its sizing (init and max allocated objects).
      */
     interface AfterPredicateStep<T> extends SizeStep<T> {
 
         /**
          * Define a {@link Scheduler} onto which the pooled elements will be published once they become available,
-         * when borrowing from the {@link Pool} (either via {@link Pool#borrow()} or {@link Pool#borrowInScope(Function)}).
+         * when acquiring from the {@link Pool} (either via {@link Pool#acquire()} or {@link Pool#acquireInScope(Function)}).
          *
          * @param scheduler the {@link Scheduler} to use. Default is {@link Schedulers#immediate()}.
          * @return the last step in building a {@link Pool}
@@ -173,25 +173,25 @@ public interface PoolBuilder<POOLABLE> {
     }
 
     /**
-     * Final step in configuring the {@link Pool}, defining its sizing (min and max allocated objects).
+     * Final step in configuring the {@link Pool}, defining its sizing (init and max allocated objects).
      * @param <T>
      */
     interface SizeStep<T> {
 
         /**
-         * Ensure there are always at least {@code minSize} usable objects in the {@link Pool}, and at most {@code maxSize}
-         * (both inclusive). The {@code minSize} drives initial pre-allocation of objects when building the {@link Pool}.
+         * Ensure there are at least {@code initialSize} usable objects in the {@link Pool} at initialization (inclusive),
+         * and that at all times no more than {@code maxSize} objects are live in the {@link Pool}.
          *
-         * @param minSize the minimum number of allocated objects to keep in the {@link Pool} (inclusive, borrowed + available)
-         * @param maxSize the maximum number of allocated objects to keep in the {@link Pool} (inclusive, borrowed + available)
+         * @param initialSize the number of pre-allocated objects to initialize with the {@link Pool} (inclusive)
+         * @param maxSize the maximum number of allocated objects to keep in the {@link Pool} (inclusive, acquired + available)
          * @return a {@link PoolBuilder} allowing to build a {@link Pool} from this configuration
          */
-        PoolBuilder<T> allocatingBetween(int minSize, int maxSize);
+        PoolBuilder<T> allocatingBetween(int initialSize, int maxSize);
 
         /**
          * Ensure there are always at most {@code maxSize} usable objects in the {@link Pool}.
          *
-         * @param maxSize the maximum number of allocated objects to keep in the {@link Pool} (inclusive, borrowed + available)
+         * @param maxSize the maximum number of allocated objects to keep in the {@link Pool} (inclusive, acquired + available)
          * @return a {@link PoolBuilder} allowing to build a {@link Pool} from this configuration
          */
         PoolBuilder<T> allocatingMax(int maxSize);

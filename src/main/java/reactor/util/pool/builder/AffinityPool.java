@@ -62,7 +62,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         this.pools = new ConcurrentHashMap<>();
         this.availableElements = Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        for (int i = 0; i < poolConfig.minSize(); i++) {
+        for (int i = 0; i < poolConfig.initialSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
             availableElements.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
@@ -70,11 +70,11 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     @Override
-    public Mono<PooledRef<POOLABLE>> borrow() {
+    public Mono<PooledRef<POOLABLE>> acquire() {
         return new AffinityPoolMono<>(this);
     }
 
-    void doBorrow(Borrower<POOLABLE> borrower) {
+    void doAcquire(Borrower<POOLABLE> borrower) {
         if (POOLS.get(this) == TERMINATED) {
             borrower.fail(new RuntimeException("Pool has been shut down"));
             return;
@@ -208,7 +208,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final class SubPool<POOLABLE> {
 
         final AffinityPool<POOLABLE> parent;
-        final Queue<Borrower<POOLABLE>> localPendings; //needs to be MPSC. Producer: any thread that doBorrow. Consumer: whomever has the LOCKED.
+        final Queue<Borrower<POOLABLE>> localPendings; //needs to be MPSC. Producer: any thread that doAcquire. Consumer: whomever has the LOCKED.
 
         volatile int directReleaseInProgress;
         static final AtomicIntegerFieldUpdater<SubPool> DIRECT_RELEASE_WIP = AtomicIntegerFieldUpdater.newUpdater(SubPool.class, "directReleaseInProgress");
@@ -254,7 +254,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         @Override
-        public Mono<Void> releaseMono() {
+        public Mono<Void> release() {
             if (POOLS.get(pool) == TERMINATED) {
                 pool.disposePoolable(poolable);
                 return Mono.empty();
@@ -262,7 +262,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             Mono<Void> cleaner;
             try {
-                cleaner = pool.poolConfig.cleaner().apply(poolable);
+                cleaner = pool.poolConfig.resetResource().apply(poolable);
             }
             catch (Throwable e) {
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
@@ -270,11 +270,6 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
             return new AffinityPoolRecyclerMono<>(cleaner, this);
-        }
-
-        @Override
-        public void release() {
-            releaseMono().subscribe(v -> {}, e -> pool.logger.debug("error while releasing with release()", e));
         }
 
         @Override

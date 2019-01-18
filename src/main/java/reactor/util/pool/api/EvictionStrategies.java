@@ -28,7 +28,8 @@ import java.util.function.Predicate;
 public final class EvictionStrategies {
 
     /**
-     * Return a {@link Predicate} that matches {@link PooledRef} which age is greater than the {@code ttl} {@link Duration}.
+     * Return a {@link Predicate} that matches {@link PooledRef} of resources that were created at a time before the
+     * {@code ttl} {@link Duration}.
      * Such objects are to be discarded instead of recycled when released back to the {@link Pool}.
      *
      * @param ttl the {@link Duration} after which an object should not be recycled (resolution: ms)
@@ -39,14 +40,14 @@ public final class EvictionStrategies {
     }
 
     /**
-     * Return a {@link Predicate} that matches {@link PooledRef} which borrow counter is greater than or equal to the
-     * {@code borrowMaxInclusive} int. Such objects are to be discarded instead of recycled when released back to the
+     * Return a {@link Predicate} that matches {@link PooledRef} which acquire counter is greater than or equal to the
+     * {@code acquireMaxInclusive} int. Such objects are to be destroyed instead of recycled when released back to the
      * {@link Pool}.
      *
-     * @param borrowMaxInclusive the number of borrows after which an object should not be recycled
-     * @return the borrowMax eviction strategy
+     * @param acquireMaxInclusive the number of acquires after which an object should not be recycled
+     * @return the acquireMax eviction strategy
      */
-    public static Predicate<PooledRef<?>> borrowed(int borrowMaxInclusive) {
-        return slot -> slot.borrowCount() >= borrowMaxInclusive;
+    public static Predicate<PooledRef<?>> acquired(int acquireMaxInclusive) {
+        return slot -> slot.acquireCount() >= acquireMaxInclusive;
     }
 }

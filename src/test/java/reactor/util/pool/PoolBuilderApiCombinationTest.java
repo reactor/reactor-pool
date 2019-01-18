@@ -48,27 +48,27 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static reactor.util.pool.api.EvictionStrategies.agedMoreThan;
-import static reactor.util.pool.api.EvictionStrategies.borrowed;
+import static reactor.util.pool.api.EvictionStrategies.acquired;
 
 //FIXME test each pool configuration combination?
 //intentionally one package lower than necessary to ensure correct visibility of APIs vs package-private implementations
 class PoolBuilderApiCombinationTest {
 
     /**
-     * Fake {@link PooledRef} for tests, either wrapping value+age+borrowCount or just a
-     * value (in which case age defaults to 12s and borrowCount to 1000)
+     * Fake {@link PooledRef} for tests, either wrapping value+age+acquireCount or just a
+     * value (in which case age defaults to 12s and acquireCount to 1000)
      * @param <T>
      */
     final class TestPooledRef<T> implements PooledRef<T> {
 
         final T poolable;
         final long age;
-        final int borrowCount;
+        final int acquireCount;
 
-        TestPooledRef(T poolable, long age, int borrowCount) {
+        TestPooledRef(T poolable, long age, int acquireCount) {
             this.poolable = poolable;
             this.age = age;
-            this.borrowCount = borrowCount;
+            this.acquireCount = acquireCount;
         }
 
         TestPooledRef(T poolable) {
@@ -81,19 +81,16 @@ class PoolBuilderApiCombinationTest {
         }
 
         @Override
-        public Mono<Void> releaseMono() {
+        public Mono<Void> release() {
             return Mono.empty();
         }
-
-        @Override
-        public void release() { }
 
         @Override
         public void invalidate() { }
 
         @Override
-        public int borrowCount() {
-            return borrowCount;
+        public int acquireCount() {
+            return acquireCount;
         }
 
         @Override
@@ -106,7 +103,7 @@ class PoolBuilderApiCombinationTest {
             return "TestPooledRef{" +
                     "poolable=" + poolable +
                     ", age=" + age +
-                    ", borrowCount=" + borrowCount +
+                    ", acquireCount=" + acquireCount +
                     '}';
         }
     }
@@ -120,7 +117,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
@@ -139,7 +136,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
@@ -154,11 +151,11 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationMinimal3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(borrowed(2))
+                .unlessRefMatches(acquired(2))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
@@ -173,11 +170,11 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationMinimal4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(borrowed(2))
+                .unlessRefMatches(acquired(2))
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler").isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
@@ -197,7 +194,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -218,7 +215,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -234,12 +231,12 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationWithScheduler3() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(borrowed(2))
+                .unlessRefMatches(acquired(2))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -255,12 +252,12 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationWithScheduler4() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(borrowed(2))
+                .unlessRefMatches(acquired(2))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -282,7 +279,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
@@ -303,7 +300,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
@@ -320,16 +317,16 @@ class PoolBuilderApiCombinationTest {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -345,16 +342,16 @@ class PoolBuilderApiCombinationTest {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -369,17 +366,17 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicate5() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -394,17 +391,17 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicate6() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList()))
                 .accepts(new TestPooledRef<>(Collections.singletonList("A")))
                 //accept based on size
@@ -419,17 +416,17 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicate7() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
                 .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
@@ -441,17 +438,17 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicate8() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.immediate());
         assertThat(config.evictionPredicate()).as("evictionPredicate")
-                //accept based on age and borrow
+                //accept based on age and acquire
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 3000, 3))
                 .accepts(new TestPooledRef<>(Collections.emptyList(), 10000, 2))
                 .rejects(new TestPooledRef<>(Collections.emptyList(), 3000, 2))
@@ -470,7 +467,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -491,7 +488,7 @@ class PoolBuilderApiCombinationTest {
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -507,12 +504,12 @@ class PoolBuilderApiCombinationTest {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -530,12 +527,12 @@ class PoolBuilderApiCombinationTest {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
                 .unlessPoolableMatches(list -> list.size() >= 2)
-                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -552,13 +549,13 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicateScheduler5() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -574,13 +571,13 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicateScheduler6() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orPoolableMatches(list -> list.size() >= 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -596,13 +593,13 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicateScheduler7() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .publishOn(Schedulers.parallel())
                 .allocatingBetween(1, 10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(1);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(1);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -617,13 +614,13 @@ class PoolBuilderApiCombinationTest {
     void builderCombinationSecondPredicateScheduler8() {
         final PoolConfig<List<String>> config = PoolBuilder.allocatingWith(Mono.<List<String>>fromCallable(ArrayList::new))
                 .recycleWith(l -> Mono.fromRunnable(l::clear))
-                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orRefMatches(agedMoreThan(Duration.ofSeconds(10)))
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
-        assertThat(config.minSize()).as("minSize").isEqualTo(0);
+        assertThat(config.initialSize()).as("initialSize").isEqualTo(0);
         assertThat(config.maxSize()).as("maxSize").isEqualTo(10);
         assertThat(config.deliveryScheduler()).as("scheduler")
                 .isSameAs(Schedulers.parallel());
@@ -637,14 +634,14 @@ class PoolBuilderApiCombinationTest {
     void builderMultipleOrAndPredicates() {
         final PoolConfig<String> config = PoolBuilder.allocatingWith(Mono.just("foo"))
                 .recycleWith(l -> Mono.empty())
-                .unlessRefMatches(borrowed(10))
-                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(borrowed(3)))
+                .unlessRefMatches(acquired(10))
+                .orRefMatches(agedMoreThan(Duration.ofSeconds(3)).and(acquired(3)))
                 .orPoolableMatches(str -> str.length() > 0 && str.length() < 2)
                 .publishOn(Schedulers.parallel())
                 .allocatingMax(10)
                 .toConfig();
 
-        //borrow 10+ || age 3 && borrow 3+ || length > 0 && length < 2
+        //acquire 10+ || age 3 && acquire 3+ || length > 0 && length < 2
         TestPooledRef<String> ok1 = new TestPooledRef<>("HAHA", 100, 10);
         TestPooledRef<String> ok2 = new TestPooledRef<>("HAHA", 3000, 3);
         TestPooledRef<String> ok3 = new TestPooledRef<>("A", 100, 1);

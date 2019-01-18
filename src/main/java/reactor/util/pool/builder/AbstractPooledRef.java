@@ -32,9 +32,9 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
 
     volatile T poolable;
 
-    volatile int borrowCount;
+    volatile int acquireCount;
 
-    static final AtomicIntegerFieldUpdater<AbstractPooledRef> BORROW = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "borrowCount");
+    static final AtomicIntegerFieldUpdater<AbstractPooledRef> ACQUIRE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "acquireCount");
 
     AbstractPooledRef(T poolable) {
         this.poolable = poolable;
@@ -47,17 +47,17 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     }
 
     /**
-     * Atomically increment the {@link #borrowCount()} of this slot, returning the new value.
+     * Atomically increment the {@link #acquireCount()} of this slot, returning the new value.
      *
-     * @return the incremented {@link #borrowCount()}
+     * @return the incremented {@link #acquireCount()}
      */
-    int borrowIncrement() {
-        return BORROW.incrementAndGet(this);
+    int acquireIncrement() {
+        return ACQUIRE.incrementAndGet(this);
     }
 
     @Override
-    public int borrowCount() {
-        return BORROW.get(this);
+    public int acquireCount() {
+        return ACQUIRE.get(this);
     }
 
     @Override
@@ -66,10 +66,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     }
 
     @Override
-    public abstract Mono<Void> releaseMono();
-
-    @Override
-    public abstract void release();
+    public abstract Mono<Void> release();
 
     @Override
     public abstract void invalidate();
@@ -79,7 +76,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
         return "PooledRef{" +
                 "poolable=" + poolable +
                 ", age=" + age() + "ms" +
-                ", borrowCount=" + borrowCount +
+                ", acquireCount=" + acquireCount +
                 '}';
     }
 }

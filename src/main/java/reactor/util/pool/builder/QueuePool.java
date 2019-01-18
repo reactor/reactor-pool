@@ -18,22 +18,16 @@ package reactor.util.pool.builder;
 
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
-import reactor.core.Disposable;
-import reactor.core.Exceptions;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.util.Logger;
 import reactor.util.Loggers;
-import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PooledRef;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -51,8 +45,8 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     final Queue<QueuePooledRef<POOLABLE>> elements;
 
-    volatile int borrowed;
-    private static final AtomicIntegerFieldUpdater<QueuePool> BORROWED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "borrowed");
+    volatile int acquired;
+    private static final AtomicIntegerFieldUpdater<QueuePool> ACQUIRED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "acquired");
 
     volatile int live;
     private static final AtomicIntegerFieldUpdater<QueuePool> LIVE = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "live");
@@ -68,7 +62,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        for (int i = 0; i < poolConfig.minSize(); i++) {
+        for (int i = 0; i < poolConfig.initialSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
             elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
@@ -76,12 +70,12 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     @Override
-    public Mono<PooledRef<POOLABLE>> borrow() {
+    public Mono<PooledRef<POOLABLE>> acquire() {
         return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
     }
 
     @Override
-    void doBorrow(Borrower<POOLABLE> borrower) {
+    void doAcquire(Borrower<POOLABLE> borrower) {
         if (pending != TERMINATED) {
             pending.add(borrower);
             drain();
@@ -130,16 +124,16 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                     if (borrower == null) {
                         continue;
                     }
-                    BORROWED.incrementAndGet(this);
+                    ACQUIRED.incrementAndGet(this);
                     if (borrower.state == Borrower.STATE_CANCELLED || !LIVE.compareAndSet(this, total, total + 1)) {
-                        BORROWED.decrementAndGet(this);
+                        ACQUIRED.decrementAndGet(this);
                         continue;
                     }
                     poolConfig.allocator()
                             .publishOn(poolConfig.deliveryScheduler())
                             .subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
-                                        BORROWED.decrementAndGet(this);
+                                        ACQUIRED.decrementAndGet(this);
                                         LIVE.decrementAndGet(this);
                                         borrower.fail(e);
                                     });
@@ -150,13 +144,13 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 QueuePooledRef<POOLABLE> slot = elements.poll();
                 if (slot == null) continue;
 
-                //there is a party currently pending borrowing
+                //there is a party currently pending acquiring
                 Borrower<POOLABLE> inner = pending.poll();
                 if (inner == null) {
                     elements.offer(slot);
                     continue;
                 }
-                BORROWED.incrementAndGet(this);
+                ACQUIRED.incrementAndGet(this);
                 poolConfig.deliveryScheduler().schedule(() -> inner.deliver(slot));
             }
 
@@ -198,19 +192,19 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         @Override
-        public Mono<Void> releaseMono() {
+        public Mono<Void> release() {
             if (PENDING.get(pool) == TERMINATED) {
-                BORROWED.decrementAndGet(pool); //immediately clean up state
+                ACQUIRED.decrementAndGet(pool); //immediately clean up state
                 pool.disposePoolable(poolable);
                 return Mono.empty();
             }
 
             Mono<Void> cleaner;
             try {
-                cleaner = pool.poolConfig.cleaner().apply(poolable);
+                cleaner = pool.poolConfig.resetResource().apply(poolable);
             }
             catch (Throwable e) {
-                BORROWED.decrementAndGet(pool); //immediately clean up state
+                ACQUIRED.decrementAndGet(pool); //immediately clean up state
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
             }
             //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
@@ -218,14 +212,9 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         @Override
-        public void release() {
-            releaseMono().subscribe(v -> {}, e -> pool.logger.debug("error while releasing with release()", e));
-        }
-
-        @Override
         public void invalidate() {
             //immediately clean up state
-            BORROWED.decrementAndGet(pool);
+            ACQUIRED.decrementAndGet(pool);
             pool.disposePoolable(poolable);
         }
     }
@@ -289,9 +278,9 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             //some operators might immediately produce without request (eg. fromRunnable)
-            // we decrement BORROWED EXACTLY ONCE to indicate that the poolable was released by the user
+            // we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
             if (ONCE.compareAndSet(this, 0, 1)) {
-                BORROWED.decrementAndGet(pool);
+                ACQUIRED.decrementAndGet(pool);
             }
 
             LIVE.decrementAndGet(pool);
@@ -310,9 +299,9 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             //some operators might immediately produce without request (eg. fromRunnable)
-            // we decrement BORROWED EXACTLY ONCE to indicate that the poolable was released by the user
+            // we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
             if (ONCE.compareAndSet(this, 0, 1)) {
-                BORROWED.decrementAndGet(pool);
+                ACQUIRED.decrementAndGet(pool);
             }
 
             pool.maybeRecycleAndDrain(slot);
@@ -323,9 +312,9 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         public void request(long l) {
             if (Operators.validate(l)) {
                 upstream.request(l);
-                // we decrement BORROWED EXACTLY ONCE to indicate that the poolable was released by the user
+                // we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
                 if (ONCE.compareAndSet(this, 0, 1)) {
-                    BORROWED.decrementAndGet(pool);
+                    ACQUIRED.decrementAndGet(pool);
                 }
             }
         }

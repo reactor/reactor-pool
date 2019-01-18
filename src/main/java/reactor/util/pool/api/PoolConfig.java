@@ -18,6 +18,7 @@ package reactor.util.pool.api;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -27,13 +28,50 @@ import java.util.function.Predicate;
  */
 public interface PoolConfig<P> {
 
+    /**
+     * The asynchronous factory that produces new resources.
+     *
+     * @return a {@link Mono} representing the creation of a resource
+     */
     Mono<P> allocator();
 
+    /**
+     * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
+     * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
+     * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
+     * reaping process.
+     * @return true if the {@link PooledRef} should be destroyed instead of used
+     */
     Predicate<PooledRef<P>> evictionPredicate();
-    Function<P, Mono<Void>> cleaner();
 
-    int minSize();
+    /**
+     * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
+     * the resource in order for it to become usable again. The {@link #evictionPredicate()} is applied AFTER this reset.
+     * <p>
+     * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
+     *
+     * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
+     */
+    Function<P, Mono<Void>> resetResource();
+
+    /**
+     * @return the minimum number of objects a {@link Pool} should create at initialization.
+     */
+    int initialSize();
+
+    /**
+     * @return the maximum number of objects the pool should maintain at all times
+     */
     int maxSize();
 
+    /**
+     * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
+     * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator()} produced new
+     * resources.
+     * <p>
+     * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
+     *
+     * @return a {@link Scheduler} on which to publish resources
+     */
     Scheduler deliveryScheduler();
 }

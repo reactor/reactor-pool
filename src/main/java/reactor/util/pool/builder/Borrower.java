@@ -51,7 +51,7 @@ final class Borrower<POOLABLE> implements Scannable, Subscription {
     @Override
     public void request(long n) {
         if (Operators.validate(n) && STATE.compareAndSet(this, STATE_INIT, STATE_REQUESTED)) {
-            parent.doBorrow(this);
+            parent.doAcquire(this);
         }
     }
 
@@ -74,16 +74,16 @@ final class Borrower<POOLABLE> implements Scannable, Subscription {
     void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
         switch (state) {
             case STATE_REQUESTED:
-                poolSlot.borrowIncrement();
+                poolSlot.acquireIncrement();
                 actual.onNext(poolSlot);
                 actual.onComplete();
                 break;
             case STATE_CANCELLED:
-                poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError);
+                poolSlot.release().subscribe(aVoid -> {}, actual::onError);
                 break;
             default:
                 //shouldn't happen since the PoolInner isn't registered with the pool before having requested
-                poolSlot.releaseMono().subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
+                poolSlot.release().subscribe(aVoid -> {}, actual::onError, () -> actual.onError(Exceptions.failWithOverflow()));
         }
     }
 

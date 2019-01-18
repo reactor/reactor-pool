@@ -60,6 +60,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         //TODO anything else to throw away the Poolable?
     }
 
-    abstract void doBorrow(Borrower<POOLABLE> borrower);
+    abstract void doAcquire(Borrower<POOLABLE> borrower);
 
 }

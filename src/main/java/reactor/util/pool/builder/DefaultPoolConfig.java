@@ -33,18 +33,18 @@ import java.util.function.Predicate;
  */
 class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
-    private final int minSize;
+    private final int initialSize;
     private final int maxSize;
     private final Mono<POOLABLE> allocator;
     private final Function<POOLABLE, Mono<Void>> cleaner;
     private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
 
-    DefaultPoolConfig(int minSize, int maxSize, Mono<POOLABLE> allocator,
+    DefaultPoolConfig(int initialSize, int maxSize, Mono<POOLABLE> allocator,
                       Function<POOLABLE, Mono<Void>> cleaner,
                       @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
                       @Nullable Scheduler deliveryScheduler) {
-        this.minSize = minSize;
+        this.initialSize = initialSize;
         this.maxSize = maxSize;
 
         this.allocator = allocator;
@@ -60,7 +60,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     }
 
     @Override
-    public Function<POOLABLE, Mono<Void>> cleaner() {
+    public Function<POOLABLE, Mono<Void>> resetResource() {
         return this.cleaner;
     }
 
@@ -70,8 +70,8 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     }
 
     @Override
-    public int minSize() {
-        return this.minSize;
+    public int initialSize() {
+        return this.initialSize;
     }
 
     @Override

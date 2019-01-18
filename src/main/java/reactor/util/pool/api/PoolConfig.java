@@ -40,7 +40,7 @@ public interface PoolConfig<P> {
      * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
      * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
      * reaping process.
-     * @return true if the {@link PooledRef} should be destroyed instead of used
+     * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
      */
     Predicate<PooledRef<P>> evictionPredicate();
 
@@ -53,6 +53,16 @@ public interface PoolConfig<P> {
      * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
      */
     Function<P, Mono<Void>> resetResource();
+
+    /**
+     * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
+     * objects, file handles, socket connections, etc...).
+     * <p>
+     * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
+     *
+     * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
+     */
+    Function<P, Mono<Void>> destroyResource();
 
     /**
      * @return the minimum number of objects a {@link Pool} should create at initialization.

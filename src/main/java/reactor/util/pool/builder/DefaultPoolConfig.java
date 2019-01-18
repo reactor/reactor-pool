@@ -33,22 +33,30 @@ import java.util.function.Predicate;
  */
 class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
+    private static final Function<?, Mono<Void>> NO_OP = it -> Mono.empty();
+
     private final int initialSize;
     private final int maxSize;
     private final Mono<POOLABLE> allocator;
-    private final Function<POOLABLE, Mono<Void>> cleaner;
+    private final Function<POOLABLE, Mono<Void>> resetFactory;
+    private final Function<POOLABLE, Mono<Void>> destroyFactory;
     private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
 
     DefaultPoolConfig(int initialSize, int maxSize, Mono<POOLABLE> allocator,
-                      Function<POOLABLE, Mono<Void>> cleaner,
+                      @Nullable Function<POOLABLE, Mono<Void>> resetFactory,
+                      @Nullable Function<POOLABLE, Mono<Void>> destroyFactory,
                       @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
                       @Nullable Scheduler deliveryScheduler) {
         this.initialSize = initialSize;
         this.maxSize = maxSize;
 
+        @SuppressWarnings("unchecked")
+        Function<POOLABLE, Mono<Void>> noOp = (Function<POOLABLE, Mono<Void>>) NO_OP;
+
         this.allocator = allocator;
-        this.cleaner = cleaner;
+        this.resetFactory = resetFactory == null ? noOp : resetFactory;
+        this.destroyFactory = destroyFactory == null ? noOp : destroyFactory;
 
         this.evictionPredicate = evictionPredicate == null ? slot -> false : evictionPredicate;
         this.deliveryScheduler = deliveryScheduler == null ? Schedulers.immediate() : deliveryScheduler;
@@ -61,7 +69,12 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
     @Override
     public Function<POOLABLE, Mono<Void>> resetResource() {
-        return this.cleaner;
+        return this.resetFactory;
+    }
+
+    @Override
+    public Function<POOLABLE, Mono<Void>> destroyResource() {
+        return this.destroyFactory;
     }
 
     @Override

@@ -194,7 +194,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             toClose.clear();
 
             while(!availableElements.isEmpty()) {
-                disposePoolable(availableElements.poll().poolable);
+                destroyPoolable(availableElements.poll().poolable).block();
             }
         }
     }
@@ -256,8 +256,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public Mono<Void> release() {
             if (POOLS.get(pool) == TERMINATED) {
-                pool.disposePoolable(poolable);
-                return Mono.empty();
+                return pool.destroyPoolable(poolable);
             }
 
             Mono<Void> cleaner;
@@ -275,7 +274,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public void invalidate() {
             //immediately clean up state
-            pool.disposePoolable(poolable);
+            pool.destroyPoolable(poolable).block();
         }
     }
 
@@ -334,7 +333,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             LIVE.decrementAndGet(pool);
-            pool.disposePoolable(slot.poolable);
+            pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage further errors?
             actual.onError(throwable);
         }
 
@@ -353,7 +352,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
             else {
                 LIVE.decrementAndGet(pool);
-                pool.disposePoolable(slot.poolable);
+                pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
                 pool.recreateOrPend();
             }
         }

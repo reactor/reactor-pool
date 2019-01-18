@@ -17,6 +17,7 @@
 package reactor.util.pool.builder;
 
 import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
 import reactor.util.Logger;
 import reactor.util.annotation.Nullable;
 import reactor.util.pool.api.Pool;
@@ -46,7 +47,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     }
 
     @SuppressWarnings("WeakerAccess")
-    void disposePoolable(@Nullable POOLABLE poolable) {
+    void defaultDestroy(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
             ((Disposable) poolable).dispose();
         }
@@ -58,6 +59,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             }
         }
         //TODO anything else to throw away the Poolable?
+    }
+
+    Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
+        Mono<Void> destroyer = poolConfig.destroyResource().apply(poolable);
+        return destroyer != null ? destroyer : Mono.fromRunnable(() -> defaultDestroy(poolable));
     }
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);

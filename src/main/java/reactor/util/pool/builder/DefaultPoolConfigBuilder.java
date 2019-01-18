@@ -30,12 +30,19 @@ import java.util.function.Predicate;
  * A builder for a {@link DefaultPoolConfig}.
  * @author Simon Baslé
  */
-final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>, PoolBuilder.FirstPredicateStep<T>,
-        PoolBuilder.OtherPredicateStep<T>, PoolBuilder.AfterPredicateStep<T>, PoolBuilder.SizeStep<T> {
+final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
+        PoolBuilder.FirstPredicateStep<T>,
+        PoolBuilder.OtherPredicateStep<T>,
+        PoolBuilder.AfterPredicateStep<T>,
+        PoolBuilder.SizeStep<T> {
 
     final Mono<T> allocator;
 
+    //FIXME see how to integrate optional aspect of cleaner, destroyer (or remove notion of builder entirely)
+    @Nullable
     Function<T, Mono<Void>> cleaner;
+    @Nullable
+    Function<T, Mono<Void>> destroyer = null;
     @Nullable
     Predicate<PooledRef<T>> evictionPredicate;
     @Nullable
@@ -87,12 +94,12 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
 
     @Override
     public PoolBuilder<T> allocatingBetween(int minSize, int maxSize) {
-        return new FinalStep<>(new DefaultPoolConfig<>(minSize, maxSize, allocator, cleaner, evictionPredicate, scheduler));
+        return new FinalStep<>(new DefaultPoolConfig<>(minSize, maxSize, allocator, cleaner, destroyer, evictionPredicate, scheduler));
     }
 
     @Override
     public PoolBuilder<T> allocatingMax(int maxSize) {
-        return new FinalStep<>(new DefaultPoolConfig<>(0, maxSize, allocator, cleaner, evictionPredicate, scheduler));
+        return new FinalStep<>(new DefaultPoolConfig<>(0, maxSize, allocator, cleaner, destroyer, evictionPredicate, scheduler));
     }
 
     static final class FinalStep<T> implements PoolBuilder<T> {

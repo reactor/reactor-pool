@@ -93,13 +93,13 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
             else {
                 LIVE.decrementAndGet(this);
-                disposePoolable(poolSlot.poolable);
+                destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
             }
             drain();
         }
         else {
             LIVE.decrementAndGet(this);
-            disposePoolable(poolSlot.poolable());
+                destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
         }
     }
 
@@ -171,7 +171,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             while (!elements.isEmpty()) {
-                disposePoolable(elements.poll().poolable());
+                destroyPoolable(elements.poll().poolable()).block();
             }
         }
     }
@@ -195,8 +195,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         public Mono<Void> release() {
             if (PENDING.get(pool) == TERMINATED) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state
-                pool.disposePoolable(poolable);
-                return Mono.empty();
+                return pool.destroyPoolable(poolable);
             }
 
             Mono<Void> cleaner;
@@ -215,7 +214,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         public void invalidate() {
             //immediately clean up state
             ACQUIRED.decrementAndGet(pool);
-            pool.disposePoolable(poolable);
+            pool.destroyPoolable(poolable).block();
         }
     }
 
@@ -284,7 +283,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             LIVE.decrementAndGet(pool);
-            pool.disposePoolable(slot.poolable);
+            pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
             pool.drain();
 
             actual.onError(throwable);

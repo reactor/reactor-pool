@@ -129,7 +129,7 @@ class AffinityPoolTest {
     @Test
     void threadAffinity() throws InterruptedException {
         AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
-                Mono.fromCallable(() -> Thread.currentThread().getName()),
+                Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)),
                 s -> Mono.empty(), null, null, null));
 
         Scheduler thread1 = Schedulers.newSingle("thread1");
@@ -146,7 +146,7 @@ class AffinityPoolTest {
             thread1.schedule(() -> pool.acquire()
                             .subscribe(slot -> {
                                 acquired1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                if (!slot.poolable().equals("thread1-1")) {
+                                if (!slot.poolable().equals("thread1")) {
                                     System.out.println("unexpected in thread1: " + slot);
                                 }
 
@@ -156,7 +156,7 @@ class AffinityPoolTest {
             thread2.schedule(() -> pool.acquire()
                             .subscribe(slot -> {
                                 acquired2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                if (!slot.poolable().equals("thread2-2")) {
+                                if (!slot.poolable().equals("thread2")) {
                                     System.out.println("unexpected in thread2: " + slot);
                                 }
                                 thread2.schedule(slot::release, 200, TimeUnit.MILLISECONDS);
@@ -165,7 +165,7 @@ class AffinityPoolTest {
             thread3.schedule(() -> pool.acquire()
                             .subscribe(slot -> {
                                 acquired3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                if (!slot.poolable().equals("thread3-3")) {
+                                if (!slot.poolable().equals("thread3")) {
                                     System.out.println("unexpected in thread3: " + slot);
                                 }
 
@@ -178,15 +178,15 @@ class AffinityPoolTest {
             assertThat(acquired1)
                     .as("thread1 acquired")
                     .hasSize(1)
-                    .containsEntry("thread1-1", 10);
+                    .containsEntry("thread1", 10);
             assertThat(acquired2)
                     .as("thread2 acquired")
                     .hasSize(1)
-                    .containsEntry("thread2-2", 10);
+                    .containsEntry("thread2", 10);
             assertThat(acquired3)
                     .as("thread3 acquired")
                     .hasSize(1)
-                    .containsEntry("thread3-3", 10);
+                    .containsEntry("thread3", 10);
         }
         else fail("didn't release all, but " + releaseLatch.getCount());
     }

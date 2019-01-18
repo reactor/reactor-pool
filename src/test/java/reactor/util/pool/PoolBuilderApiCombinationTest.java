@@ -65,10 +65,13 @@ class PoolBuilderApiCombinationTest {
         final long age;
         final int acquireCount;
 
+        volatile long releaseTimestamp;
+
         TestPooledRef(T poolable, long age, int acquireCount) {
             this.poolable = poolable;
             this.age = age;
             this.acquireCount = acquireCount;
+            this.releaseTimestamp = System.currentTimeMillis();
         }
 
         TestPooledRef(T poolable) {
@@ -82,12 +85,12 @@ class PoolBuilderApiCombinationTest {
 
         @Override
         public Mono<Void> release() {
-            return Mono.empty();
+            return Mono.<Void>empty().doOnSubscribe(s -> releaseTimestamp = System.currentTimeMillis());
         }
 
         @Override
         public Mono<Void> invalidate() {
-            return Mono.empty();
+            return Mono.<Void>empty().doOnSubscribe(s -> releaseTimestamp = System.currentTimeMillis());
         }
 
         @Override
@@ -101,10 +104,16 @@ class PoolBuilderApiCombinationTest {
         }
 
         @Override
+        public long timeSinceRelease() {
+            return releaseTimestamp <= 0 ? 0L : System.currentTimeMillis() - releaseTimestamp;
+        }
+
+        @Override
         public String toString() {
             return "TestPooledRef{" +
                     "poolable=" + poolable +
                     ", timeSinceAllocation=" + age +
+                    ", timeSinceRelease=" + timeSinceRelease() +
                     ", acquireCount=" + acquireCount +
                     '}';
         }

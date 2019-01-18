@@ -353,6 +353,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 Operators.complete(actual);
             }
             else {
+                slot.markReleased();
                 QueuePoolRecyclerInner<T> qpr = new QueuePoolRecyclerInner<>(actual, slot);
                 source.subscribe(qpr);
             }

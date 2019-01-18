@@ -74,7 +74,7 @@ final class Borrower<POOLABLE> implements Scannable, Subscription {
     void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
         switch (state) {
             case STATE_REQUESTED:
-                poolSlot.acquireIncrement();
+                poolSlot.markAcquired();
                 actual.onNext(poolSlot);
                 actual.onComplete();
                 break;

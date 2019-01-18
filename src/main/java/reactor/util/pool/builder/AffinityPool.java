@@ -256,6 +256,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public Mono<Void> release() {
             if (POOLS.get(pool) == TERMINATED) {
+                markReleased();
                 return pool.destroyPoolable(poolable);
             }
 
@@ -264,6 +265,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 cleaner = pool.poolConfig.resetResource().apply(poolable);
             }
             catch (Throwable e) {
+                markReleased();
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
             }
 
@@ -400,6 +402,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             else {
                 AffinityPoolRecyclerInner<T> apr = new AffinityPoolRecyclerInner<>(actual, slot);
                 if (recyclerRef.compareAndSet(null, apr)) {
+                    slot.markReleased();
                     source.subscribe(apr);
                     slot = null;
                 }

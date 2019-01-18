@@ -33,12 +33,15 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     volatile T poolable;
 
     volatile int acquireCount;
-
     static final AtomicIntegerFieldUpdater<AbstractPooledRef> ACQUIRE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "acquireCount");
+
+    //might be peeked at by multiple threads, in which case a value of -1 indicates it is currently held/acquired
+    volatile long timeSinceRelease;
 
     AbstractPooledRef(T poolable) {
         this.poolable = poolable;
         this.creationTimestamp = System.currentTimeMillis();
+        this.timeSinceRelease = -2L;
     }
 
     @Override
@@ -51,8 +54,13 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
      *
      * @return the incremented {@link #acquireCount()}
      */
-    int acquireIncrement() {
+    int markAcquired() {
+        this.timeSinceRelease = -1L;
         return ACQUIRE.incrementAndGet(this);
+    }
+
+    void markReleased() {
+        this.timeSinceRelease = System.currentTimeMillis();
     }
 
     @Override
@@ -66,8 +74,28 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     }
 
     @Override
+    public long timeSinceRelease() {
+        long tsr = this.timeSinceRelease;
+        if (tsr == -1L) { //-1 is when it's been marked as acquired
+            return 0L;
+        }
+        if (tsr < 0L) tsr = creationTimestamp; //any negative date other than -1 is considered "never yet released"
+        return System.currentTimeMillis() - tsr;
+    }
+
+    /**
+     * Implementors MUST have the Mono call {@link #markReleased()} upon subscription.
+     * <p>
+     * {@inheritDoc}
+     */
+    @Override
     public abstract Mono<Void> release();
 
+    /**
+     * Implementors MUST have the Mono call {@link #markReleased()} upon subscription.
+     * <p>
+     * {@inheritDoc}
+     */
     @Override
     public abstract Mono<Void> invalidate();
 
@@ -76,6 +104,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
         return "PooledRef{" +
                 "poolable=" + poolable +
                 ", timeSinceAllocation=" + timeSinceAllocation() + "ms" +
+                ", timeSinceRelease=" + timeSinceRelease() + "ms" +
                 ", acquireCount=" + acquireCount +
                 '}';
     }

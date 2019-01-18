@@ -33,7 +33,7 @@ import java.util.function.Predicate;
  */
 class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
-    private static final Function<?, Mono<Void>> NO_OP = it -> Mono.empty();
+    static final Function<?, Mono<Void>> NO_OP = it -> Mono.empty();
 
     private final int initialSize;
     private final int maxSize;

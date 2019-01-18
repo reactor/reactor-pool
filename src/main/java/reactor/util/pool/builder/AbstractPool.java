@@ -25,6 +25,7 @@ import reactor.util.pool.api.PoolConfig;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.function.Function;
 
 /**
  * An abstract base version of a {@link Pool}, mutualizing small amounts of code and allowing to build common
@@ -62,8 +63,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     }
 
     Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
-        Mono<Void> destroyer = poolConfig.destroyResource().apply(poolable);
-        return destroyer != null ? destroyer : Mono.fromRunnable(() -> defaultDestroy(poolable));
+        Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
+        if (factory == DefaultPoolConfig.NO_OP) {
+            return Mono.fromRunnable(() -> defaultDestroy(poolable));
+        }
+        return factory.apply(poolable);
     }
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);

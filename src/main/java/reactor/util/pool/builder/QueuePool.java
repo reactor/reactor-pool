@@ -211,10 +211,12 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         @Override
-        public void invalidate() {
-            //immediately clean up state
-            ACQUIRED.decrementAndGet(pool);
-            pool.destroyPoolable(poolable).block();
+        public Mono<Void> invalidate() {
+            return Mono.defer(() -> {
+                //immediately clean up state
+                ACQUIRED.decrementAndGet(pool);
+                return pool.destroyPoolable(poolable);
+            });
         }
     }
 

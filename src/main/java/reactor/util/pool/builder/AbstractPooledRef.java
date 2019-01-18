@@ -69,7 +69,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     public abstract Mono<Void> release();
 
     @Override
-    public abstract void invalidate();
+    public abstract Mono<Void> invalidate();
 
     @Override
     public String toString() {

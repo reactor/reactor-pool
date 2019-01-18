@@ -86,7 +86,9 @@ class PoolBuilderApiCombinationTest {
         }
 
         @Override
-        public void invalidate() { }
+        public Mono<Void> invalidate() {
+            return Mono.empty();
+        }
 
         @Override
         public int acquireCount() {

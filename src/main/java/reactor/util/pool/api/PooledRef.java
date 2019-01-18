@@ -52,16 +52,16 @@ public interface PooledRef<POOLABLE> {
      * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
      * is always discarded.
      */
-    Mono<Void> release(); //keep this one and rename to release()
+    Mono<Void> release();
 
     /**
-     * Trigger the <strong>asynchronous</strong> invalidation of the {@code POOLABLE} and <strong>immediately return</strong>.
+     * Return a {@link Mono} that triggers the asynchronous invalidation of the {@code POOLABLE} when subscribed.
      * The object is always discarded by the pool and not further reused.
      * <p>
      * This is useful when the unhealthy state of the resource (or lack of re-usability) is detected through the usage of
      * the resource, as opposed to its exposed state.
      */
-    void invalidate(); //reactive return type, but simply Mono.fromRunnable() (ben: don't buy the idea of fire-and-forget)
+    Mono<Void> invalidate();
 
     /**
      * Return the number of times the underlying pooled object has been used by consumers of the {@link Pool}, via

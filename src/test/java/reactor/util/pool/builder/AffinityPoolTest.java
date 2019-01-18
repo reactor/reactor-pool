@@ -98,6 +98,7 @@ class AffinityPoolTest {
             super(minSize, maxSize,
                     allocator,
                     pt -> Mono.fromRunnable(pt::clean),
+                    null,
                     slot -> !slot.poolable().isHealthy(),
                     null);
         }
@@ -106,6 +107,7 @@ class AffinityPoolTest {
             super(minSize, maxSize,
                     allocator,
                     pt -> Mono.fromRunnable(pt::clean),
+                    null,
                     slot -> !slot.poolable().isHealthy(),
                     deliveryScheduler);
         }
@@ -118,6 +120,7 @@ class AffinityPoolTest {
                         poolableTest.clean();
                         additionalCleaner.accept(poolableTest);
                     }),
+                    null,
                     slot -> !slot.poolable().isHealthy(),
                     null);
         }
@@ -127,7 +130,7 @@ class AffinityPoolTest {
     void threadAffinity() throws InterruptedException {
         AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
                 Mono.fromCallable(() -> Thread.currentThread().getName()),
-                s -> Mono.empty(), null, null));
+                s -> Mono.empty(), null, null, null));
 
         Scheduler thread1 = Schedulers.newSingle("thread1");
         Map<String, Integer> acquired1 = new HashMap<>(3);
@@ -586,6 +589,7 @@ class AffinityPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
+                null,
                 slot -> !slot.poolable().isHealthy(), null));
 
         PoolableTest pt1 = new PoolableTest(1);
@@ -610,6 +614,7 @@ class AffinityPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
+                null,
                 slot -> !slot.poolable().isHealthy(), null));
 
         PooledRef<PoolableTest> slot1 = pool.acquire().block();
@@ -644,6 +649,7 @@ class AffinityPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
+                null,
                 slot -> !slot.poolable().isHealthy(), null));
 
         PooledRef<PoolableTest> slot1 = pool.acquire().block();
@@ -673,6 +679,7 @@ class AffinityPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
                 p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
+                null,
                 slot -> !slot.poolable().isHealthy(), null));
 
         assertThat(pool.availableElements).isEmpty();
@@ -688,7 +695,7 @@ class AffinityPoolTest {
     @Test
     void poolIsDisposed() {
         AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
-                Mono.fromCallable(PoolableTest::new), p -> Mono.empty(),
+                Mono.fromCallable(PoolableTest::new), null, null,
                 slot -> !slot.poolable().isHealthy(), null));
 
         assertThat(pool.isDisposed()).as("not yet disposed").isFalse();
@@ -704,7 +711,7 @@ class AffinityPoolTest {
 
         AffinityPool<Formatter> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
                 Mono.just(uniqueElement),
-                f -> Mono.empty(),
+                null, null,
                 f -> true, null));
 
         pool.dispose();
@@ -717,7 +724,7 @@ class AffinityPoolTest {
     void allocatorErrorOutsideConstructorIsPropagated() {
         AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 1,
                 Mono.error(new IllegalStateException("boom")),
-                f -> Mono.empty(),
+                null, null,
                 f -> true, null));
 
         assertThatExceptionOfType(IllegalStateException.class)
@@ -729,7 +736,7 @@ class AffinityPoolTest {
     void allocatorErrorInConstructorIsThrown() {
         DefaultPoolConfig<Object> config = new DefaultPoolConfig<>(1, 1,
                 Mono.error(new IllegalStateException("boom")),
-                f -> Mono.empty(),
+                null, null,
                 f -> true, null);
 
         assertThatExceptionOfType(IllegalStateException.class)
@@ -748,7 +755,7 @@ class AffinityPoolTest {
 
             AffinityPool<Closeable> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
                     Mono.just(closeable),
-                    f -> Mono.empty(),
+                    null, null,
                     f -> true, null));
 
             pool.dispose();

@@ -272,9 +272,8 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         @Override
-        public void invalidate() {
-            //immediately clean up state
-            pool.destroyPoolable(poolable).block();
+        public Mono<Void> invalidate() {
+            return pool.destroyPoolable(poolable);
         }
     }
 

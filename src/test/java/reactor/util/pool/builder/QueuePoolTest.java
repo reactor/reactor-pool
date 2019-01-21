@@ -149,7 +149,7 @@ class QueuePoolTest {
         words.subscribe(v -> counter.incrementAndGet());
         assertThat(counter).hasValue(0);
 
-        Thread.sleep(1000);
+        Thread.sleep(1100);
         //we're in the middle of processing the "rows"
         assertThat(counter).as("before all emitted").hasValue(2);
         assertThat(releaseRef).as("still acquiring").hasValue(null);

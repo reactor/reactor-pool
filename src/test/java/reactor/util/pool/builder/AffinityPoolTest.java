@@ -150,7 +150,7 @@ class AffinityPoolTest {
                                     System.out.println("unexpected in thread1: " + slot);
                                 }
 
-                                thread1.schedule(slot::release, 150, TimeUnit.MILLISECONDS);
+                                thread1.schedule(() -> slot.release().subscribe(), 150, TimeUnit.MILLISECONDS);
                             }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
             thread2.schedule(() -> pool.acquire()
@@ -159,7 +159,7 @@ class AffinityPoolTest {
                                 if (!slot.poolable().equals("thread2")) {
                                     System.out.println("unexpected in thread2: " + slot);
                                 }
-                                thread2.schedule(slot::release, 200, TimeUnit.MILLISECONDS);
+                                thread2.schedule(() -> slot.release().subscribe(), 200, TimeUnit.MILLISECONDS);
                             }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
             thread3.schedule(() -> pool.acquire()
@@ -168,13 +168,11 @@ class AffinityPoolTest {
                                 if (!slot.poolable().equals("thread3")) {
                                     System.out.println("unexpected in thread3: " + slot);
                                 }
-
-
-                                thread3.schedule(slot::release, 100, TimeUnit.MILLISECONDS);
+                                thread3.schedule(() -> slot.release().subscribe(), 100, TimeUnit.MILLISECONDS);
                             }, e -> releaseLatch.countDown(), releaseLatch::countDown));
         }
 
-        if (releaseLatch.await(30, TimeUnit.SECONDS)) {
+        if (releaseLatch.await(35, TimeUnit.SECONDS)) {
             assertThat(acquired1)
                     .as("thread1 acquired")
                     .hasSize(1)
@@ -188,7 +186,12 @@ class AffinityPoolTest {
                     .hasSize(1)
                     .containsEntry("thread3", 10);
         }
-        else fail("didn't release all, but " + releaseLatch.getCount());
+        else {
+            System.out.println("acquired1: " + acquired1);
+            System.out.println("acquired2: " + acquired2);
+            System.out.println("acquired3: " + acquired3);
+            fail("didn't release all, but " + releaseLatch.getCount());
+        }
     }
 
     @Nested

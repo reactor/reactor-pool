@@ -16,6 +16,8 @@
 
 package reactor.util.pool.builder;
 
+import org.jctools.queues.MpmcArrayQueue;
+import org.jctools.queues.MpscLinkedQueue8;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
@@ -24,7 +26,6 @@ import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
-import reactor.util.concurrent.Queues;
 import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PooledRef;
 
@@ -45,7 +46,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     static final Map TERMINATED = Collections.emptyMap();
 
-    final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be MPSC. producers include fastpath threads, only consumer is slowpath winner thread
+    final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
 
     volatile long live;
     static final AtomicLongFieldUpdater<AffinityPool> LIVE = AtomicLongFieldUpdater.newUpdater(AffinityPool.class, "live");
@@ -60,7 +61,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     public AffinityPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(AffinityPool.class));
         this.pools = new ConcurrentHashMap<>();
-        this.availableElements = Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();
+        this.availableElements = new MpmcArrayQueue<>(Math.max(poolConfig.maxSize(), 2));//Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();
 
         for (int i = 0; i < poolConfig.initialSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
@@ -215,7 +216,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         SubPool(AffinityPool<POOLABLE> parent) {
             this.parent = parent;
-            this.localPendings = Queues.<Borrower<POOLABLE>>unboundedMultiproducer().get();
+            this.localPendings = new MpscLinkedQueue8<>();
         }
 
         boolean tryLockForSlowPath() {

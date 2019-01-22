@@ -16,6 +16,8 @@
 
 package reactor.util.pool.builder;
 
+import org.jctools.queues.MpscArrayQueue;
+import org.jctools.queues.MpscLinkedQueue8;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
@@ -51,7 +53,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     volatile int live;
     private static final AtomicIntegerFieldUpdater<QueuePool> LIVE = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "live");
 
-    volatile Queue<Borrower<POOLABLE>> pending = Queues.<Borrower<POOLABLE>>unboundedMultiproducer().get();
+    volatile Queue<Borrower<POOLABLE>> pending;
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
 
     volatile int wip;
@@ -60,7 +62,8 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     QueuePool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
-        this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
+        this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
+        this.elements = new MpscArrayQueue<>(Math.max(2, poolConfig.maxSize()));
 
         for (int i = 0; i < poolConfig.initialSize(); i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");

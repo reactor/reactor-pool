@@ -47,6 +47,7 @@ ext {
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   reactorBOM = "Californium-SR3"
+  jcToolsVersion = "2.1.1"
 
   // Languages
   groovyVersion = '2.4.1'
@@ -181,6 +182,8 @@ configure(rootProject) { project ->
 
   dependencies {
     compile "io.projectreactor:reactor-core"
+
+    compile "org.jctools:jctools-core:$jcToolsVersion"
 
     // JSR-305 annotations
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"

@@ -211,7 +211,9 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
 
         boolean tryDirectRecycle(AffinityPooledRef<POOLABLE> ref) {
-            while (!DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1)) { }
+            if (!DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1)) {
+                return false;
+            }
 
             Borrower<POOLABLE> m = localPendings.poll();
 

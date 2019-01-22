@@ -59,6 +59,19 @@ final class DefaultPoolConfigBuilder<T> implements PoolBuilder.RecyclingStep<T>,
     }
 
     @Override
+    public PoolBuilder.FirstPredicateStep<T> recycleAndDestroyWith(Function<T, Mono<Void>> cleaner, Function<T, Mono<Void>> destroyer) {
+        this.cleaner = cleaner;
+        this.destroyer = destroyer;
+        return this;
+    }
+
+    @Override
+    public PoolBuilder.FirstPredicateStep<T> destroyWith(Function<T, Mono<Void>> destroyer) {
+        this.destroyer = destroyer;
+        return this;
+    }
+
+    @Override
     public PoolBuilder.OtherPredicateStep<T> unlessPoolableMatches(Predicate<? super T> poolablePredicate) {
         this .evictionPredicate = slot -> poolablePredicate.test(slot.poolable());
         return this;

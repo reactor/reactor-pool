@@ -84,6 +84,9 @@ public interface PoolBuilder<POOLABLE> {
          * @return the next step in building a {@link Pool}
          */
         FirstPredicateStep<T> recycleWith(Function<T, Mono<Void>> cleaner);
+        FirstPredicateStep<T> recycleAndDestroyWith(Function<T, Mono<Void>> cleaner, Function<T, Mono<Void>> destroyer);
+        FirstPredicateStep<T> destroyWith(Function<T, Mono<Void>> destroyer);
+
     }
 
     /**

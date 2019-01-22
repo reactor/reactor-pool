@@ -81,12 +81,13 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             return;
         }
 
+        SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
+
         AffinityPooledRef<POOLABLE> element = availableElements.poll();
         if (element != null) {
             borrower.deliver(element);
         }
         else {
-            SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
             allocateOrPend(subPool, borrower);
         }
     }

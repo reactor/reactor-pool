@@ -86,50 +86,29 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             borrower.deliver(element);
         }
         else {
-            long l = live;
-            if (l < poolConfig.maxSize() && LIVE.compareAndSet(this, l, l+1)) {
-                poolConfig.allocator()
-                        //we expect the allocator will publish in the same thread or a "compatible" one
-                        // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
-                        // but we'll still accommodate for the deliveryScheduler
-                        .publishOn(poolConfig.deliveryScheduler())
-                        .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
-                                e -> {
-                                    LIVE.decrementAndGet(this);
-                                    borrower.fail(e);
-                                });
-            }
-            else {
-                //cannot create, add to pendingLocal
-                SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
-                subPool.localPendings.offer(borrower);
-                //now it's just a matter of waiting for a #release
-            }
+            SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
+            allocateOrPend(subPool, borrower);
         }
     }
 
-    void recreateOrPend() {
-        SubPool<POOLABLE> subPool = pools.get(Thread.currentThread().getId());
-        if (subPool.tryLockForSlowPath()) {
-            Borrower<POOLABLE> borrower = subPool.getPendingAndUnlock();
-            if (borrower != null) {
-                long l = live;
-                if (l < poolConfig.maxSize() && LIVE.compareAndSet(this, l, l+1)) {
-                    poolConfig.allocator()
-                            //we expect the allocator will publish in the same thread or a "compatible" one
-                            // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
-                            // but we'll still accommodate for the deliveryScheduler
-                            .publishOn(poolConfig.deliveryScheduler())
-                            .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
-                                    e -> {
-                                        LIVE.decrementAndGet(this);
-                                        borrower.fail(e);
-                                    });
-                }
-                else {
-                    subPool.localPendings.offer(borrower);
-                }
-            }
+    void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
+        long l = live;
+        if (l < poolConfig.maxSize() && LIVE.compareAndSet(this, l, l+1)) {
+            poolConfig.allocator()
+                    //we expect the allocator will publish in the same thread or a "compatible" one
+                    // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
+                    // but we'll still accommodate for the deliveryScheduler
+                    .publishOn(poolConfig.deliveryScheduler())
+                    .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
+                            e -> {
+                                LIVE.decrementAndGet(this);
+                                borrower.fail(e);
+                            });
+        }
+        else {
+            //cannot create, add to pendingLocal
+            subPool.localPendings.offer(borrower);
+            //now it's just a matter of waiting for a #release
         }
     }
 
@@ -355,7 +334,17 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             else {
                 LIVE.decrementAndGet(pool);
                 pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
-                pool.recreateOrPend();
+
+                //FIXME should this give up on no SubPool/locked SubPool?
+                //simplified version of what we do in doAcquire, with the caveat that we don't try to create a SubPool
+                SubPool<T> subPool = pool.pools.get(Thread.currentThread().getId());
+                if (subPool.tryLockForSlowPath()) {
+                    Borrower<T> borrower = subPool.getPendingAndUnlock();
+                    if (borrower != null) {
+                        pool.allocateOrPend(subPool, borrower);
+                    }
+                }
+                //if no existing SubPool or if it is locked, forget about it... we'll recreate on next acquire
             }
         }
 

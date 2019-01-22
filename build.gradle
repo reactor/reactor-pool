@@ -160,11 +160,6 @@ configure(rootProject) { project ->
 
   repositories {
     if (version.endsWith('BUILD-SNAPSHOT') || project.hasProperty('platformVersion')) {
-      if (System.getenv ()["bamboo_buildNumber"] == null) {
-        mavenLocal()
-      } else {
-        println 'Bamboo CI detected, avoiding use of mavenLocal()'
-      }
       maven { url 'http://repo.spring.io/libs-snapshot' }
     }
     maven { url 'http://repo.spring.io/libs-milestone' }

@@ -22,6 +22,7 @@ import reactor.core.Exceptions;
 import reactor.core.Scannable;
 import reactor.core.publisher.Operators;
 import reactor.util.annotation.Nullable;
+import reactor.util.context.Context;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
@@ -79,7 +80,7 @@ final class Borrower<POOLABLE> implements Scannable, Subscription {
                 actual.onComplete();
                 break;
             case STATE_CANCELLED:
-                poolSlot.release().subscribe(aVoid -> {}, actual::onError);
+                poolSlot.release().subscribe(aVoid -> {}, e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
                 break;
             default:
                 //shouldn't happen since the PoolInner isn't registered with the pool before having requested

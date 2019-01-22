@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  */
 public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
+    //FIXME put that info on another volatile
     static final Map TERMINATED = Collections.emptyMap();
 
     final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
@@ -75,7 +76,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         return new AffinityPoolMono<>(this);
     }
 
-    void doAcquire(Borrower<POOLABLE> borrower) {
+    void doAcquire(Borrower<POOLABLE> borrower) { //FIXME if called from subscribe, can we inline that?
         if (POOLS.get(this) == TERMINATED) {
             borrower.fail(new RuntimeException("Pool has been shut down"));
             return;

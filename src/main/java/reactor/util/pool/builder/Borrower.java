@@ -50,7 +50,7 @@ final class Borrower<POOLABLE> implements Scannable, Subscription {
     }
 
     @Override
-    public void request(long n) {
+    public void request(long n) { //FIXME could be done at subscribe directly => STATE would have only 2 states => can inline into AtomicBoolean
         if (Operators.validate(n) && STATE.compareAndSet(this, STATE_INIT, STATE_REQUESTED)) {
             parent.doAcquire(this);
         }

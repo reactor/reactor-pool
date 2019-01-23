@@ -73,25 +73,11 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
-        return new AffinityPoolMono<>(this);
+        //Note the pool isn't aware of the mono until subscribed.
+        return new AffinityBorrowerMono<>(this);
     }
 
-    void doAcquire(Borrower<POOLABLE> borrower) { //FIXME if called from subscribe, can we inline that?
-        if (POOLS.get(this) == TERMINATED) {
-            borrower.fail(new RuntimeException("Pool has been shut down"));
-            return;
-        }
-
-        SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
-
-        AffinityPooledRef<POOLABLE> element = availableElements.poll();
-        if (element != null) {
-            borrower.deliver(element);
-        }
-        else {
-            allocateOrPend(subPool, borrower);
-        }
-    }
+    //actual acquire logic is moved in the borrower Mono
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
         long l = live;
@@ -263,20 +249,35 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    private static final class AffinityPoolMono<T> extends Mono<PooledRef<T>> {
+    static final class AffinityBorrowerMono<T> extends Mono<PooledRef<T>> {
 
         final AffinityPool<T> parent;
 
-        AffinityPoolMono(AffinityPool<T> pool) {
+        AffinityBorrowerMono(AffinityPool<T> pool) {
             this.parent = pool;
         }
 
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
+            if (POOLS.get(parent) == TERMINATED) {
+                Operators.error(actual, new RuntimeException("Pool has been shut down"));
+                return;
+            }
 
-            Borrower<T> p = new Borrower<>(actual, parent);
-            actual.onSubscribe(p);
+            SubPool<T> subPool = parent.pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(parent));
+
+            Borrower<T> borrower = new Borrower<>(actual);
+            actual.onSubscribe(borrower);
+
+
+            AffinityPooledRef<T> element = parent.availableElements.poll();
+            if (element != null) {
+                borrower.deliver(element);
+            }
+            else {
+                parent.allocateOrPend(subPool, borrower);
+            }
         }
     }
 

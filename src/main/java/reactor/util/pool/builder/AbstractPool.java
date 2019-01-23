@@ -70,6 +70,4 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         return factory.apply(poolable);
     }
 
-    abstract void doAcquire(Borrower<POOLABLE> borrower);
-
 }

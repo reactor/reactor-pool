@@ -74,19 +74,10 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
-        return new QueuePoolMono<>(this); //the mono is unknown to the pool until both subscribed and requested
+        return new QueueBorrowerMono<>(this); //the mono is unknown to the pool until subscribed
     }
 
-    @Override
-    void doAcquire(Borrower<POOLABLE> borrower) {
-        if (pending != TERMINATED) {
-            pending.add(borrower);
-            drain();
-        }
-        else {
-            borrower.fail(new RuntimeException("Pool has been shut down"));
-        }
-    }
+    //the actual acquire logic happens in the QueueBorrower mono
 
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
@@ -128,7 +119,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.state == Borrower.STATE_CANCELLED || !LIVE.compareAndSet(this, total, total + 1)) {
+                    if (borrower.get() || !LIVE.compareAndSet(this, total, total + 1)) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
@@ -223,11 +214,11 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    private static final class QueuePoolMono<T> extends Mono<PooledRef<T>> {
+    static final class QueueBorrowerMono<T> extends Mono<PooledRef<T>> {
 
         final QueuePool<T> parent;
 
-        QueuePoolMono(QueuePool<T> pool) {
+        QueueBorrowerMono(QueuePool<T> pool) {
             this.parent = pool;
         }
 
@@ -235,8 +226,17 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
 
-            Borrower<T> p = new Borrower<>(actual, parent);
-            actual.onSubscribe(p);
+            @SuppressWarnings("unchecked")
+            Queue<Borrower<T>> pending = PENDING.get(parent);
+            if (pending == TERMINATED) {
+                Operators.error(actual, new RuntimeException("Pool has been shut down"));
+                return;
+            }
+
+            Borrower<T> borrower = new Borrower<>(actual);
+            pending.add(borrower);
+            actual.onSubscribe(borrower);
+            parent.drain();
         }
     }
 

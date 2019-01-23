@@ -528,7 +528,6 @@ class AffinityPoolTest {
             String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
             assertThat(releaserWins).as(stats).hasValue(100);
             assertThat(borrowerWins).as(stats).hasValue(0);
-            //TODO ensure this is congruent with the AffinityPool configuration
         }
 
         @Test
@@ -538,15 +537,14 @@ class AffinityPoolTest {
 
             defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(0, releaserWins, borrowerWins);
 
-            assertThat(releaserWins.get() + borrowerWins.get()).isEqualTo(1);
+            assertThat(releaserWins.get()).isEqualTo(1);
         }
 
         void defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(int round, AtomicInteger releaserWins, AtomicInteger borrowerWins) throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             AtomicInteger newCount = new AtomicInteger();
-            Scheduler acquire1Scheduler = Schedulers.newSingle("acquire1");
-            Scheduler racerReleaseScheduler = Schedulers.fromExecutorService(
-                    Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
+            Scheduler acquireScheduler = Schedulers.fromExecutorService(
+                    Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"acquire"))));
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
@@ -566,22 +564,22 @@ class AffinityPoolTest {
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
-            acquire1Scheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
-                    , e -> latch.countDown(), latch::countDown));
+            acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()),
+                    e -> latch.countDown(),
+                    latch::countDown));
 
             //in parallel, we'll both attempt concurrent acquire AND release the unique element (each on their dedicated threads)
+            acquireScheduler.schedule(uniqueSlot.release()::block, 100, TimeUnit.MILLISECONDS);
             racerAcquireScheduler.schedule(pool.acquire()::block, 100, TimeUnit.MILLISECONDS);
-            racerReleaseScheduler.schedule(uniqueSlot.release()::block, 100, TimeUnit.MILLISECONDS);
 
-            assertThat(
-                    latch.await(5, TimeUnit.SECONDS)
-            ).as("first acquire delivered within 5s").isTrue();
+            assertThat(latch.await(5, TimeUnit.SECONDS)
+            ).as("first acquire delivered within 5s in round " + round).isTrue();
 
             assertThat(newCount).as("created 1 poolable in round " + round).hasValue(1);
 
             //we expect that sometimes the race will let the second borrower thread drain, which would mean first borrower
             //will get the element delivered from racerAcquire thread. Yet the rest of the time it would get drained by racerRelease.
-            if (threadName.get().startsWith("racerRelease")) releaserWins.incrementAndGet();
+            if (threadName.get().startsWith("acquire")) releaserWins.incrementAndGet();
             else if (threadName.get().startsWith("racerAcquire")) borrowerWins.incrementAndGet();
             else System.out.println(threadName.get());
         }

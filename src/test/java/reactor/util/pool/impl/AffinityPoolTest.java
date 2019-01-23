@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
-import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -29,6 +28,9 @@ import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
+import reactor.util.pool.TestUtils;
+import reactor.util.pool.TestUtils.PoolableTest;
+import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PooledRef;
 
 import java.io.Closeable;
@@ -41,96 +43,23 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
+import static reactor.util.pool.api.AllocationStrategies.allocatingMax;
+import static reactor.util.pool.api.PoolConfigBuilder.allocateWith;
 
 /**
  * @author Simon Baslé
  */
 class AffinityPoolTest {
 
-    public static final class PoolableTest implements Disposable {
-
-        private static AtomicInteger defaultId = new AtomicInteger();
-
-        private int usedUp;
-        private int discarded;
-        private final int id;
-
-        PoolableTest() {
-            this(defaultId.incrementAndGet());
-        }
-
-        PoolableTest(int id) {
-            this.id = id;
-            this.usedUp = 0;
-        }
-
-        void clean() {
-            this.usedUp++;
-        }
-
-        boolean isHealthy() {
-            return usedUp < 2;
-        }
-
-        @Override
-        public void dispose() {
-            discarded++;
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return discarded > 0;
-        }
-
-        @Override
-        public String toString() {
-            return "PoolableTest{id=" + id + ", used=" + usedUp + "}";
-        }
-    }
-
-    private static final class PoolableTestConfig extends DefaultPoolConfig<PoolableTest> {
-
-        private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
-            super(minSize, maxSize,
-                    allocator,
-                    pt -> Mono.fromRunnable(pt::clean),
-                    null,
-                    slot -> !slot.poolable().isHealthy(),
-                    null);
-        }
-
-        private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
-            super(minSize, maxSize,
-                    allocator,
-                    pt -> Mono.fromRunnable(pt::clean),
-                    null,
-                    slot -> !slot.poolable().isHealthy(),
-                    deliveryScheduler);
-        }
-
-        private PoolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
-                                   Consumer<? super PoolableTest> additionalCleaner) {
-            super(minSize, maxSize,
-                    allocator,
-                    poolableTest -> Mono.fromRunnable(() -> {
-                        poolableTest.clean();
-                        additionalCleaner.accept(poolableTest);
-                    }),
-                    null,
-                    slot -> !slot.poolable().isHealthy(),
-                    null);
-        }
-    }
-
     @Test
     void threadAffinity() throws InterruptedException {
-        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
-                Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)),
-                s -> Mono.empty(), null, null, null));
+        AffinityPool<String> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)))
+                .witAllocationLimit(allocatingMax(3))
+                .buildConfig());
 
         Scheduler thread1 = Schedulers.newSingle("thread1");
         Map<String, Integer> acquired1 = new HashMap<>(3);
@@ -201,7 +130,7 @@ class AffinityPoolTest {
         @Test
         void smokeTest() throws InterruptedException {
             AtomicInteger newCount = new AtomicInteger();
-            AffinityPool<PoolableTest> pool = new AffinityPool<>(new PoolableTestConfig(2, 3,
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(TestUtils.poolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
 
             List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
@@ -247,7 +176,7 @@ class AffinityPoolTest {
         @Test
         void smokeTestAsync() throws InterruptedException {
             AtomicInteger newCount = new AtomicInteger();
-            AffinityPool<PoolableTest> pool = new AffinityPool<>(new PoolableTestConfig(2, 3,
+            AffinityPool<PoolableTest> pool = new AffinityPool<>(TestUtils.poolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator"))));
 
@@ -309,7 +238,7 @@ class AffinityPoolTest {
         void returnedReleasedIfBorrowerCancelled() {
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new),
                     pt -> releasedCount.incrementAndGet());
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
@@ -334,7 +263,7 @@ class AffinityPoolTest {
             AtomicInteger newCount = new AtomicInteger();
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -374,7 +303,7 @@ class AffinityPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -411,7 +340,7 @@ class AffinityPoolTest {
 
         @Test
         void cleanerFunctionError() {
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
@@ -425,7 +354,7 @@ class AffinityPoolTest {
 
         @Test
         void cleanerFunctionErrorDiscards() {
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
@@ -443,7 +372,7 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
@@ -465,7 +394,7 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolableTestConfig testConfig = new PoolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
@@ -490,7 +419,7 @@ class AffinityPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
@@ -548,7 +477,7 @@ class AffinityPoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            PoolableTestConfig testConfig = new PoolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = TestUtils.poolableTestConfig(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -588,10 +517,12 @@ class AffinityPoolTest {
     @Test
     void disposingPoolDisposesElements() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
-                p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                null,
-                slot -> !slot.poolable().isHealthy(), null));
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(PoolableTest::new))
+                .witAllocationLimit(allocatingMax(3))
+                .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
+                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .buildConfig());
 
         PoolableTest pt1 = new PoolableTest(1);
         PoolableTest pt2 = new PoolableTest(2);
@@ -613,10 +544,13 @@ class AffinityPoolTest {
     @Test
     void disposingPoolFailsPendingBorrowers() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
-                p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                null,
-                slot -> !slot.poolable().isHealthy(), null));
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(PoolableTest::new))
+                        .witAllocationLimit(allocatingMax(3))
+                        .initialSizeOf(3)
+                        .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
+                        .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                        .buildConfig());
 
         PooledRef<PoolableTest> slot1 = pool.acquire().block();
         PooledRef<PoolableTest> slot2 = pool.acquire().block();
@@ -648,10 +582,13 @@ class AffinityPoolTest {
     @Test
     void releasingToDisposedPoolDisposesElement() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(3, 3, Mono.fromCallable(PoolableTest::new),
-                p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                null,
-                slot -> !slot.poolable().isHealthy(), null));
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(PoolableTest::new))
+                        .witAllocationLimit(allocatingMax(3))
+                        .initialSizeOf(3)
+                        .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
+                        .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                        .buildConfig());
 
         PooledRef<PoolableTest> slot1 = pool.acquire().block();
         PooledRef<PoolableTest> slot2 = pool.acquire().block();
@@ -678,10 +615,12 @@ class AffinityPoolTest {
     @Test
     void acquiringFromDisposedPoolFailsBorrower() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3, Mono.fromCallable(PoolableTest::new),
-                p -> Mono.fromRunnable(cleanerCount::incrementAndGet),
-                null,
-                slot -> !slot.poolable().isHealthy(), null));
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(PoolableTest::new))
+                        .witAllocationLimit(allocatingMax(3))
+                        .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
+                        .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                        .buildConfig());
 
         assertThat(pool.availableElements).isEmpty();
 
@@ -695,9 +634,11 @@ class AffinityPoolTest {
 
     @Test
     void poolIsDisposed() {
-        AffinityPool<PoolableTest> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 3,
-                Mono.fromCallable(PoolableTest::new), null, null,
-                slot -> !slot.poolable().isHealthy(), null));
+        AffinityPool<PoolableTest> pool = new AffinityPool<>(
+                allocateWith(Mono.fromCallable(PoolableTest::new))
+                        .witAllocationLimit(allocatingMax(3))
+                        .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                        .buildConfig());
 
         assertThat(pool.isDisposed()).as("not yet disposed").isFalse();
 
@@ -710,10 +651,12 @@ class AffinityPoolTest {
     void disposingPoolClosesCloseable() {
         Formatter uniqueElement = new Formatter();
 
-        AffinityPool<Formatter> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
-                Mono.just(uniqueElement),
-                null, null,
-                f -> true, null));
+        AffinityPool<Formatter> pool = new AffinityPool<>(
+                allocateWith(Mono.just(uniqueElement))
+                        .witAllocationLimit(allocatingMax(1))
+                        .initialSizeOf(1)
+                        .evictionPredicate(slot -> true)
+                        .buildConfig());
 
         pool.dispose();
 
@@ -723,10 +666,12 @@ class AffinityPoolTest {
 
     @Test
     void allocatorErrorOutsideConstructorIsPropagated() {
-        AffinityPool<String> pool = new AffinityPool<>(new DefaultPoolConfig<>(0, 1,
-                Mono.error(new IllegalStateException("boom")),
-                null, null,
-                f -> true, null));
+        AffinityPool<String> pool = new AffinityPool<>(
+                allocateWith(Mono.<String>error(new IllegalStateException("boom")))
+                        .witAllocationLimit(allocatingMax(1))
+                        .initialSizeOf(0)
+                        .evictionPredicate(f -> true)
+                        .buildConfig());
 
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(pool.acquire()::block)
@@ -735,10 +680,11 @@ class AffinityPoolTest {
 
     @Test
     void allocatorErrorInConstructorIsThrown() {
-        DefaultPoolConfig<Object> config = new DefaultPoolConfig<>(1, 1,
-                Mono.error(new IllegalStateException("boom")),
-                null, null,
-                f -> true, null);
+        PoolConfig<Object> config = allocateWith(Mono.error(new IllegalStateException("boom")))
+                .initialSizeOf(1)
+                .witAllocationLimit(allocatingMax(1))
+                .evictionPredicate(f -> true)
+                .buildConfig();
 
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(() -> new AffinityPool<>(config))
@@ -754,10 +700,12 @@ class AffinityPoolTest {
                 throw new IOException("boom");
             };
 
-            AffinityPool<Closeable> pool = new AffinityPool<>(new DefaultPoolConfig<>(1, 1,
-                    Mono.just(closeable),
-                    null, null,
-                    f -> true, null));
+            AffinityPool<Closeable> pool = new AffinityPool<>(
+                    allocateWith(Mono.just(closeable))
+                    .initialSizeOf(1)
+                    .witAllocationLimit(allocatingMax(1))
+                    .evictionPredicate(f -> true)
+                    .buildConfig());
 
             pool.dispose();
 

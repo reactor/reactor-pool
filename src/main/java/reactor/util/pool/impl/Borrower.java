@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;

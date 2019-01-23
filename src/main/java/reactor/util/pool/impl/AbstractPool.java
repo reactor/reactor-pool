@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
@@ -64,7 +64,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
-        if (factory == DefaultPoolConfig.NO_OP) {
+        if (factory == PoolConfig.NO_OP_FACTORY) {
             return Mono.fromRunnable(() -> defaultDestroy(poolable));
         }
         return factory.apply(poolable);

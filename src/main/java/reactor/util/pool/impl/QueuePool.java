@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
@@ -26,7 +26,6 @@ import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.util.Loggers;
 import reactor.util.concurrent.Queues;
-import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PooledRef;
 
@@ -37,11 +36,21 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * A {@link Queues MPSC Queue}-based implementation of {@link Pool}.
+ * A simple {@link reactor.util.pool.api.Pool} implementation based on MPSC queues for both idle resources and pending
+ * borrowers. It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
+ * be handed off on any of the following {@link Thread threads}:
+ * <ul>
+ *     <li>any thread on which a resource was last allocated</li>
+ *     <li>any thread on which a resource was recently released</li>
+ *     <li>any thread on which an Pool{@link #acquire()} {@link Mono} was subscribed</li>
+ * </ul>
+ * <p>
+ * For a more deterministic approach, the {@link PoolConfig#deliveryScheduler()} property of the {@link PoolConfig} can
+ * be used.
  *
  * @author Simon Baslé
  */
-final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
+public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     private static final Queue TERMINATED = Queues.empty().get();
 
@@ -49,9 +58,6 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     volatile int acquired;
     private static final AtomicIntegerFieldUpdater<QueuePool> ACQUIRED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "acquired");
-
-    volatile int live;
-    private static final AtomicIntegerFieldUpdater<QueuePool> LIVE = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "live");
 
     volatile Queue<Borrower<POOLABLE>> pending;
     private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
@@ -63,13 +69,19 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     QueuePool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
-        this.elements = new MpscArrayQueue<>(Math.max(2, poolConfig.maxSize()));
+        int maxSize = poolConfig.allocationStrategy().estimatePermitCount();
+        if (maxSize == Integer.MAX_VALUE) {
+            this.elements = new MpscLinkedQueue8<>();
+        }
+        else {
+            this.elements = new MpscArrayQueue<>(Math.max(2, maxSize));
+        }
 
-        for (int i = 0; i < poolConfig.initialSize(); i++) {
+        int initSize = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
+        for (int i = 0; i < initSize; i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
             elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
-        this.live = elements.size();
     }
 
     @Override
@@ -86,14 +98,14 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 elements.offer(poolSlot);
             }
             else {
-                LIVE.decrementAndGet(this);
+                poolConfig.allocationStrategy().addPermit();
                 destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
             }
             drain();
         }
         else {
-            LIVE.decrementAndGet(this);
-                destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
+            poolConfig.allocationStrategy().addPermit();
+            destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
         }
     }
 
@@ -105,21 +117,20 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     private void drainLoop() {
         int missed = 1;
-        int maxElements = poolConfig.maxSize();
 
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = pending.size();
-            int total = LIVE.get(this);
+            int permits = poolConfig.allocationStrategy().estimatePermitCount();
 
             if (availableCount == 0) {
-                if (pendingCount > 0 && total < maxElements) {
+                if (pendingCount > 0 && permits > 0) {
                     final Borrower<POOLABLE> borrower = pending.poll(); //shouldn't be null
                     if (borrower == null) {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.get() || !LIVE.compareAndSet(this, total, total + 1)) {
+                    if (borrower.get() || !poolConfig.allocationStrategy().getPermit()) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
@@ -128,7 +139,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                             .subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
                                         ACQUIRED.decrementAndGet(this);
-                                        LIVE.decrementAndGet(this);
+                                        poolConfig.allocationStrategy().addPermit();
                                         borrower.fail(e);
                                     });
                 }
@@ -287,7 +298,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 ACQUIRED.decrementAndGet(pool);
             }
 
-            LIVE.decrementAndGet(pool);
+            pool.poolConfig.allocationStrategy().addPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
             pool.drain();
 

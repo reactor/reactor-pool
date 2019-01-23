@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-2019 Pivotal Software Inc, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.api;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.annotation.Nullable;
-import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PooledRef;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -33,28 +31,28 @@ import java.util.function.Predicate;
  */
 class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
-    static final Function<?, Mono<Void>> NO_OP = it -> Mono.empty();
-
-    private final int initialSize;
-    private final int maxSize;
     private final Mono<POOLABLE> allocator;
+    private final int initialSize;
+    private final AllocationStrategy allocationStrategy;
     private final Function<POOLABLE, Mono<Void>> resetFactory;
     private final Function<POOLABLE, Mono<Void>> destroyFactory;
     private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
 
-    DefaultPoolConfig(int initialSize, int maxSize, Mono<POOLABLE> allocator,
+    DefaultPoolConfig(Mono<POOLABLE> allocator,
+                      int initialSize,
+                      @Nullable AllocationStrategy allocationStrategy,
                       @Nullable Function<POOLABLE, Mono<Void>> resetFactory,
                       @Nullable Function<POOLABLE, Mono<Void>> destroyFactory,
                       @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
                       @Nullable Scheduler deliveryScheduler) {
-        this.initialSize = initialSize;
-        this.maxSize = maxSize;
+        this.allocator = allocator;
+        this.initialSize = initialSize < 0 ? 0 : initialSize;
+        this.allocationStrategy = allocationStrategy == null ? AllocationStrategies.unbounded() : allocationStrategy;
 
         @SuppressWarnings("unchecked")
-        Function<POOLABLE, Mono<Void>> noOp = (Function<POOLABLE, Mono<Void>>) NO_OP;
+        Function<POOLABLE, Mono<Void>> noOp = (Function<POOLABLE, Mono<Void>>) NO_OP_FACTORY;
 
-        this.allocator = allocator;
         this.resetFactory = resetFactory == null ? noOp : resetFactory;
         this.destroyFactory = destroyFactory == null ? noOp : destroyFactory;
 
@@ -65,6 +63,16 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     @Override
     public Mono<POOLABLE> allocator() {
         return this.allocator;
+    }
+
+    @Override
+    public AllocationStrategy allocationStrategy() {
+        return this.allocationStrategy;
+    }
+
+    @Override
+    public int initialSize() {
+        return this.initialSize;
     }
 
     @Override
@@ -80,16 +88,6 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     @Override
     public Predicate<PooledRef<POOLABLE>> evictionPredicate() {
         return this.evictionPredicate;
-    }
-
-    @Override
-    public int initialSize() {
-        return this.initialSize;
-    }
-
-    @Override
-    public int maxSize() {
-        return this.maxSize;
     }
 
     @Override

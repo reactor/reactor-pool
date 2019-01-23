@@ -15,11 +15,11 @@
  */
 
 /**
- * Builder for reactive pools and internal implementations of reactive pooling interfaces.
+ * Reactive pool implementations.
  *
  * @author Simon Baslé
  */
 @NonNullApi
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import reactor.util.annotation.NonNullApi;

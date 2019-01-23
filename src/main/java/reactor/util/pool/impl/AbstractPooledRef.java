@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import reactor.core.publisher.Mono;
 import reactor.util.pool.api.PooledRef;

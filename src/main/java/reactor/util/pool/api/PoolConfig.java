@@ -24,9 +24,13 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
+ * Configuration for a {@link Pool}. Can be built using {@link PoolConfigBuilder#allocateWith(Mono) PoolConfigBuilder}.
+ *
  * @author Simon Baslé
  */
 public interface PoolConfig<P> {
+
+    Function<?, Mono<Void>> NO_OP_FACTORY = it -> Mono.empty();
 
     /**
      * The asynchronous factory that produces new resources.
@@ -36,10 +40,23 @@ public interface PoolConfig<P> {
     Mono<P> allocator();
 
     /**
+     * Defines a strategy / limit for the number of pooled object to allocate.
+     *
+     * @return the {@link AllocationStrategy} for the pool
+     */
+    AllocationStrategy allocationStrategy();
+
+    /**
+     * @return the minimum number of objects a {@link Pool} should create at initialization.
+     */
+    int initialSize();
+
+    /**
      * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
      * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
      * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
      * reaping process.
+     *
      * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
      */
     Predicate<PooledRef<P>> evictionPredicate();
@@ -63,16 +80,6 @@ public interface PoolConfig<P> {
      * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
      */
     Function<P, Mono<Void>> destroyResource();
-
-    /**
-     * @return the minimum number of objects a {@link Pool} should create at initialization.
-     */
-    int initialSize();
-
-    /**
-     * @return the maximum number of objects the pool should maintain at all times
-     */
-    int maxSize();
 
     /**
      * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called

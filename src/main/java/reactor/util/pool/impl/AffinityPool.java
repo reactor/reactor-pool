@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package reactor.util.pool.builder;
+package reactor.util.pool.impl;
 
 import org.jctools.queues.MpmcArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
@@ -34,12 +34,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
+ * A {@link reactor.util.pool.api.Pool} implementation that attempts to keep resources on the same thread, by prioritizing
+ * pending borrowers that were subscribed on the same thread on which a resource is released. In case no such borrower
+ * exists, but some are pending from another thread, it will deliver to these borrowers instead (slow path, no fairness
+ * guarantee).
+ *
  * @author Simon Baslé
  */
 public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
@@ -48,9 +53,6 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final Map TERMINATED = Collections.emptyMap();
 
     final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
-
-    volatile long live;
-    static final AtomicLongFieldUpdater<AffinityPool> LIVE = AtomicLongFieldUpdater.newUpdater(AffinityPool.class, "live");
 
     volatile Map<Long, SubPool<POOLABLE>> pools;
     static final AtomicReferenceFieldUpdater<AffinityPool, Map> POOLS = AtomicReferenceFieldUpdater.newUpdater(AffinityPool.class, Map.class, "pools");
@@ -62,13 +64,21 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     public AffinityPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(AffinityPool.class));
         this.pools = new ConcurrentHashMap<>();
-        this.availableElements = new MpmcArrayQueue<>(Math.max(poolConfig.maxSize(), 2));//Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        for (int i = 0; i < poolConfig.initialSize(); i++) {
+        int maxSize = poolConfig.allocationStrategy().estimatePermitCount();
+        if (maxSize == Integer.MAX_VALUE) {
+            this.availableElements = new ConcurrentLinkedQueue<>();
+        }
+        else {
+            this.availableElements = new MpmcArrayQueue<>(Math.max(maxSize, 2));
+        }
+
+        int toBuild = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
+
+        for (int i = 0; i < toBuild; i++) {
             POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
             availableElements.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
         }
-        LIVE.lazySet(this, availableElements.size());
     }
 
     @Override
@@ -80,16 +90,14 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     //actual acquire logic is moved in the borrower Mono
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
-        long l = live;
-        if (l < poolConfig.maxSize() && LIVE.compareAndSet(this, l, l+1)) {
+        if (poolConfig.allocationStrategy().getPermit()) {
             poolConfig.allocator()
                     //we expect the allocator will publish in the same thread or a "compatible" one
                     // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
-                    // but we'll still accommodate for the deliveryScheduler
-                    .publishOn(poolConfig.deliveryScheduler())
+//                    .publishOn(poolConfig.deliveryScheduler())
                     .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
                             e -> {
-                                LIVE.decrementAndGet(this);
+                                poolConfig.allocationStrategy().addPermit();
                                 borrower.fail(e);
                             });
         }
@@ -112,6 +120,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (SLOWPATH_WIP.getAndIncrement(this) != 0) {
             return;
         }
+        //TODO should we randomize the order of subpools to try?
         for(;;) {
             AffinityPooledRef<POOLABLE> ref = availableElements.poll();
             boolean delivered = false;
@@ -318,7 +327,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            LIVE.decrementAndGet(pool);
+            pool.poolConfig.allocationStrategy().addPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage further errors?
             actual.onError(throwable);
         }
@@ -337,7 +346,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 pool.recycle(slot);
             }
             else {
-                LIVE.decrementAndGet(pool);
+                pool.poolConfig.allocationStrategy().addPermit();
                 pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
 
                 //FIXME should this give up on no SubPool/locked SubPool?

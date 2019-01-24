@@ -66,7 +66,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     private static final AtomicIntegerFieldUpdater<QueuePool> WIP = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "wip");
 
 
-    QueuePool(PoolConfig<POOLABLE> poolConfig) {
+    public QueuePool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
         int maxSize = poolConfig.allocationStrategy().estimatePermitCount();

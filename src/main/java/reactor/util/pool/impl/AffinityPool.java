@@ -97,7 +97,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 //                    .publishOn(poolConfig.deliveryScheduler())
                     .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
                             e -> {
-                                poolConfig.allocationStrategy().addPermit();
+                                poolConfig.allocationStrategy().returnPermit();
                                 borrower.fail(e);
                             });
         }
@@ -327,7 +327,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            pool.poolConfig.allocationStrategy().addPermit();
+            pool.poolConfig.allocationStrategy().returnPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage further errors?
             actual.onError(throwable);
         }
@@ -346,7 +346,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 pool.recycle(slot);
             }
             else {
-                pool.poolConfig.allocationStrategy().addPermit();
+                pool.poolConfig.allocationStrategy().returnPermit();
                 pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
 
                 //FIXME should this give up on no SubPool/locked SubPool?

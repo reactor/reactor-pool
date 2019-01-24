@@ -27,7 +27,7 @@ public final class AllocationStrategies {
 
     /**
      * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-     * {@link AllocationStrategy#addPermit()} has been called.
+     * {@link AllocationStrategy#returnPermit()} has been called.
      *
      * @param max the maximum number of live resources to keep in the pool
      * @return an {@link AllocationStrategy} that allows at most N live resources
@@ -62,12 +62,12 @@ public final class AllocationStrategies {
         }
 
         @Override
-        public void addPermit() {
+        public void returnPermit() {
             //NO-OP
         }
 
         @Override
-        public void addPermits(int returned) {
+        public void returnPermits(int returned) {
             //NO-OP
         }
     };
@@ -112,12 +112,12 @@ public final class AllocationStrategies {
         }
 
         @Override
-        public void addPermit() {
+        public void returnPermit() {
             PERMITS.incrementAndGet(this);
         }
 
         @Override
-        public void addPermits(int returned) {
+        public void returnPermits(int returned) {
             PERMITS.addAndGet(this, returned);
         }
     }

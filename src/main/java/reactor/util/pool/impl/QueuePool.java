@@ -98,13 +98,13 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 elements.offer(poolSlot);
             }
             else {
-                poolConfig.allocationStrategy().addPermit();
+                poolConfig.allocationStrategy().returnPermit();
                 destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
             }
             drain();
         }
         else {
-            poolConfig.allocationStrategy().addPermit();
+            poolConfig.allocationStrategy().returnPermit();
             destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
         }
     }
@@ -139,7 +139,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                             .subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
                                         ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy().addPermit();
+                                        poolConfig.allocationStrategy().returnPermit();
                                         borrower.fail(e);
                                     });
                 }
@@ -298,7 +298,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 ACQUIRED.decrementAndGet(pool);
             }
 
-            pool.poolConfig.allocationStrategy().addPermit();
+            pool.poolConfig.allocationStrategy().returnPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
             pool.drain();
 

@@ -93,19 +93,19 @@ class AllocationStrategiesTest {
         }
 
         @Test
-        void addPermitCanGoOverMax() {
+        void returnPermitCanGoOverMax() {
             final AllocationStrategy test = AllocationStrategies.allocatingMax(1);
 
-            test.addPermit();
+            test.returnPermit();
 
             assertThat(test.estimatePermitCount()).isEqualTo(2);
         }
 
         @Test
-        void addPermitsCanGoOverMax() {
+        void returnPermitsCanGoOverMax() {
             final AllocationStrategy test = AllocationStrategies.allocatingMax(1);
 
-            test.addPermits(100);
+            test.returnPermits(100);
 
             assertThat(test.estimatePermitCount()).isEqualTo(101);
         }
@@ -123,7 +123,7 @@ class AllocationStrategiesTest {
                 es.submit(() -> {
                     if (test.getPermit()) {
                         counter.increment();
-                        test.addPermit();
+                        test.returnPermit();
                     }
                 });
             }
@@ -153,7 +153,7 @@ class AllocationStrategiesTest {
                     if (got == 0) gotZeroCounter.increment();
 
                     counter.add(got);
-                    test.addPermits(got);
+                    test.returnPermits(got);
                 });
             }
 
@@ -187,12 +187,12 @@ class AllocationStrategiesTest {
                         int got = test.getPermits(desired);
                         if (got == 0) gotZeroCounter.increment();
 
-                        test.addPermits(got);
+                        test.returnPermits(got);
                     }
                     else {
                         usedGetPermit.increment();
                         if (test.getPermit()) {
-                            test.addPermit();
+                            test.returnPermit();
                         }
                         else {
                             gotZeroCounter.increment();
@@ -230,7 +230,7 @@ class AllocationStrategiesTest {
                     if (got == 0) gotZeroCounter.increment();
                     for (int j = 0; j < got; j++) {
                         counter.increment();
-                        test.addPermit();
+                        test.returnPermit();
                     }
                 });
             }
@@ -289,19 +289,19 @@ class AllocationStrategiesTest {
         }
 
         @Test
-        void addPermitDoesntChangeMax() {
+        void returnPermitDoesntChangeMax() {
             final AllocationStrategy test = AllocationStrategies.unbounded();
 
-            test.addPermit();
+            test.returnPermit();
 
             assertThat(test.estimatePermitCount()).isEqualTo(Integer.MAX_VALUE);
         }
 
         @Test
-        void addPermitsDoesntChangeMax() {
+        void returnPermitsDoesntChangeMax() {
             final AllocationStrategy test = AllocationStrategies.unbounded();
 
-            test.addPermits(1000);
+            test.returnPermits(1000);
 
             assertThat(test.estimatePermitCount()).isEqualTo(Integer.MAX_VALUE);
         }

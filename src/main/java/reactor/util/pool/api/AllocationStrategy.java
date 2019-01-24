@@ -25,8 +25,6 @@ package reactor.util.pool.api;
  */
 public interface AllocationStrategy {
 
-    //TODO test these methods and AllocationStrategies
-
     /**
      * Try to get the permission to allocate one new resource. Once a resource is discarded from the pool, it must
      * update the strategy using {@link #addPermit()}.
@@ -56,8 +54,15 @@ public interface AllocationStrategy {
 
     /**
      * Update the strategy to indicate that a resource was discarded from the {@link Pool}, potentially leaving space
-     * for a new one to be allocated.
+     * for a new one to be allocated. Users MUST ensure that this method isn't called more than the number of held
+     * permits it has.
      */
     void addPermit();
 
+    /**
+     * Update the strategy to indicate that N resources were discarded from the {@link Pool}, potentially leaving space
+     * for N new ones to be allocated. Users MUST ensure that this method isn't called with a value greater than the
+     * number of held permits it has.
+     */
+    void addPermits(int returned);
 }

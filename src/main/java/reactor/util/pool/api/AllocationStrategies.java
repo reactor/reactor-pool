@@ -53,7 +53,7 @@ public final class AllocationStrategies {
 
         @Override
         public int getPermits(int desired) {
-            return desired;
+            return desired <= 0 ? 0 : desired;
         }
 
         @Override
@@ -63,6 +63,11 @@ public final class AllocationStrategies {
 
         @Override
         public void addPermit() {
+            //NO-OP
+        }
+
+        @Override
+        public void addPermits(int returned) {
             //NO-OP
         }
     };
@@ -75,7 +80,7 @@ public final class AllocationStrategies {
         static final AtomicIntegerFieldUpdater<SizeBasedAllocationStrategy> PERMITS = AtomicIntegerFieldUpdater.newUpdater(SizeBasedAllocationStrategy.class, "permits");
 
         SizeBasedAllocationStrategy(int max) {
-            this.max = Math.max(0, max);
+            this.max = Math.max(1, max);
             PERMITS.lazySet(this, this.max);
         }
 
@@ -90,10 +95,10 @@ public final class AllocationStrategies {
 
         @Override
         public int getPermits(int desired) {
-            if (desired == 0) return 0;
+            if (desired <= 0) return 0;
             for (;;) {
                 int p = permits;
-                int possible = Math.max(desired, p);
+                int possible = Math.min(desired, p);
 
                 if (PERMITS.compareAndSet(this, p, p - possible)) {
                     return possible;
@@ -109,6 +114,11 @@ public final class AllocationStrategies {
         @Override
         public void addPermit() {
             PERMITS.incrementAndGet(this);
+        }
+
+        @Override
+        public void addPermits(int returned) {
+            PERMITS.addAndGet(this, returned);
         }
     }
 }

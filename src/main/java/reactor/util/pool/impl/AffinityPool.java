@@ -244,7 +244,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 cleaner = pool.poolConfig.resetResource().apply(poolable);
             }
             catch (Throwable e) {
-                markReleased();
+                markReleased(); //TODO should this lead to destroy?
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
             }
 
@@ -282,7 +282,15 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             AffinityPooledRef<T> element = parent.availableElements.poll();
             if (element != null) {
-                borrower.deliver(element);
+
+                //TODO test this scenario
+                if (parent.poolConfig.evictionPredicate().test(element)) {
+                    parent.destroyPoolable(element.poolable).subscribe(); //this returns a permit
+                    parent.allocateOrPend(subPool, borrower);
+                }
+                else {
+                    borrower.deliver(element);
+                }
             }
             else {
                 parent.allocateOrPend(subPool, borrower);
@@ -327,7 +335,6 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            pool.poolConfig.allocationStrategy().returnPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage further errors?
             actual.onError(throwable);
         }
@@ -346,7 +353,6 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 pool.recycle(slot);
             }
             else {
-                pool.poolConfig.allocationStrategy().returnPermit();
                 pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
 
                 //FIXME should this give up on no SubPool/locked SubPool?

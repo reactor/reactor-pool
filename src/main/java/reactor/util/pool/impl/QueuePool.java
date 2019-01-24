@@ -98,13 +98,11 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 elements.offer(poolSlot);
             }
             else {
-                poolConfig.allocationStrategy().returnPermit();
                 destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
             }
             drain();
         }
         else {
-            poolConfig.allocationStrategy().returnPermit();
             destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
         }
     }
@@ -148,6 +146,12 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 //there are objects ready and unclaimed in the pool + a pending
                 QueuePooledRef<POOLABLE> slot = elements.poll();
                 if (slot == null) continue;
+
+                //TODO test the idle eviction scenario
+                if (poolConfig.evictionPredicate().test(slot)) {
+                    destroyPoolable(slot.poolable).subscribe();
+                    continue;
+                }
 
                 //there is a party currently pending acquiring
                 Borrower<POOLABLE> inner = pending.poll();
@@ -200,6 +204,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         public Mono<Void> release() {
             if (PENDING.get(pool) == TERMINATED) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state
+                markReleased();
                 return pool.destroyPoolable(poolable);
             }
 
@@ -209,6 +214,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
             catch (Throwable e) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state
+                markReleased();
                 return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
             }
             //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
@@ -298,7 +304,6 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 ACQUIRED.decrementAndGet(pool);
             }
 
-            pool.poolConfig.allocationStrategy().returnPermit();
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
             pool.drain();
 

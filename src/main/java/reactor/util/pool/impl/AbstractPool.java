@@ -20,6 +20,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.util.Logger;
 import reactor.util.annotation.Nullable;
+import reactor.util.pool.api.AllocationStrategy;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
 
@@ -62,7 +63,15 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         //TODO anything else to throw away the Poolable?
     }
 
+    /**
+     * Apply the configured destroyFactory to get the destroy {@link Mono} AND return a permit to the {@link AllocationStrategy},
+     * which assumes that the {@link Mono} will always be subscribed.
+     *
+     * @param poolable the poolable that is not part of the live set
+     * @return the destroy {@link Mono}, which MUST be subscribed immediately
+     */
     Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
+        poolConfig.allocationStrategy().returnPermit();
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
         if (factory == PoolConfig.NO_OP_FACTORY) {
             return Mono.fromRunnable(() -> defaultDestroy(poolable));

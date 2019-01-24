@@ -22,6 +22,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.util.pool.api.AllocationStrategies;
 import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PoolConfigBuilder;
+import reactor.util.pool.api.PooledRef;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -30,6 +31,51 @@ import java.util.function.Consumer;
  * @author Simon Baslé
  */
 public class TestUtils {
+
+    public static final class TestPooledRef<T> implements PooledRef<T> {
+
+        final T poolable;
+        final int msSinceRelease;
+        final int msSinceAllocation;
+        final int acquireCount;
+
+        public TestPooledRef(T poolable, int acquireCount, int secondsSinceRelease, int secondsSinceAllocation) {
+            this.poolable = poolable;
+            this.acquireCount = acquireCount;
+            this.msSinceRelease = secondsSinceRelease * 1000;
+            this.msSinceAllocation = secondsSinceAllocation * 1000;
+        }
+
+        @Override
+        public T poolable() {
+            return this.poolable;
+        }
+
+        @Override
+        public Mono<Void> release() {
+            return Mono.empty();
+        }
+
+        @Override
+        public Mono<Void> invalidate() {
+            return Mono.empty();
+        }
+
+        @Override
+        public int acquireCount() {
+            return acquireCount;
+        }
+
+        @Override
+        public long timeSinceAllocation() {
+            return msSinceAllocation;
+        }
+
+        @Override
+        public long timeSinceRelease() {
+            return msSinceRelease;
+        }
+    }
 
     public static final class PoolableTest implements Disposable {
 

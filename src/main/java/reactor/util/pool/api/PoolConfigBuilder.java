@@ -134,7 +134,7 @@ public class PoolConfigBuilder<T> {
      * Finally, some pool implementations MAY implement a reaper thread mechanism that detect idle resources through
      * this predicate and destroy them.
      * <p>
-     * Defaults to never evicting. See {@link EvictionStrategies} for pre-build eviction predicates.
+     * Defaults to never evicting. See {@link EvictionPredicates} for pre-build eviction predicates.
      *
      * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should be destroyed
      * @return this {@link PoolConfig} builder
@@ -167,34 +167,5 @@ public class PoolConfigBuilder<T> {
     public PoolConfig<T> buildConfig() {
         return new DefaultPoolConfig<>(allocator, initialSize, allocationStrategy, resetFactory, destroyFactory, evictionPredicate, deliveryScheduler);
     }
-
-    //TODO reintroduce these somehow
-//    @Override
-//    public PoolBuilder.OtherPredicateStep<T> unlessPoolableMatches(Predicate<? super T> poolablePredicate) {
-//        this .evictionPredicate = slot -> poolablePredicate.test(slot.poolable());
-//        return this;
-//    }
-//
-//    @Override
-//    public PoolBuilder.OtherPredicateStep<T> unlessRefMatches(Predicate<? super PooledRef<? super T>> refPredicate) {
-//        this.evictionPredicate = refPredicate::test;
-//        return this;
-//    }
-//
-//    @Override
-//    public PoolBuilder.OtherPredicateStep<T> orPoolableMatches(Predicate<? super T> poolablePredicate) {
-//        assert this.evictionPredicate != null;
-//        final Predicate<PooledRef<T>> oldPredicate = this.evictionPredicate;
-//        this.evictionPredicate = slot -> oldPredicate.test(slot) || poolablePredicate.test(slot.poolable());
-//        return this;
-//    }
-//
-//    @Override
-//    public PoolBuilder.OtherPredicateStep<T> orRefMatches(Predicate<? super PooledRef<? super T>> refPredicate) {
-//        assert this.evictionPredicate != null;
-//        final Predicate<PooledRef<T>> oldPredicate = this.evictionPredicate;
-//        this.evictionPredicate = slot -> oldPredicate.test(slot) || refPredicate.test(slot);
-//        return this;
-//    }
 
 }

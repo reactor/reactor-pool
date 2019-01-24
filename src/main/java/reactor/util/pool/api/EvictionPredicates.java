@@ -20,22 +20,22 @@ import java.time.Duration;
 import java.util.function.Predicate;
 
 /**
- * {@link EvictionStrategies} are {@link Predicate} on a {@link PooledRef} that return {@literal true} if the object held
+ * {@link EvictionPredicates} are {@link Predicate} on a {@link PooledRef} that return {@literal true} if the object held
  * by the {@link PooledRef} should be discarded instead of recycled when released back to the {@link Pool}.
  *
  * @author Simon Baslé
  */
-public final class EvictionStrategies {
+public final class EvictionPredicates {
 
     /**
-     * Return a {@link Predicate} that matches {@link PooledRef} of resources that were created at a time before the
-     * {@code ttl} {@link Duration}.
+     * Return a {@link Predicate} that matches {@link PooledRef} of resources that were created more than {@code ttl}
+     * milliseconds ago (inclusive, the ttl being represented as a {@link Duration} but converted to ms resolution).
      * Such objects are to be discarded instead of recycled when released back to the {@link Pool}.
      *
      * @param ttl the {@link Duration} after which an object should not be recycled (resolution: ms)
      * @return the ttl eviction strategy
      */
-    public static Predicate<PooledRef<?>> agedMoreThan(Duration ttl) {
+    public static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
         return slot -> slot.timeSinceAllocation() >= ttl.toMillis();
     }
 
@@ -47,7 +47,11 @@ public final class EvictionStrategies {
      * @param acquireMaxInclusive the number of acquires after which an object should not be recycled
      * @return the acquireMax eviction strategy
      */
-    public static Predicate<PooledRef<?>> acquired(int acquireMaxInclusive) {
+    public static <T> Predicate<PooledRef<T>> acquiredMoreThan(int acquireMaxInclusive) {
         return slot -> slot.acquireCount() >= acquireMaxInclusive;
+    }
+
+    public static <T> Predicate<PooledRef<T>> poolableMatches(Predicate<? super T> poolablePredicate) {
+        return slot -> poolablePredicate.test(slot.poolable());
     }
 }

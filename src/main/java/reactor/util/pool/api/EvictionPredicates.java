@@ -33,10 +33,22 @@ public final class EvictionPredicates {
      * Such objects are to be discarded instead of recycled when released back to the {@link Pool}.
      *
      * @param ttl the {@link Duration} after which an object should not be recycled (resolution: ms)
-     * @return the ttl eviction strategy
+     * @return the allocation ttl eviction strategy
      */
     public static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
         return slot -> slot.timeSinceAllocation() >= ttl.toMillis();
+    }
+
+    /**
+     * Return a {@link Predicate} that matches {@link PooledRef} of resources that have been idle (ie released and
+     * available in the {@link Pool}) for more than the {@code ttl} {@link Duration} (inclusive).
+     * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
+     *
+     * @param ttl the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
+     * @return the idle ttl eviction strategy
+     */
+    public static <T> Predicate<PooledRef<T>> idleMoreThan(Duration ttl) {
+        return slot -> slot.timeSinceRelease() >= ttl.toMillis();
     }
 
     /**

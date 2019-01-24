@@ -40,6 +40,18 @@ class EvictionPredicatesTest {
     }
 
     @Test
+    void idleMoreThan() {
+        Predicate<PooledRef<Object>> predicate = EvictionPredicates.idleMoreThan(Duration.ofSeconds(3));
+
+        assertThat(predicate).as("clearly out of bounds")
+                .accepts(new TestUtils.TestPooledRef<>("anything", 100, 4, 100))
+                .rejects(new TestUtils.TestPooledRef<>("anything", 100, 2, 100));
+
+        assertThat(predicate).as("ttl is inclusive")
+                .accepts(new TestUtils.TestPooledRef<>("anything", 100, 3, 100));
+    }
+
+    @Test
     void acquiredMoreThan() {
         Predicate<PooledRef<Object>> predicate = EvictionPredicates.acquiredMoreThan(3);
 

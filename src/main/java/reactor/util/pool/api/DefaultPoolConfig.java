@@ -20,6 +20,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.annotation.Nullable;
+import reactor.util.pool.metrics.MetricsRecorder;
+import reactor.util.pool.metrics.NoOpMetricsRecorder;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -38,6 +40,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     private final Function<POOLABLE, Mono<Void>> destroyFactory;
     private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
     private final Scheduler deliveryScheduler;
+    private final MetricsRecorder metricsRecorder;
 
     DefaultPoolConfig(Mono<POOLABLE> allocator,
                       int initialSize,
@@ -45,7 +48,8 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
                       @Nullable Function<POOLABLE, Mono<Void>> resetFactory,
                       @Nullable Function<POOLABLE, Mono<Void>> destroyFactory,
                       @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
-                      @Nullable Scheduler deliveryScheduler) {
+                      @Nullable Scheduler deliveryScheduler,
+                      @Nullable MetricsRecorder metricsRecorder) {
         this.allocator = allocator;
         this.initialSize = initialSize < 0 ? 0 : initialSize;
         this.allocationStrategy = allocationStrategy == null ? AllocationStrategies.unbounded() : allocationStrategy;
@@ -58,6 +62,7 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
         this.evictionPredicate = evictionPredicate == null ? slot -> false : evictionPredicate;
         this.deliveryScheduler = deliveryScheduler == null ? Schedulers.immediate() : deliveryScheduler;
+        this.metricsRecorder = metricsRecorder == null ? NoOpMetricsRecorder.INSTANCE : metricsRecorder;
     }
 
     @Override
@@ -93,5 +98,10 @@ class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
     @Override
     public Scheduler deliveryScheduler() {
         return this.deliveryScheduler;
+    }
+
+    @Override
+    public MetricsRecorder metricsRecorder() {
+        return this.metricsRecorder;
     }
 }

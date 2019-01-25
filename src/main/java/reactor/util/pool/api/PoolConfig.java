@@ -19,6 +19,7 @@ package reactor.util.pool.api;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.pool.metrics.MetricsRecorder;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -91,4 +92,14 @@ public interface PoolConfig<P> {
      * @return a {@link Scheduler} on which to publish resources
      */
     Scheduler deliveryScheduler();
+
+    /**
+     * The {@link MetricsRecorder} to use to collect instrumentation data of the {@link Pool}
+     * implementations.
+     * <p>
+     * Defaults to {@link reactor.util.pool.metrics.NoOpMetricsRecorder}
+     *
+     * @return the {@link MetricsRecorder} to use
+     */
+    MetricsRecorder metricsRecorder();
 }

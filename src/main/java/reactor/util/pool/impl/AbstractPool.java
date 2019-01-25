@@ -23,6 +23,7 @@ import reactor.util.annotation.Nullable;
 import reactor.util.pool.api.AllocationStrategy;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
+import reactor.util.pool.metrics.MetricsRecorder;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -42,10 +43,13 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     final PoolConfig<POOLABLE> poolConfig;
 
+    protected final MetricsRecorder metricsRecorder;
+
 
     AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
         this.logger = logger;
+        this.metricsRecorder = poolConfig.metricsRecorder();
     }
 
     @SuppressWarnings("WeakerAccess")
@@ -72,11 +76,22 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
         poolConfig.allocationStrategy().returnPermit();
+        long start = System.nanoTime();
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
+        Mono<Void> base;
         if (factory == PoolConfig.NO_OP_FACTORY) {
-            return Mono.fromRunnable(() -> defaultDestroy(poolable));
+            base = Mono.fromRunnable(() -> defaultDestroy(poolable));
         }
-        return factory.apply(poolable);
+        else {
+            base = factory.apply(poolable);
+        }
+
+        if (metricsRecorder != null) {
+            return base.doFinally(fin -> metricsRecorder.recordDestroyLatency(System.nanoTime() - start));
+        }
+        else {
+            return base;
+        }
     }
 
 }

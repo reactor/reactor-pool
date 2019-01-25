@@ -79,8 +79,16 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         int initSize = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
         for (int i = 0; i < initSize; i++) {
-            POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-            elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            long start = metricsRecorder.now();
+            try {
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
+                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+                elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            }
+            catch (Throwable e) {
+                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                throw e;
+            }
         }
     }
 
@@ -95,6 +103,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
         if (pending != TERMINATED) {
             if (!poolConfig.evictionPredicate().test(poolSlot)) {
+                metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
             }
             else {
@@ -132,14 +141,17 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
+                    long start = metricsRecorder.now();
                     poolConfig.allocator()
                             .publishOn(poolConfig.deliveryScheduler())
                             .subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
+                                        metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);
                                         poolConfig.allocationStrategy().returnPermit();
                                         borrower.fail(e);
-                                    });
+                                    },
+                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
                 }
             }
             else if (pendingCount > 0) {
@@ -265,6 +277,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         //poolable can be checked for null to protect against protocol errors
         QueuePooledRef<T> pooledRef;
         Subscription upstream;
+        long start;
 
         //once protects against multiple requests
         volatile int once;
@@ -281,6 +294,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             if (Operators.validate(upstream, s)) {
                 this.upstream = s;
                 actual.onSubscribe(this);
+                this.start = pool.metricsRecorder.now();
             }
         }
 
@@ -304,6 +318,9 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 ACQUIRED.decrementAndGet(pool);
             }
 
+            //TODO should we separate reset errors?
+            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
+
             pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
             pool.drain();
 
@@ -323,6 +340,8 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             if (ONCE.compareAndSet(this, 0, 1)) {
                 ACQUIRED.decrementAndGet(pool);
             }
+
+            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
 
             pool.maybeRecycleAndDrain(slot);
             actual.onComplete();

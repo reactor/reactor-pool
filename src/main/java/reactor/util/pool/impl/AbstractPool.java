@@ -43,7 +43,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     final PoolConfig<POOLABLE> poolConfig;
 
-    protected final MetricsRecorder metricsRecorder;
+    final MetricsRecorder metricsRecorder;
 
 
     AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
@@ -76,21 +76,17 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     Mono<Void> destroyPoolable(@Nullable POOLABLE poolable) {
         poolConfig.allocationStrategy().returnPermit();
-        long start = System.nanoTime();
+        long start = metricsRecorder.now();
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
-        Mono<Void> base;
         if (factory == PoolConfig.NO_OP_FACTORY) {
-            base = Mono.fromRunnable(() -> defaultDestroy(poolable));
+            return Mono.fromRunnable(() -> {
+                defaultDestroy(poolable);
+                metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start));
+            });
         }
         else {
-            base = factory.apply(poolable);
-        }
-
-        if (metricsRecorder != null) {
-            return base.doFinally(fin -> metricsRecorder.recordDestroyLatency(System.nanoTime() - start));
-        }
-        else {
-            return base;
+            return factory.apply(poolable)
+                    .doFinally(fin -> metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start)));
         }
     }
 

@@ -18,6 +18,7 @@ package reactor.util.pool.metrics;
 
 import org.HdrHistogram.ShortCountsHistogram;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -34,10 +35,12 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
     private final LongAdder recycledCounter;
 
     public InMemoryPoolMetrics() {
-        allocationSuccessHistogram = new ShortCountsHistogram(4);
-        allocationErrorHistogram = new ShortCountsHistogram(4);
-        resetHistogram = new ShortCountsHistogram(4);
-        destroyHistogram = new ShortCountsHistogram(4);
+        long maxLatency = TimeUnit.HOURS.toMillis(1);
+        int precision = 3; //precision 3 = 1/1000 of each time unit
+        allocationSuccessHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+        allocationErrorHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+        resetHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+        destroyHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
         recycledCounter = new LongAdder();
     }
 
@@ -48,7 +51,9 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
 
     @Override
     public long measureTime(long startTimeMillis) {
-        return (System.nanoTime() / 1000000) - startTimeMillis;
+        final long l = (System.nanoTime() / 1000000) - startTimeMillis;
+        if (l <= 0) return 1;
+        return l;
     }
 
     @Override

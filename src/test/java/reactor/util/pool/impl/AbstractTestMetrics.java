@@ -16,20 +16,21 @@
 
 package reactor.util.pool.impl;
 
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
-import reactor.util.pool.api.Pool;
-import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolConfigBuilder;
-import reactor.util.pool.api.PooledRef;
+import reactor.util.pool.api.*;
 import reactor.util.pool.metrics.InMemoryPoolMetrics;
 
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.awaitility.Awaitility.await;
 
 /**
  * @author Simon Baslé
@@ -46,7 +47,7 @@ abstract class AbstractTestMetrics {
     abstract <T> Pool<T> createPool(PoolConfig<T> poolConfig);
 
     @Test
-    void recordAllocationInConstructor() {
+    void recordsAllocationInConstructor() {
         AtomicBoolean flip = new AtomicBoolean();
         PoolConfig<String> config = PoolConfigBuilder.allocateWith(
                 Mono.defer(() -> {
@@ -77,7 +78,7 @@ abstract class AbstractTestMetrics {
     }
 
     @Test
-    void recordAllocationInBorrow() {
+    void recordsAllocationInBorrow() {
         AtomicBoolean flip = new AtomicBoolean();
         PoolConfig<String> config = PoolConfigBuilder.allocateWith(
                 Mono.defer(() -> {
@@ -130,7 +131,81 @@ abstract class AbstractTestMetrics {
     }
 
     @Test
-    void test() {//FIXME continue here
-        recorder.getRecycledCount();
+    void recordsResetLatencies() {
+        AtomicBoolean flip = new AtomicBoolean();
+        PoolConfig<String> config = PoolConfigBuilder.allocateWith(Mono.just("foo"))
+                .resetResourcesWith(s -> {
+                    if (flip.compareAndSet(false, true))
+                        return Mono.delay(Duration.ofMillis(100)).then();
+                    else {
+                        flip.compareAndSet(true, false);
+                        return Mono.empty();
+                    }
+                })
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<String> pool = createPool(config);
+
+        pool.acquire().flatMap(PooledRef::release).block();
+        pool.acquire().flatMap(PooledRef::release).block();
+
+        assertThat(recorder.getResetCount()).as("reset").isEqualTo(2);
+
+        long min = recorder.getResetHistogram().getMinValue();
+        assertThat(min).isCloseTo(0L, Offset.offset(50L));
+
+        long max = recorder.getResetHistogram().getMaxValue();
+        assertThat(max).isCloseTo(100L, Offset.offset(50L));
+    }
+
+    @Test
+    void recordsDestroyLatencies() {
+        AtomicBoolean flip = new AtomicBoolean();
+        PoolConfig<String> config = PoolConfigBuilder.allocateWith(Mono.just("foo"))
+                .evictionPredicate(t -> true)
+                .destroyResourcesWith(s -> {
+                    if (flip.compareAndSet(false, true))
+                        return Mono.delay(Duration.ofMillis(500)).then();
+                    else {
+                        flip.compareAndSet(true, false);
+                        return Mono.empty();
+                    }
+                })
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<String> pool = createPool(config);
+
+        pool.acquire().flatMap(PooledRef::release).block();
+        pool.acquire().flatMap(PooledRef::release).block();
+
+        //destroy is fire-and-forget so the 500ms one will not have finished
+        assertThat(recorder.getDestroyCount()).as("destroy before 500ms").isEqualTo(1);
+
+        await().atLeast(500, TimeUnit.MILLISECONDS)
+                .atMost(600, TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> assertThat(recorder.getDestroyCount()).as("destroy after 500ms").isEqualTo(2));
+
+        long min = recorder.getDestroyHistogram().getMinValue();
+        assertThat(min).isCloseTo(0L, Offset.offset(50L));
+
+        long max = recorder.getDestroyHistogram().getMaxValue();
+        assertThat(max).isCloseTo(500L, Offset.offset(50L));
+    }
+
+    @Test
+    void recordsResetVsRecycle() {
+        AtomicReference<String> content = new AtomicReference<>("foo");
+        PoolConfig<String> config = PoolConfigBuilder.allocateWith(Mono.fromCallable(() -> content.getAndSet("bar")))
+                .evictionPredicate(EvictionPredicates.poolableMatches("foo"::equals))
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<String> pool = createPool(config);
+
+        pool.acquire().flatMap(PooledRef::release).block();
+        pool.acquire().flatMap(PooledRef::release).block();
+
+        assertThat(recorder.getResetCount()).as("reset").isEqualTo(2);
+        assertThat(recorder.getDestroyCount()).as("destroy").isEqualTo(1);
+        assertThat(recorder.getRecycledCount()).as("recycle").isEqualTo(1);
     }
 }

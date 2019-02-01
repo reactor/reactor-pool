@@ -26,9 +26,11 @@ import reactor.util.pool.metrics.InMemoryPoolMetrics;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -202,5 +204,42 @@ abstract class AbstractTestMetrics {
         assertThat(recorder.getResetCount()).as("reset").isEqualTo(2);
         assertThat(recorder.getDestroyCount()).as("destroy").isEqualTo(1);
         assertThat(recorder.getRecycledCount()).as("recycle").isEqualTo(1);
+    }
+
+    @Test
+    void recordsLifetime() throws InterruptedException {
+        AtomicInteger allocCounter = new AtomicInteger();
+        AtomicInteger destroyCounter = new AtomicInteger();
+        PoolConfig<Integer> config = PoolConfigBuilder.allocateWith(Mono.fromCallable(allocCounter::incrementAndGet))
+                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
+                .evictionPredicate(EvictionPredicates.acquiredMoreThan(2))
+                .destroyResourcesWith(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<Integer> pool = createPool(config);
+
+        //first round
+        PooledRef<Integer> ref1 = pool.acquire().block();
+        PooledRef<Integer> ref2 = pool.acquire().block();
+        Thread.sleep(250);
+        ref1.release().block();
+        ref2.release().block();
+
+        //second round
+        ref1 = pool.acquire().block();
+        ref2 = pool.acquire().block();
+        Thread.sleep(300);
+        ref1.release().block();
+        ref2.release().block();
+
+        //extra acquire to show 3 allocations
+        pool.acquire().block().release().block();
+
+        assertThat(allocCounter).as("allocations").hasValue(3);
+        assertThat(destroyCounter).as("destructions").hasValue(2);
+
+        recorder.getLifetimeHistogram().outputPercentileDistribution(System.out, 1d);
+        assertThat(recorder.getLifetimeHistogram().getMinNonZeroValue())
+                .isCloseTo(500L, Offset.offset(30L));
     }
 }

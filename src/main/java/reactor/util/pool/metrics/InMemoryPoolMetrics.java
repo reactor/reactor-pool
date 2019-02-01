@@ -16,6 +16,7 @@
 
 package reactor.util.pool.metrics;
 
+import org.HdrHistogram.Histogram;
 import org.HdrHistogram.ShortCountsHistogram;
 
 import java.util.concurrent.TimeUnit;
@@ -33,6 +34,8 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
     private final ShortCountsHistogram resetHistogram;
     private final ShortCountsHistogram destroyHistogram;
     private final LongAdder recycledCounter;
+    private final Histogram lifetimeHistogram;
+    private final Histogram idleTimeHistogram;
 
     public InMemoryPoolMetrics() {
         long maxLatency = TimeUnit.HOURS.toMillis(1);
@@ -41,6 +44,8 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
         allocationErrorHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
         resetHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
         destroyHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+        lifetimeHistogram = new Histogram(0);
+        idleTimeHistogram = new Histogram(0);
         recycledCounter = new LongAdder();
     }
 
@@ -80,7 +85,17 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
     public void recordRecycled() {
         recycledCounter.increment();
     }
-    
+
+    @Override
+    public void recordLifetimeDuration(long millisecondsSinceAllocation) {
+        this.lifetimeHistogram.recordValue(millisecondsSinceAllocation);
+    }
+
+    @Override
+    public void recordIdleTime(long millisecondsIdle) {
+        this.idleTimeHistogram.recordValue(millisecondsIdle);
+    }
+
     public long getAllocationTotalCount() {
         return allocationSuccessHistogram.getTotalCount() + allocationErrorHistogram.getTotalCount();
     }
@@ -119,5 +134,13 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
 
     public ShortCountsHistogram getDestroyHistogram() {
         return destroyHistogram;
+    }
+
+    public Histogram getLifetimeHistogram() {
+        return lifetimeHistogram;
+    }
+
+    public Histogram getIdleTimeHistogram() {
+        return idleTimeHistogram;
     }
 }

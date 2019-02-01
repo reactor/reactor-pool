@@ -63,4 +63,14 @@ public final class NoOpMetricsRecorder implements MetricsRecorder {
     public void recordRecycled() {
 
     }
+
+    @Override
+    public void recordIdleTime(long millisecondsIdle) {
+
+    }
+
+    @Override
+    public void recordLifetimeDuration(long millisecondsSinceAllocation) {
+
+    }
 }

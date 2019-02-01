@@ -16,6 +16,7 @@
 
 package reactor.util.pool.impl;
 
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -30,8 +31,7 @@ import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
 import reactor.util.pool.TestUtils;
 import reactor.util.pool.TestUtils.PoolableTest;
-import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PooledRef;
+import reactor.util.pool.api.*;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -511,6 +511,34 @@ class AffinityPoolTest {
             if (threadName.get().startsWith("acquire")) releaserWins.incrementAndGet();
             else if (threadName.get().startsWith("racerAcquire")) borrowerWins.incrementAndGet();
             else System.out.println(threadName.get());
+        }
+
+        @Test
+        void bestEffortAllocateOrPend() throws InterruptedException {
+            AtomicInteger allocCounter = new AtomicInteger();
+            AtomicInteger destroyCounter = new AtomicInteger();
+            PoolConfig<Integer> config = PoolConfigBuilder.allocateWith(Mono.fromCallable(allocCounter::incrementAndGet))
+                    .witAllocationLimit(AllocationStrategies.allocatingMax(3))
+                    .evictionPredicate(EvictionPredicates.acquiredMoreThan(3))
+                    .destroyResourcesWith(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+                    .buildConfig();
+            AffinityPool<Integer> pool = new AffinityPool<>(config);
+
+            CountDownLatch latch = new CountDownLatch(10);
+            for (int i = 0; i < 10; i++) {
+                pool.acquire()
+                        .delayElement(Duration.ofMillis(300))
+                        .flatMap(PooledRef::release)
+                        .doFinally(fin -> latch.countDown())
+                        .subscribe();
+            }
+
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                fail("Timed out after 5s, allocated " + allocCounter.get() + " and destroyed " + destroyCounter.get());
+            }
+
+            assertThat(allocCounter).as("allocations").hasValue(4);
+            assertThat(destroyCounter).as("destruction").hasValue(3);
         }
     }
 

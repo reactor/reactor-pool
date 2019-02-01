@@ -156,6 +156,28 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
+    void bestEffortAllocateOrPend() {
+        SubPool<POOLABLE> directMatch = pools.get(Thread.currentThread().getId());
+        if (directMatch != null && directMatch.tryLockForSlowPath()) {
+            Borrower<POOLABLE> pending = directMatch.getPendingAndUnlock();
+            if (pending != null) {
+                allocateOrPend(directMatch, pending);
+                //return
+            }
+        }
+        else {
+            for (SubPool<POOLABLE> subPool : pools.values()) {
+                if (subPool.tryLockForSlowPath()) {
+                    Borrower<POOLABLE> pending = subPool.getPendingAndUnlock();
+                    if (pending != null) {
+                        allocateOrPend(subPool, pending);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
 
     @Override
     public void dispose() {
@@ -355,16 +377,8 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             else {
                 pool.destroyPoolable(slot).subscribe(); //TODO manage errors?
 
-                //FIXME should this give up on no SubPool/locked SubPool?
                 //simplified version of what we do in doAcquire, with the caveat that we don't try to create a SubPool
-                SubPool<T> subPool = pool.pools.get(Thread.currentThread().getId());
-                if (subPool.tryLockForSlowPath()) {
-                    Borrower<T> borrower = subPool.getPendingAndUnlock();
-                    if (borrower != null) {
-                        pool.allocateOrPend(subPool, borrower);
-                    }
-                }
-                //if no existing SubPool or if it is locked, forget about it... we'll recreate on next acquire
+                pool.bestEffortAllocateOrPend();
             }
         }
 

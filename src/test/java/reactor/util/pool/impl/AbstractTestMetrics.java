@@ -240,6 +240,6 @@ abstract class AbstractTestMetrics {
 
         recorder.getLifetimeHistogram().outputPercentileDistribution(System.out, 1d);
         assertThat(recorder.getLifetimeHistogram().getMinNonZeroValue())
-                .isCloseTo(500L, Offset.offset(30L));
+                .isCloseTo(550L, Offset.offset(30L));
     }
 }

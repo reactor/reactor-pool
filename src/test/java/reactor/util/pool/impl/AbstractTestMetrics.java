@@ -28,8 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -116,18 +115,14 @@ abstract class AbstractTestMetrics {
                 .isEqualTo(recorder.getAllocationErrorHistogram().getTotalCount());
 
         long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
-        long maxSuccess = recorder.getAllocationSuccessHistogram().getMaxValue();
         assertThat(minSuccess)
                 .as("allocation success latency")
-                .isBetween(100L, 150L)
-                .isNotEqualTo(maxSuccess);
+                .isBetween(100L, 150L);
 
         long minError = recorder.getAllocationErrorHistogram().getMinValue();
-        long maxError = recorder.getAllocationErrorHistogram().getMaxValue();
         assertThat(minError)
                 .as("allocation error latency")
-                .isBetween(0L, 15L)
-                .isNotEqualTo(maxError);
+                .isBetween(0L, 15L);
     }
 
     @Test

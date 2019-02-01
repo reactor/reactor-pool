@@ -744,4 +744,14 @@ class AffinityPoolTest {
             Loggers.resetLoggerFactory();
         }
     }
+
+    @Nested
+    @DisplayName("metrics")
+    class AffinityMetricsTest extends AbstractTestMetrics {
+
+        @Override
+        <T> Pool<T> createPool(PoolConfig<T> poolConfig) {
+            return new AffinityPool<>(poolConfig);
+        }
+    }
 }

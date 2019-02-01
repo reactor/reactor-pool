@@ -76,8 +76,16 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         int toBuild = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
 
         for (int i = 0; i < toBuild; i++) {
-            POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-            availableElements.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            long start = poolConfig.metricsRecorder().now();
+            try {
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
+                poolConfig.metricsRecorder().recordAllocationSuccessAndLatency(poolConfig.metricsRecorder().measureTime(start));
+                availableElements.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            }
+            catch (Throwable t) {
+                poolConfig.metricsRecorder().recordAllocationFailureAndLatency(poolConfig.metricsRecorder().measureTime(start));
+                throw t;
+            }
         }
     }
 
@@ -91,12 +99,17 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
         if (poolConfig.allocationStrategy().getPermit()) {
+            long start = metricsRecorder.now();
             poolConfig.allocator()
                     //we expect the allocator will publish in the same thread or a "compatible" one
                     // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
 //                    .publishOn(poolConfig.deliveryScheduler())
-                    .subscribe(newInstance -> borrower.deliver(new AffinityPooledRef<>(this, newInstance)),
+                    .subscribe(newInstance -> {
+                                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+                                borrower.deliver(new AffinityPooledRef<>(this, newInstance));
+                            },
                             e -> {
+                                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                 poolConfig.allocationStrategy().returnPermit();
                                 borrower.fail(e);
                             });
@@ -109,6 +122,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     void recycle(AffinityPooledRef<POOLABLE> pooledRef) {
+        metricsRecorder.recordRecycled();
         SubPool<POOLABLE> subPool = pools.get(Thread.currentThread().getId());
         if (subPool == null || !subPool.tryDirectRecycle(pooledRef)) {
             availableElements.offer(pooledRef);
@@ -328,6 +342,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         //poolable can be checked for null to protect against protocol errors
         AffinityPooledRef<T> pooledRef;
         Subscription upstream;
+        long start;
 
         AffinityPoolRecyclerInner(CoreSubscriber<? super Void> actual, AffinityPooledRef<T> pooledRef) {
             this.actual = actual;
@@ -338,6 +353,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public void onSubscribe(Subscription s) {
             if (Operators.validate(upstream, s)) {
+                this.start = pool.metricsRecorder.now();
                 this.upstream = s;
                 actual.onSubscribe(this);
             }
@@ -352,6 +368,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         public void onError(Throwable throwable) {
             AffinityPooledRef<T> slot = pooledRef;
             pooledRef = null;
+            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
             if (slot == null) {
                 Operators.onErrorDropped(throwable, actual.currentContext());
                 return;
@@ -365,6 +382,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         public void onComplete() {
             AffinityPooledRef<T> slot = pooledRef;
             pooledRef = null;
+            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
             if (slot == null) {
                 return;
             }

@@ -148,7 +148,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                         pending.deliver(ref);
                     }
                 }
-                else {
+                if (!delivered) {
                     for (SubPool<POOLABLE> subPool : pools.values()) {
                         if (subPool.tryLockForSlowPath()) {
                             Borrower<POOLABLE> pending = subPool.getPendingAndUnlock();

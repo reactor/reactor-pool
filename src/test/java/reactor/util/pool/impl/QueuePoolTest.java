@@ -17,7 +17,10 @@
 package reactor.util.pool.impl;
 
 import org.assertj.core.data.Offset;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
@@ -32,10 +35,7 @@ import reactor.util.function.Tuple2;
 import reactor.util.pool.TestUtils.PoolableTest;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
-import reactor.util.pool.api.PoolConfigBuilder;
 import reactor.util.pool.api.PooledRef;
-import reactor.util.pool.metrics.InMemoryPoolMetrics;
-import reactor.util.pool.metrics.MetricsRecorder;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -45,7 +45,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 

@@ -171,7 +171,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             toClose.clear();
 
             while(!availableElements.isEmpty()) {
-                destroyPoolable(availableElements.poll().poolable).block();
+                destroyPoolable(availableElements.poll()).block();
             }
         }
     }
@@ -236,7 +236,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         public Mono<Void> release() {
             if (POOLS.get(pool) == TERMINATED) {
                 markReleased();
-                return pool.destroyPoolable(poolable);
+                return pool.destroyPoolable(this);
             }
 
             Mono<Void> cleaner;
@@ -254,7 +254,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         public Mono<Void> invalidate() {
-            return pool.destroyPoolable(poolable);
+            return pool.destroyPoolable(this);
         }
     }
 
@@ -285,7 +285,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
                 //TODO test this scenario
                 if (parent.poolConfig.evictionPredicate().test(element)) {
-                    parent.destroyPoolable(element.poolable).subscribe(); //this returns a permit
+                    parent.destroyPoolable(element).subscribe(); //this returns a permit
                     parent.allocateOrPend(subPool, borrower);
                 }
                 else {
@@ -335,7 +335,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage further errors?
+            pool.destroyPoolable(slot).subscribe(); //TODO manage further errors?
             actual.onError(throwable);
         }
 
@@ -353,7 +353,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 pool.recycle(slot);
             }
             else {
-                pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
+                pool.destroyPoolable(slot).subscribe(); //TODO manage errors?
 
                 //FIXME should this give up on no SubPool/locked SubPool?
                 //simplified version of what we do in doAcquire, with the caveat that we don't try to create a SubPool

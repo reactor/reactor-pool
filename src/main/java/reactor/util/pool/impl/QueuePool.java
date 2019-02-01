@@ -107,12 +107,12 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 elements.offer(poolSlot);
             }
             else {
-                destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
+                destroyPoolable(poolSlot).subscribe(); //TODO manage errors?
             }
             drain();
         }
         else {
-            destroyPoolable(poolSlot.poolable).subscribe(); //TODO manage errors?
+            destroyPoolable(poolSlot).subscribe(); //TODO manage errors?
         }
     }
 
@@ -161,7 +161,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
                 //TODO test the idle eviction scenario
                 if (poolConfig.evictionPredicate().test(slot)) {
-                    destroyPoolable(slot.poolable).subscribe();
+                    destroyPoolable(slot).subscribe();
                     continue;
                 }
 
@@ -192,7 +192,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             while (!elements.isEmpty()) {
-                destroyPoolable(elements.poll().poolable()).block();
+                destroyPoolable(elements.poll()).block();
             }
         }
     }
@@ -217,7 +217,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             if (PENDING.get(pool) == TERMINATED) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state
                 markReleased();
-                return pool.destroyPoolable(poolable);
+                return pool.destroyPoolable(this);
             }
 
             Mono<Void> cleaner;
@@ -238,7 +238,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             return Mono.defer(() -> {
                 //immediately clean up state
                 ACQUIRED.decrementAndGet(pool);
-                return pool.destroyPoolable(poolable);
+                return pool.destroyPoolable(this);
             });
         }
     }
@@ -321,7 +321,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             //TODO should we separate reset errors?
             pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
 
-            pool.destroyPoolable(slot.poolable).subscribe(); //TODO manage errors?
+            pool.destroyPoolable(slot).subscribe(); //TODO manage errors?
             pool.drain();
 
             actual.onError(throwable);

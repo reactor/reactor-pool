@@ -264,7 +264,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         final AffinityPool<T> pool;
 
         AffinityPooledRef(AffinityPool<T> pool, T poolable) {
-            super(poolable);
+            super(poolable, pool.metricsRecorder);
             this.pool = pool;
         }
 

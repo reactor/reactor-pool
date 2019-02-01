@@ -208,7 +208,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         final QueuePool<T> pool;
 
         QueuePooledRef(QueuePool<T> pool, T poolable) {
-            super(poolable);
+            super(poolable, pool.metricsRecorder);
             this.pool = pool;
         }
 

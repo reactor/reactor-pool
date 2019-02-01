@@ -17,6 +17,7 @@
 package reactor.util.pool.impl;
 
 import org.assertj.core.data.Offset;
+import org.assertj.core.data.Percentage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -241,5 +242,73 @@ abstract class AbstractTestMetrics {
         recorder.getLifetimeHistogram().outputPercentileDistribution(System.out, 1d);
         assertThat(recorder.getLifetimeHistogram().getMinNonZeroValue())
                 .isCloseTo(550L, Offset.offset(30L));
+    }
+
+    @Test
+    void recordsIdleTimeFromConstructor() throws InterruptedException {
+        AtomicInteger allocCounter = new AtomicInteger();
+        PoolConfig<Integer> config = PoolConfigBuilder.allocateWith(Mono.fromCallable(allocCounter::incrementAndGet))
+                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
+                .initialSizeOf(2)
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<Integer> pool = createPool(config);
+
+        //wait 125ms and 250ms before first acquire respectively
+        Thread.sleep(125);
+        pool.acquire().block();
+        Thread.sleep(125);
+        pool.acquire().block();
+
+        assertThat(allocCounter).as("allocations").hasValue(2);
+
+        recorder.getIdleTimeHistogram().outputPercentileDistribution(System.out, 1d);
+        assertThat(recorder.getIdleTimeHistogram().getMinNonZeroValue())
+                .as("min idle time")
+                .isCloseTo(125L, Offset.offset(25L));
+        assertThat(recorder.getIdleTimeHistogram().getMaxValue())
+                .as("max idle time")
+                .isCloseTo(250L, Offset.offset(25L));
+    }
+
+    @Test
+    void recordsIdleTimeBetweenAcquires() throws InterruptedException {
+        AtomicInteger allocCounter = new AtomicInteger();
+        PoolConfig<Integer> config = PoolConfigBuilder.allocateWith(Mono.fromCallable(allocCounter::incrementAndGet))
+                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
+                .initialSizeOf(2)
+                .recordMetricsWith(recorder)
+                .buildConfig();
+        Pool<Integer> pool = createPool(config);
+
+        //both idle for 125ms
+        Thread.sleep(125);
+
+        //first round
+        PooledRef<Integer> ref1 = pool.acquire().block();
+        PooledRef<Integer> ref2 = pool.acquire().block();
+
+        ref1.release().block();
+        //ref1 idle for 100ms more than ref2
+        Thread.sleep(100);
+        ref2.release().block();
+        //ref2 idle for 40ms
+        Thread.sleep(200);
+
+        ref1 = pool.acquire().block();
+        ref2 = pool.acquire().block();
+        //not idle after that
+
+        assertThat(allocCounter).as("allocations").hasValue(2);
+
+        recorder.getIdleTimeHistogram().outputPercentileDistribution(System.out, 1d);
+        assertThat(recorder.getIdleTimeHistogram().getMinNonZeroValue())
+                .as("min idle time")
+                .isCloseTo(125L, Offset.offset(20L));
+
+        assertThat(recorder.getIdleTimeHistogram().getMaxValue())
+                .as("max idle time")
+                .isCloseTo(300L, Offset.offset(40L));
+
     }
 }

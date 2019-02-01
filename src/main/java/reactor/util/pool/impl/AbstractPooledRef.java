@@ -18,8 +18,10 @@ package reactor.util.pool.impl;
 
 import reactor.core.publisher.Mono;
 import reactor.util.pool.api.PooledRef;
+import reactor.util.pool.metrics.MetricsRecorder;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
  * An abstract base for most common statistics operator of {@link PooledRef}.
@@ -28,7 +30,8 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  */
 abstract class AbstractPooledRef<T> implements PooledRef<T> {
 
-    final long creationTimestamp;
+    final long            creationTimestamp;
+    final MetricsRecorder metricsRecorder;
 
     volatile T poolable;
 
@@ -37,10 +40,12 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
 
     //might be peeked at by multiple threads, in which case a value of -1 indicates it is currently held/acquired
     volatile long timeSinceRelease;
+    static final AtomicLongFieldUpdater<AbstractPooledRef> TIME_SINCE_RELEASE = AtomicLongFieldUpdater.newUpdater(AbstractPooledRef.class, "timeSinceRelease");
 
-    AbstractPooledRef(T poolable) {
+    AbstractPooledRef(T poolable, MetricsRecorder metricsRecorder) {
         this.poolable = poolable;
-        this.creationTimestamp = System.currentTimeMillis();
+        this.metricsRecorder = metricsRecorder;
+        this.creationTimestamp = metricsRecorder.now();
         this.timeSinceRelease = -2L;
     }
 
@@ -55,12 +60,19 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
      * @return the incremented {@link #acquireCount()}
      */
     int markAcquired() {
-        this.timeSinceRelease = -1L;
-        return ACQUIRE.incrementAndGet(this);
+        int acq = ACQUIRE.incrementAndGet(this);
+        long tsr = TIME_SINCE_RELEASE.getAndSet(this, -1);
+        if (tsr > 0) {
+            metricsRecorder.recordIdleTime(metricsRecorder.measureTime(tsr));
+        }
+        else if (tsr < -1L) { //allocated, never acquired
+            metricsRecorder.recordIdleTime(metricsRecorder.measureTime(creationTimestamp));
+        }
+        return acq;
     }
 
     void markReleased() {
-        this.timeSinceRelease = System.currentTimeMillis();
+        this.timeSinceRelease = metricsRecorder.now();
     }
 
     @Override
@@ -70,7 +82,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
 
     @Override
     public long timeSinceAllocation() {
-        return System.currentTimeMillis() - creationTimestamp;
+        return metricsRecorder.measureTime(creationTimestamp);
     }
 
     @Override
@@ -80,7 +92,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
             return 0L;
         }
         if (tsr < 0L) tsr = creationTimestamp; //any negative date other than -1 is considered "never yet released"
-        return System.currentTimeMillis() - tsr;
+        return metricsRecorder.measureTime(tsr);
     }
 
     /**

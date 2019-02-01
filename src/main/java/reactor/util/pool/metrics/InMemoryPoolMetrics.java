@@ -44,8 +44,8 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
         allocationErrorHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
         resetHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
         destroyHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
-        lifetimeHistogram = new Histogram(0);
-        idleTimeHistogram = new Histogram(0);
+        lifetimeHistogram = new Histogram(precision);
+        idleTimeHistogram = new Histogram(precision);
         recycledCounter = new LongAdder();
     }
 

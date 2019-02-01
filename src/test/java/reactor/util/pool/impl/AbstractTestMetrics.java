@@ -39,7 +39,7 @@ import static org.awaitility.Awaitility.await;
  */
 abstract class AbstractTestMetrics {
 
-    private InMemoryPoolMetrics recorder;
+    protected InMemoryPoolMetrics recorder;
 
     @BeforeEach
     void initRecorder() {

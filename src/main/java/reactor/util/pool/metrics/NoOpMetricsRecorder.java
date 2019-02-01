@@ -73,4 +73,14 @@ public final class NoOpMetricsRecorder implements MetricsRecorder {
     public void recordLifetimeDuration(long millisecondsSinceAllocation) {
 
     }
+
+    @Override
+    public void recordSlowPath() {
+
+    }
+
+    @Override
+    public void recordFastPath() {
+
+    }
 }

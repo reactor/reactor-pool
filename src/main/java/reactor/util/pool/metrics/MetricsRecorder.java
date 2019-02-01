@@ -80,4 +80,14 @@ public interface MetricsRecorder {
      * @param millisecondsIdle the number of milliseconds an object that was just acquired had previously been idle.
      */
     void recordIdleTime(long millisecondsIdle);
+
+    /**
+     * Record the fact that the slow path of recycling was used on an {@link reactor.util.pool.impl.AffinityPool}.
+     */
+    void recordSlowPath();
+
+    /**
+     * Record the fact that the fast path of recycling was used on an {@link reactor.util.pool.impl.AffinityPool}.
+     */
+    void recordFastPath();
 }

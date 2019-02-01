@@ -34,6 +34,8 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
     private final ShortCountsHistogram resetHistogram;
     private final ShortCountsHistogram destroyHistogram;
     private final LongAdder recycledCounter;
+    private final LongAdder slowPathCounter;
+    private final LongAdder fastPathCounter;
     private final Histogram lifetimeHistogram;
     private final Histogram idleTimeHistogram;
 
@@ -47,6 +49,8 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
         lifetimeHistogram = new Histogram(precision);
         idleTimeHistogram = new Histogram(precision);
         recycledCounter = new LongAdder();
+        slowPathCounter = new LongAdder();
+        fastPathCounter = new LongAdder();
     }
 
     @Override
@@ -96,6 +100,16 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
         this.idleTimeHistogram.recordValue(millisecondsIdle);
     }
 
+    @Override
+    public void recordSlowPath() {
+        this.slowPathCounter.increment();
+    }
+
+    @Override
+    public void recordFastPath() {
+        this.fastPathCounter.increment();
+    }
+
     public long getAllocationTotalCount() {
         return allocationSuccessHistogram.getTotalCount() + allocationErrorHistogram.getTotalCount();
     }
@@ -142,5 +156,13 @@ public class InMemoryPoolMetrics implements MetricsRecorder {
 
     public Histogram getIdleTimeHistogram() {
         return idleTimeHistogram;
+    }
+
+    public long getFastPathCount() {
+        return fastPathCounter.sum();
+    }
+
+    public long getSlowPathCount() {
+        return slowPathCounter.sum();
     }
 }

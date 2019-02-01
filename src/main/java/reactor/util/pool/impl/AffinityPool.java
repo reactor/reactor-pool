@@ -144,6 +144,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                     Borrower<POOLABLE> pending = directMatch.getPendingAndUnlock();
                     if (pending != null) {
                         delivered = true;
+                        metricsRecorder.recordSlowPath();
                         pending.deliver(ref);
                     }
                 }
@@ -153,6 +154,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                             Borrower<POOLABLE> pending = subPool.getPendingAndUnlock();
                             if (pending != null) {
                                 delivered = true;
+                                metricsRecorder.recordSlowPath();
                                 pending.deliver(ref);
                                 break;
                             }
@@ -252,6 +254,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             DIRECT_RELEASE_WIP.decrementAndGet(this);
 
             if (m != null) {
+                parent.metricsRecorder.recordFastPath();
                 m.deliver(ref);
                 return true;
             }
@@ -325,6 +328,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                     parent.allocateOrPend(subPool, borrower);
                 }
                 else {
+                    parent.metricsRecorder.recordFastPath();
                     borrower.deliver(element);
                 }
             }

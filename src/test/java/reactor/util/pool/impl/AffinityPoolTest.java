@@ -16,11 +16,14 @@
 
 package reactor.util.pool.impl;
 
-import org.assertj.core.data.Offset;
+import org.awaitility.Awaitility;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Mono;
@@ -37,10 +40,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -752,6 +752,143 @@ class AffinityPoolTest {
         @Override
         <T> Pool<T> createPool(PoolConfig<T> poolConfig) {
             return new AffinityPool<>(poolConfig);
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {1, 2, 3})
+        void fastPath(int concurrency) {
+            ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(concurrency);
+            Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
+            AtomicInteger allocator = new AtomicInteger();
+            AtomicInteger released = new AtomicInteger();
+            CyclicBarrier firstRefLatch = new CyclicBarrier(concurrency);
+
+            try {
+                AffinityPool<String> pool = new AffinityPool<>(
+                        allocateWith(Mono.fromCallable(() -> "---" + allocator.incrementAndGet() + "-->" + Thread.currentThread().getName()))
+                                .witAllocationLimit(allocatingMax(concurrency))
+                                .recordMetricsWith(this.recorder)
+                                .buildConfig());
+
+                for (int threadIndex = 1; threadIndex <= concurrency; threadIndex++) {
+                    final String threadName = "thread" + threadIndex;
+                    acquireExecutor.submit(() -> {
+                        final PooledRef<String> firstRef = pool.acquire().block();
+                        assert firstRef != null;
+                        final String sticky = firstRef.poolable();
+                        System.out.println(threadName + " should try to stick with " + firstRef);
+                        try {
+                            firstRefLatch.await(10, TimeUnit.SECONDS);
+                        } catch (InterruptedException | BrokenBarrierException | TimeoutException e) {
+                            e.printStackTrace();
+                        }
+
+                        for (int i = 0; i < 10; i++) {
+                            pool.acquire().subscribe(ref -> {
+                                String p = ref.poolable();
+                                if (!sticky.equals(p)) {
+                                    System.out.println(threadName + " unexpected " + p);
+                                }
+                                else {
+                                    System.out.println(threadName + " " + p);
+                                }
+                                acquireScheduler.schedule(() ->
+                                        ref.release().doFinally(fin -> released.incrementAndGet()).subscribe(),
+                                        100, TimeUnit.MILLISECONDS);
+                            });
+                        }
+                        firstRef.release().block();
+                    });
+                }
+
+                Awaitility.await()
+                        .atMost(10, TimeUnit.SECONDS)
+                        .untilAtomic(released, Matchers.equalTo(10 * concurrency));
+
+                System.out.println("slowPath = " + recorder.getSlowPathCount() + ", fastPath = " + recorder.getFastPathCount());
+
+                assertThat(allocator).hasValue(concurrency);
+                assertThat(recorder.getSlowPathCount()).as("slowpath").isZero();
+                assertThat(recorder.getFastPathCount()).as("fastpath").isEqualTo(10L * concurrency);
+            } finally {
+                acquireScheduler.dispose();
+                acquireExecutor.shutdownNow();
+            }
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {1, 3, 10, 100})
+        void slowPath(int max) {
+            ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(max + 1);
+            Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
+            AtomicInteger allocator = new AtomicInteger();
+            AtomicInteger hogged = new AtomicInteger();
+
+            CountDownLatch prepareDataLatch = new CountDownLatch(max);
+            CountDownLatch hoggerLatch = new CountDownLatch(1);
+            CountDownLatch finalLatch = new CountDownLatch(max);
+
+            try {
+                AffinityPool<String> pool = new AffinityPool<>(
+                        allocateWith(Mono.fromCallable(() -> {
+                            allocator.incrementAndGet();
+                            return Thread.currentThread().getName();
+                        }))
+                                .witAllocationLimit(allocatingMax(max))
+                                .recordMetricsWith(this.recorder)
+                                .buildConfig());
+
+                acquireScheduler.schedule(() -> {
+                    try {
+                        prepareDataLatch.await(8, TimeUnit.SECONDS);
+                        System.out.println("HEAVY BORROWER WILL NOW QUEUE acquire()");
+                        for (int i = 0; i < max; i++) {
+                            pool.acquire()
+                                    .doOnNext(v -> System.out.println("HEAVY BORROWER's pending received " + v.poolable() +
+                                            " from " + Thread.currentThread().getName()))
+                                    .doFinally(fin -> finalLatch.countDown())
+                                    .subscribe(v -> hogged.incrementAndGet());
+                        }
+                        System.out.println("HEAVY BORROWER DONE QUEUEING");
+                        hoggerLatch.countDown();
+                        finalLatch.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        hoggerLatch.countDown();
+                    }
+                });
+
+                for (int threadIndex = 1; threadIndex <= max; threadIndex++) {
+                    acquireScheduler.schedule(() -> {
+                        final PooledRef<String> ref = pool.acquire().block();
+                        assert ref != null;
+                        System.out.println("Created resource " + ref.poolable());
+                        prepareDataLatch.countDown();
+                        try {
+                            hoggerLatch.await(9, TimeUnit.SECONDS);
+                            Thread.sleep(100);
+                            System.out.println(Thread.currentThread().getName() + " releasing its resource");
+                            ref.release().block();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                }
+
+                Awaitility.await()
+                        .atMost(10, TimeUnit.SECONDS)
+                        .untilAtomic(hogged, Matchers.equalTo(max));
+
+                System.out.println("slowPath = " + recorder.getSlowPathCount() + ", fastPath = " + recorder.getFastPathCount());
+
+                assertThat(allocator).as("allocated").hasValue(max);
+                assertThat(recorder.getRecycledCount()).as("recycled count").isEqualTo(max);
+                assertThat(recorder.getSlowPathCount()).as("slowpath").isEqualTo(max);
+                assertThat(recorder.getFastPathCount()).as("fastpath").isZero();
+            } finally {
+                acquireScheduler.dispose();
+                acquireExecutor.shutdownNow();
+            }
         }
     }
 }

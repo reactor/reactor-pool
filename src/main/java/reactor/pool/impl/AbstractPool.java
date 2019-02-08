@@ -66,8 +66,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);
 
-    @SuppressWarnings("WeakerAccess")
-    void defaultDestroy(@Nullable POOLABLE poolable) {
+    private void defaultDestroy(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
             ((Disposable) poolable).dispose();
         }
@@ -274,7 +273,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     static class DefaultPoolConfig<POOLABLE> {
 
-        public static final Function<?, Mono<Void>> NO_OP_FACTORY = it -> Mono.empty();
+        static final Function<?, Mono<Void>> NO_OP_FACTORY = it -> Mono.empty();
+
         private final Mono<POOLABLE> allocator;
         private final int initialSize;
         private final AllocationStrategy allocationStrategy;
@@ -308,88 +308,88 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         }
 
         /**
-             * The asynchronous factory that produces new resources.
-             *
-             * @return a {@link Mono} representing the creation of a resource
-             */
-        public Mono<POOLABLE> allocator() {
+         * The asynchronous factory that produces new resources.
+         *
+         * @return a {@link Mono} representing the creation of a resource
+         */
+        Mono<POOLABLE> allocator() {
             return this.allocator;
         }
 
         /**
-             * Defines a strategy / limit for the number of pooled object to allocate.
-             *
-             * @return the {@link AllocationStrategy} for the pool
-             */
-        public AllocationStrategy allocationStrategy() {
+         * Defines a strategy / limit for the number of pooled object to allocate.
+         *
+         * @return the {@link AllocationStrategy} for the pool
+         */
+        AllocationStrategy allocationStrategy() {
             return this.allocationStrategy;
         }
 
         /**
-             * @return the minimum number of objects a {@link Pool} should create at initialization.
-             */
-        public int initialSize() {
+         * @return the minimum number of objects a {@link Pool} should create at initialization.
+         */
+        int initialSize() {
             return this.initialSize;
         }
 
         /**
-             * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
-             * the resource in order for it to become usable again. The {@link #evictionPredicate()} is applied AFTER this reset.
-             * <p>
-             * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
-             *
-             * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
-             */
-        public Function<POOLABLE, Mono<Void>> resetResource() {
+         * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
+         * the resource in order for it to become usable again. The {@link #evictionPredicate()} is applied AFTER this reset.
+         * <p>
+         * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
+         *
+         * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
+         */
+        Function<POOLABLE, Mono<Void>> resetResource() {
             return this.resetFactory;
         }
 
         /**
-             * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
-             * objects, file handles, socket connections, etc...).
-             * <p>
-             * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
-             *
-             * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
-             */
-        public Function<POOLABLE, Mono<Void>> destroyResource() {
+         * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
+         * objects, file handles, socket connections, etc...).
+         * <p>
+         * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
+         *
+         * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
+         */
+        Function<POOLABLE, Mono<Void>> destroyResource() {
             return this.destroyFactory;
         }
 
         /**
-             * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
-             * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
-             * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
-             * reaping process.
-             *
-             * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
-             */
-        public Predicate<PooledRef<POOLABLE>> evictionPredicate() {
+         * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
+         * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
+         * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
+         * reaping process.
+         *
+         * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
+         */
+        Predicate<PooledRef<POOLABLE>> evictionPredicate() {
             return this.evictionPredicate;
         }
 
         /**
-             * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
-             * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator()} produced new
-             * resources.
-             * <p>
-             * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
-             *
-             * @return a {@link Scheduler} on which to publish resources
-             */
-        public Scheduler deliveryScheduler() {
+         * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
+         * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator()} produced new
+         * resources.
+         * <p>
+         * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
+         *
+         * @return a {@link Scheduler} on which to publish resources
+         */
+        Scheduler deliveryScheduler() {
             return this.deliveryScheduler;
         }
 
         /**
-             * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
-             * implementations.
-             * <p>
-             * Defaults to {@link NoOpPoolMetricsRecorder}
-             *
-             * @return the {@link PoolMetricsRecorder} to use
-             */
-        public PoolMetricsRecorder metricsRecorder() {
+         * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
+         * implementations.
+         * <p>
+         * Defaults to {@link NoOpPoolMetricsRecorder}
+         *
+         * @return the {@link PoolMetricsRecorder} to use
+         */
+        PoolMetricsRecorder metricsRecorder() {
             return this.metricsRecorder;
         }
     }

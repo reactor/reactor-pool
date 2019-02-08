@@ -184,7 +184,7 @@ public class PoolConfigBuilder<T> {
      * @return the {@link PoolConfig}
      */
     public PoolConfig<T> buildConfig() {
-        return new DefaultPoolConfig<>(allocator, initialSize, allocationStrategy, resetFactory, destroyFactory,
+        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy, resetFactory, destroyFactory,
                 evictionPredicate, deliveryScheduler, metricsRecorder);
     }
 

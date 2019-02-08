@@ -23,8 +23,6 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.pool.Pool;
-import reactor.pool.PoolConfig;
 import reactor.pool.PooledRef;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
@@ -40,15 +38,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * A {@link Pool} implementation that attempts to keep resources on the same thread, by prioritizing
- * pending borrowers that were subscribed on the same thread on which a resource is released. In case no such borrower
- * exists, but some are pending from another thread, it will deliver to these borrowers instead (slow path, no fairness
- * guarantee).
- *
  * @author Simon Baslé
  */
-@SuppressWarnings("WeakerAccess")
-public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
+final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     //FIXME put that info on another volatile
     @SuppressWarnings("RawTypeCanBeGeneric")
@@ -63,7 +55,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final AtomicIntegerFieldUpdater<AffinityPool> SLOWPATH_WIP = AtomicIntegerFieldUpdater.newUpdater(AffinityPool.class, "slowPathWip");
 
 
-    public AffinityPool(PoolConfig<POOLABLE> poolConfig) {
+    public AffinityPool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(AffinityPool.class));
         this.pools = new ConcurrentHashMap<>();
 

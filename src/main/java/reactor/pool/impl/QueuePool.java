@@ -23,8 +23,6 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.pool.Pool;
-import reactor.pool.PoolConfig;
 import reactor.pool.PooledRef;
 import reactor.util.Loggers;
 import reactor.util.concurrent.Queues;
@@ -36,21 +34,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * A simple {@link Pool} implementation based on MPSC queues for both idle resources and pending
- * borrowers. It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
- * be handed off on any of the following {@link Thread threads}:
- * <ul>
- *     <li>any thread on which a resource was last allocated</li>
- *     <li>any thread on which a resource was recently released</li>
- *     <li>any thread on which an Pool{@link #acquire()} {@link Mono} was subscribed</li>
- * </ul>
- * <p>
- * For a more deterministic approach, the {@link PoolConfig#deliveryScheduler()} property of the {@link PoolConfig} can
- * be used.
- *
  * @author Simon Baslé
  */
-public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
+final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     private static final Queue TERMINATED = Queues.empty().get();
 
@@ -66,7 +52,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     private static final AtomicIntegerFieldUpdater<QueuePool> WIP = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "wip");
 
 
-    public QueuePool(PoolConfig<POOLABLE> poolConfig) {
+    public QueuePool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
         int maxSize = poolConfig.allocationStrategy().estimatePermitCount();

@@ -25,7 +25,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.AllocationStrategy;
 import reactor.pool.Pool;
-import reactor.pool.PoolConfig;
 import reactor.pool.PooledRef;
 import reactor.pool.metrics.NoOpPoolMetricsRecorder;
 import reactor.pool.metrics.PoolMetricsRecorder;
@@ -54,12 +53,12 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     //This helps with testability of some methods that for now mainly log
     final Logger logger;
 
-    final PoolConfig<POOLABLE> poolConfig;
+    final DefaultPoolConfig<POOLABLE> poolConfig;
 
     final PoolMetricsRecorder metricsRecorder;
 
 
-    AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
+    AbstractPool(DefaultPoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
         this.logger = logger;
         this.metricsRecorder = poolConfig.metricsRecorder();
@@ -93,7 +92,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         long start = metricsRecorder.now();
         metricsRecorder.recordLifetimeDuration(ref.timeSinceAllocation());
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
-        if (factory == PoolConfig.NO_OP_FACTORY) {
+        if (factory == DefaultPoolConfig.NO_OP_FACTORY) {
             return Mono.fromRunnable(() -> {
                 defaultDestroy(poolable);
                 metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start));
@@ -263,12 +262,13 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     }
 
     /**
-     * A default {@link PoolConfig}.
+     * A inner representation of a {@link AbstractPool} configuration.
      *
      * @author Simon Baslé
      */
-    static class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
+    static class DefaultPoolConfig<POOLABLE> {
 
+        public static final Function<?, Mono<Void>> NO_OP_FACTORY = it -> Mono.empty();
         private final Mono<POOLABLE> allocator;
         private final int initialSize;
         private final AllocationStrategy allocationStrategy;
@@ -301,42 +301,88 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             this.metricsRecorder = metricsRecorder == null ? NoOpPoolMetricsRecorder.INSTANCE : metricsRecorder;
         }
 
-        @Override
+        /**
+             * The asynchronous factory that produces new resources.
+             *
+             * @return a {@link Mono} representing the creation of a resource
+             */
         public Mono<POOLABLE> allocator() {
             return this.allocator;
         }
 
-        @Override
+        /**
+             * Defines a strategy / limit for the number of pooled object to allocate.
+             *
+             * @return the {@link AllocationStrategy} for the pool
+             */
         public AllocationStrategy allocationStrategy() {
             return this.allocationStrategy;
         }
 
-        @Override
+        /**
+             * @return the minimum number of objects a {@link Pool} should create at initialization.
+             */
         public int initialSize() {
             return this.initialSize;
         }
 
-        @Override
+        /**
+             * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
+             * the resource in order for it to become usable again. The {@link #evictionPredicate()} is applied AFTER this reset.
+             * <p>
+             * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
+             *
+             * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
+             */
         public Function<POOLABLE, Mono<Void>> resetResource() {
             return this.resetFactory;
         }
 
-        @Override
+        /**
+             * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
+             * objects, file handles, socket connections, etc...).
+             * <p>
+             * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
+             *
+             * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
+             */
         public Function<POOLABLE, Mono<Void>> destroyResource() {
             return this.destroyFactory;
         }
 
-        @Override
+        /**
+             * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
+             * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
+             * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
+             * reaping process.
+             *
+             * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
+             */
         public Predicate<PooledRef<POOLABLE>> evictionPredicate() {
             return this.evictionPredicate;
         }
 
-        @Override
+        /**
+             * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
+             * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator()} produced new
+             * resources.
+             * <p>
+             * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
+             *
+             * @return a {@link Scheduler} on which to publish resources
+             */
         public Scheduler deliveryScheduler() {
             return this.deliveryScheduler;
         }
 
-        @Override
+        /**
+             * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
+             * implementations.
+             * <p>
+             * Defaults to {@link NoOpPoolMetricsRecorder}
+             *
+             * @return the {@link PoolMetricsRecorder} to use
+             */
         public PoolMetricsRecorder metricsRecorder() {
             return this.metricsRecorder;
         }

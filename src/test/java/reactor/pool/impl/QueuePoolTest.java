@@ -27,9 +27,10 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.Pool;
-import reactor.pool.PoolConfig;
 import reactor.pool.PooledRef;
 import reactor.pool.TestUtils.PoolableTest;
+import reactor.pool.impl.AbstractPool.DefaultPoolConfig;
+import reactor.pool.util.AllocationStrategies;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.util.TestLogger;
@@ -46,11 +47,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
-import static reactor.pool.TestUtils.poolableTestConfig;
-import static reactor.pool.impl.PoolConfigBuilder.allocateWith;
+import static reactor.pool.impl.PoolBuilder.queuePoolFrom;
 import static reactor.pool.util.AllocationStrategies.allocatingMax;
 
 /**
@@ -58,13 +59,47 @@ import static reactor.pool.util.AllocationStrategies.allocatingMax;
  */
 class QueuePoolTest {
 
+    //==utils for package-private config==
+    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+        return PoolBuilder.queuePoolFrom(allocator)
+                .initialSizeOf(minSize)
+                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
+                .resetResourcesWith(pt -> Mono.fromRunnable(pt::clean))
+                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .buildConfig();
+    }
+
+    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
+        return PoolBuilder.queuePoolFrom(allocator)
+                .initialSizeOf(minSize)
+                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
+                .resetResourcesWith(pt -> Mono.fromRunnable(pt::clean))
+                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .deliveryScheduler(deliveryScheduler)
+                .buildConfig();
+    }
+
+    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
+                                                                                 Consumer<? super PoolableTest> additionalCleaner) {
+        return PoolBuilder.queuePoolFrom(allocator)
+                .initialSizeOf(minSize)
+                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
+                .resetResourcesWith(poolableTest -> Mono.fromRunnable(() -> {
+                    poolableTest.clean();
+                    additionalCleaner.accept(poolableTest);
+                }))
+                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .buildConfig();
+    }
+    //======
+
     @Test
     void demonstrateAcquireInScopePipeline() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger();
         AtomicReference<String> releaseRef = new AtomicReference<>();
 
         QueuePool<String> pool = new QueuePool<>(
-                allocateWith(Mono.just("Hello Reactive World"))
+                queuePoolFrom(Mono.just("Hello Reactive World"))
                         .witAllocationLimit(allocatingMax(1))
                         .resetResourcesWith(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
@@ -209,7 +244,7 @@ class QueuePoolTest {
         void returnedReleasedIfBorrowerCancelled() {
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new),
                     pt -> releasedCount.incrementAndGet());
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -234,7 +269,7 @@ class QueuePoolTest {
             AtomicInteger newCount = new AtomicInteger();
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -274,7 +309,7 @@ class QueuePoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -311,7 +346,7 @@ class QueuePoolTest {
 
         @Test
         void cleanerFunctionError() {
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
 
@@ -325,7 +360,7 @@ class QueuePoolTest {
 
         @Test
         void cleanerFunctionErrorDiscards() {
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
 
@@ -343,7 +378,7 @@ class QueuePoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -365,7 +400,7 @@ class QueuePoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -390,7 +425,7 @@ class QueuePoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -450,7 +485,7 @@ class QueuePoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -488,7 +523,7 @@ class QueuePoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -512,7 +547,7 @@ class QueuePoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -539,7 +574,7 @@ class QueuePoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -588,7 +623,7 @@ class QueuePoolTest {
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerAcquireScheduler = Schedulers.newSingle("racerAcquire");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -706,7 +741,7 @@ class QueuePoolTest {
         void returnedReleasedIfBorrowerCancelled() {
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new),
                     pt -> releasedCount.incrementAndGet());
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -732,7 +767,7 @@ class QueuePoolTest {
             AtomicInteger newCount = new AtomicInteger();
             AtomicInteger releasedCount = new AtomicInteger();
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -772,7 +807,7 @@ class QueuePoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -809,7 +844,7 @@ class QueuePoolTest {
 
         @Test
         void cleanerFunctionError() {
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
 
@@ -821,7 +856,7 @@ class QueuePoolTest {
 
         @Test
         void cleanerFunctionErrorDiscards() {
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1, Mono.fromCallable(PoolableTest::new),
                     pt -> { throw new IllegalStateException("boom"); });
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
             AtomicReference<Throwable> errorRef = new AtomicReference<>();
@@ -842,7 +877,7 @@ class QueuePoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -864,7 +899,7 @@ class QueuePoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -889,7 +924,7 @@ class QueuePoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             QueuePool<PoolableTest> pool = new QueuePool<>(testConfig);
@@ -949,7 +984,7 @@ class QueuePoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -987,7 +1022,7 @@ class QueuePoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -1011,7 +1046,7 @@ class QueuePoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -1038,7 +1073,7 @@ class QueuePoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -1087,7 +1122,7 @@ class QueuePoolTest {
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerAcquireScheduler = Schedulers.newSingle("racerAcquire");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -1125,7 +1160,7 @@ class QueuePoolTest {
     void disposingPoolDisposesElements() {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                         .witAllocationLimit(allocatingMax(3))
                         .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
@@ -1152,7 +1187,7 @@ class QueuePoolTest {
     void disposingPoolFailsPendingBorrowers() {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                         .witAllocationLimit(allocatingMax(3))
                         .initialSizeOf(3)
                         .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
@@ -1190,7 +1225,7 @@ class QueuePoolTest {
     void releasingToDisposedPoolDisposesElement() {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                         .witAllocationLimit(allocatingMax(3))
                         .initialSizeOf(3)
                         .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
@@ -1223,7 +1258,7 @@ class QueuePoolTest {
     void stillacquiredAfterPoolDisposedMaintainsCount() {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                 .initialSizeOf(3)
                 .witAllocationLimit(allocatingMax(3))
                 .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
@@ -1253,7 +1288,7 @@ class QueuePoolTest {
     void acquiringFromDisposedPoolFailsBorrower() {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                         .witAllocationLimit(allocatingMax(3))
                         .resetResourcesWith(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
@@ -1272,7 +1307,7 @@ class QueuePoolTest {
     @Test
     void poolIsDisposed() {
         QueuePool<PoolableTest> pool = new QueuePool<>(
-                allocateWith(Mono.fromCallable(PoolableTest::new))
+                queuePoolFrom(Mono.fromCallable(PoolableTest::new))
                         .witAllocationLimit(allocatingMax(3))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
                         .buildConfig());
@@ -1289,7 +1324,7 @@ class QueuePoolTest {
         Formatter uniqueElement = new Formatter();
 
         QueuePool<Formatter> pool = new QueuePool<>(
-                allocateWith(Mono.just(uniqueElement))
+                queuePoolFrom(Mono.just(uniqueElement))
                         .witAllocationLimit(allocatingMax(1))
                         .initialSizeOf(1)
                         .evictionPredicate(slot -> true)
@@ -1304,7 +1339,7 @@ class QueuePoolTest {
     @Test
     void allocatorErrorOutsideConstructorIsPropagated() {
         QueuePool<String> pool = new QueuePool<>(
-                allocateWith(Mono.<String>error(new IllegalStateException("boom")))
+                queuePoolFrom(Mono.<String>error(new IllegalStateException("boom")))
                         .witAllocationLimit(allocatingMax(1))
                         .initialSizeOf(0)
                         .evictionPredicate(f -> true)
@@ -1317,7 +1352,7 @@ class QueuePoolTest {
 
     @Test
     void allocatorErrorInConstructorIsThrown() {
-        PoolConfig<Object> config = allocateWith(Mono.error(new IllegalStateException("boom")))
+        DefaultPoolConfig<Object> config = queuePoolFrom(Mono.error(new IllegalStateException("boom")))
                 .initialSizeOf(1)
                 .witAllocationLimit(allocatingMax(1))
                 .evictionPredicate(f -> true)
@@ -1338,7 +1373,7 @@ class QueuePoolTest {
             };
 
             QueuePool<Closeable> pool = new QueuePool<>(
-                    allocateWith(Mono.just(closeable))
+                    queuePoolFrom(Mono.just(closeable))
                             .initialSizeOf(1)
                             .witAllocationLimit(allocatingMax(1))
                             .evictionPredicate(f -> true)
@@ -1360,7 +1395,7 @@ class QueuePoolTest {
     class QueueMetricsTest extends AbstractTestMetrics {
 
         @Override
-        <T> Pool<T> createPool(PoolConfig<T> poolConfig) {
+        <T> Pool<T> createPool(DefaultPoolConfig<T> poolConfig) {
             return new QueuePool<>(poolConfig);
         }
     }

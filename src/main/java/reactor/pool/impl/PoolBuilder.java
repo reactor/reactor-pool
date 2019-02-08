@@ -21,7 +21,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.AllocationStrategy;
 import reactor.pool.Pool;
-import reactor.pool.PoolConfig;
 import reactor.pool.PooledRef;
 import reactor.pool.metrics.PoolMetricsRecorder;
 import reactor.pool.util.AllocationStrategies;
@@ -33,28 +32,58 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * A builder for {@link PoolConfig}. Start with mandatory {@link #allocateWith(Mono)}.
+ * A builder for {@link Pool}. Start by choosing the semantics of pooling that best suit your use case and provide a
+ * mandatory allocator: {@link #queuePoolFrom(Mono)}, {@link #affinityPoolFrom(Mono)}.
  *
  * @author Simon Baslé
  */
-public class PoolConfigBuilder<T> {
+public class PoolBuilder<T> {
 
     //TODO tests
 
     /**
-     * Start building a {@link PoolConfig} by describing how new objects are to be asynchronously allocated.
+     * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
      * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
      * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
+     * <p>
+     * The returned {@link Pool} is based on MPSC queues for both idle resources and pending {@link Pool#acquire()} Monos.
+     * It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
+     * be handed off on any of the following {@link Thread threads}:
+     * <ul>
+     *     <li>any thread on which a resource was last allocated</li>
+     *     <li>any thread on which a resource was recently released</li>
+     *     <li>any thread on which an {@link Pool#acquire()} {@link Mono} was subscribed</li>
+     * </ul>
+     * For a more deterministic approach, the {@link #deliveryScheduler(Scheduler)} property of the builder can be used.
      *
      * @param allocator the asynchronous creator of poolable resources.
      * @param <T> the type of resource created and recycled by the {@link Pool}
-     * @return a builder of {@link PoolConfig}
+     * @return a builder of {@link Pool}
      */
-    public static <T> PoolConfigBuilder<T> allocateWith(Mono<T> allocator) {
-        return new PoolConfigBuilder<>(allocator);
+    public static <T> PoolBuilder<T> queuePoolFrom(Mono<T> allocator) {
+        return new PoolBuilder<>(allocator, false);
+    }
+
+    /**
+     * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
+     * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
+     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
+     * <p>
+     * The returned {@link Pool} attempts to keep resources on the same thread, by prioritizing
+     * pending {@link Pool#acquire()} {@link Mono Monos} that were subscribed on the same thread on which a resource is
+     * released. In case no such borrower exists, but some are pending from another thread, it will deliver to these
+     * borrowers instead (a slow path with no fairness guarantees).
+     *
+     * @param allocator the asynchronous creator of poolable resources.
+     * @param <T> the type of resource created and recycled by the {@link Pool}
+     * @return a builder of {@link Pool}
+     */
+    public static <T> PoolBuilder<T> affinityPoolFrom(Mono<T> allocator) {
+        return new PoolBuilder<>(allocator, true);
     }
 
     private final Mono<T> allocator;
+    private final boolean isAffinity;
 
     private int initialSize = 0;
 
@@ -71,8 +100,9 @@ public class PoolConfigBuilder<T> {
     @Nullable
     private PoolMetricsRecorder metricsRecorder;
 
-    PoolConfigBuilder(Mono<T> allocator) {
+    private PoolBuilder(Mono<T> allocator, boolean isAffinity) {
         this.allocator = allocator;
+        this.isAffinity = isAffinity;
     }
 
     /**
@@ -82,9 +112,9 @@ public class PoolConfigBuilder<T> {
      * Defaults to {@code 0}.
      *
      * @param n the initial size of the {@link Pool}.
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> initialSizeOf(int n) {
+    public PoolBuilder<T> initialSizeOf(int n) {
         this.initialSize = n;
         return this;
     }
@@ -97,9 +127,9 @@ public class PoolConfigBuilder<T> {
      * See {@link AllocationStrategies} for readily available strategies based on counters.
      *
      * @param allocationStrategy the {@link AllocationStrategy} to use
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> witAllocationLimit(AllocationStrategy allocationStrategy) {
+    public PoolBuilder<T> witAllocationLimit(AllocationStrategy allocationStrategy) {
         this.allocationStrategy = allocationStrategy;
         return this;
     }
@@ -112,9 +142,9 @@ public class PoolConfigBuilder<T> {
      * Defaults to not resetting anything.
      *
      * @param resetFactory the {@link Function} supplying the state-resetting {@link Mono}
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> resetResourcesWith(Function<T, Mono<Void>> resetFactory) {
+    public PoolBuilder<T> resetResourcesWith(Function<T, Mono<Void>> resetFactory) {
         this.resetFactory = resetFactory;
         return this;
     }
@@ -127,9 +157,9 @@ public class PoolConfigBuilder<T> {
      * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements and disposing them.
      *
      * @param destroyFactory the {@link Function} supplying the state-resetting {@link Mono}
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> destroyResourcesWith(Function<T, Mono<Void>> destroyFactory) {
+    public PoolBuilder<T> destroyResourcesWith(Function<T, Mono<Void>> destroyFactory) {
         this.destroyFactory = destroyFactory;
         return this;
     }
@@ -145,9 +175,9 @@ public class PoolConfigBuilder<T> {
      * Defaults to never evicting. See {@link EvictionPredicates} for pre-build eviction predicates.
      *
      * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should be destroyed
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> evictionPredicate(Predicate<PooledRef<T>> evictionPredicate) {
+    public PoolBuilder<T> evictionPredicate(Predicate<PooledRef<T>> evictionPredicate) {
         this.evictionPredicate = evictionPredicate;
         return this;
     }
@@ -160,9 +190,9 @@ public class PoolConfigBuilder<T> {
      * Defaults to {@link Schedulers#immediate()}.
      *
      * @param deliveryScheduler the {@link Scheduler} on which to deliver acquired resources
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> deliveryScheduler(Scheduler deliveryScheduler) {
+    public PoolBuilder<T> deliveryScheduler(Scheduler deliveryScheduler) {
         this.deliveryScheduler = deliveryScheduler;
         return this;
     }
@@ -171,19 +201,28 @@ public class PoolConfigBuilder<T> {
      * Set up the optional {@link PoolMetricsRecorder} for {@link Pool} to use for instrumentation purposes.
      *
      * @param recorder the {@link PoolMetricsRecorder}
-     * @return this {@link PoolConfig} builder
+     * @return this {@link Pool} builder
      */
-    public PoolConfigBuilder<T> recordMetricsWith(PoolMetricsRecorder recorder) {
+    public PoolBuilder<T> recordMetricsWith(PoolMetricsRecorder recorder) {
         this.metricsRecorder = recorder;
         return this;
     }
 
     /**
-     * Build the {@link PoolConfig}.
+     * Build the {@link Pool}.
      *
-     * @return the {@link PoolConfig}
+     * @return the {@link Pool}
      */
-    public PoolConfig<T> buildConfig() {
+    public Pool<T> build() {
+        AbstractPool.DefaultPoolConfig<T> config = buildConfig();
+        if (isAffinity) {
+            return new AffinityPool<>(config);
+        }
+        return new QueuePool<>(config);
+    }
+
+    //kept package-private for the benefit of tests
+    AbstractPool.DefaultPoolConfig<T> buildConfig() {
         return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy, resetFactory, destroyFactory,
                 evictionPredicate, deliveryScheduler, metricsRecorder);
     }

@@ -17,12 +17,8 @@ package reactor.pool;
 
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.pool.impl.PoolConfigBuilder;
-import reactor.pool.util.AllocationStrategies;
 
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 /**
  * @author Simon Baslé
@@ -91,7 +87,7 @@ public class TestUtils {
             this.usedUp = 0;
         }
 
-        void clean() {
+        public void clean() {
             this.usedUp++;
         }
 
@@ -115,35 +111,5 @@ public class TestUtils {
         }
     }
 
-    public static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
-        return PoolConfigBuilder.allocateWith(allocator)
-                .initialSizeOf(minSize)
-                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
-                .resetResourcesWith(pt -> Mono.fromRunnable(pt::clean))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
-                .buildConfig();
-    }
 
-    public static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
-        return PoolConfigBuilder.allocateWith(allocator)
-                .initialSizeOf(minSize)
-                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
-                .resetResourcesWith(pt -> Mono.fromRunnable(pt::clean))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
-                .deliveryScheduler(deliveryScheduler)
-                .buildConfig();
-    }
-
-    public static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
-                                                                    Consumer<? super PoolableTest> additionalCleaner) {
-        return PoolConfigBuilder.allocateWith(allocator)
-                .initialSizeOf(minSize)
-                .witAllocationLimit(AllocationStrategies.allocatingMax(maxSize))
-                .resetResourcesWith(poolableTest -> Mono.fromRunnable(() -> {
-                    poolableTest.clean();
-                    additionalCleaner.accept(poolableTest);
-                }))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
-                .buildConfig();
-    }
 }

@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 /**
  * @author Simon Baslé
  */
+@SuppressWarnings("WeakerAccess")
 final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     //FIXME put that info on another volatile
@@ -85,11 +86,36 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
-        //Note the pool isn't aware of the mono until subscribed.
+        //Note the pool isn't aware of the mono until requested.
         return new AffinityBorrowerMono<>(this);
     }
 
-    //actual acquire logic is moved in the borrower Mono
+    @Override
+    void doAcquire(Borrower<POOLABLE> borrower) {
+        if (pools == TERMINATED) {
+            borrower.fail(new RuntimeException("Pool has been shut down"));
+            return;
+        }
+
+        SubPool<POOLABLE> subPool = pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(this));
+
+        AffinityPooledRef<POOLABLE> element = availableElements.poll();
+        if (element != null) {
+
+            //TODO test this scenario
+            if (poolConfig.evictionPredicate().test(element)) {
+                destroyPoolable(element).subscribe(); //this returns a permit
+                allocateOrPend(subPool, borrower);
+            }
+            else {
+                metricsRecorder.recordFastPath();
+                borrower.deliver(element);
+            }
+        }
+        else {
+            allocateOrPend(subPool, borrower);
+        }
+    }
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
         if (poolConfig.allocationStrategy().getPermits(1) == 1) {
@@ -302,33 +328,8 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
-            if (POOLS.get(parent) == TERMINATED) {
-                Operators.error(actual, new RuntimeException("Pool has been shut down"));
-                return;
-            }
-
-            SubPool<T> subPool = parent.pools.computeIfAbsent(Thread.currentThread().getId(), i -> new SubPool<>(parent));
-
-            Borrower<T> borrower = new Borrower<>(actual);
+            Borrower<T> borrower = new Borrower<>(actual, parent);
             actual.onSubscribe(borrower);
-
-
-            AffinityPooledRef<T> element = parent.availableElements.poll();
-            if (element != null) {
-
-                //TODO test this scenario
-                if (parent.poolConfig.evictionPredicate().test(element)) {
-                    parent.destroyPoolable(element).subscribe(); //this returns a permit
-                    parent.allocateOrPend(subPool, borrower);
-                }
-                else {
-                    parent.metricsRecorder.recordFastPath();
-                    borrower.deliver(element);
-                }
-            }
-            else {
-                parent.allocateOrPend(subPool, borrower);
-            }
         }
     }
 

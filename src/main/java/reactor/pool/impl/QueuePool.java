@@ -80,10 +80,19 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
-        return new QueueBorrowerMono<>(this); //the mono is unknown to the pool until subscribed
+        return new QueueBorrowerMono<>(this); //the mono is unknown to the pool until requested
     }
 
-    //the actual acquire logic happens in the QueueBorrower mono
+    @Override
+    void doAcquire(Borrower<POOLABLE> borrower) {
+        if (pending == TERMINATED) {
+            borrower.fail(new RuntimeException("Pool has been shut down"));
+            return;
+        }
+
+        pending.add(borrower);
+        drain();
+    }
 
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
@@ -240,18 +249,8 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
-
-            @SuppressWarnings("unchecked")
-            Queue<Borrower<T>> pending = PENDING.get(parent);
-            if (pending == TERMINATED) {
-                Operators.error(actual, new RuntimeException("Pool has been shut down"));
-                return;
-            }
-
-            Borrower<T> borrower = new Borrower<>(actual);
-            pending.add(borrower);
+            Borrower<T> borrower = new Borrower<>(actual, parent);
             actual.onSubscribe(borrower);
-            parent.drain();
         }
     }
 

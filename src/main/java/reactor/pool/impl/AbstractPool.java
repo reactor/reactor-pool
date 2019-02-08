@@ -64,6 +64,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         this.metricsRecorder = poolConfig.metricsRecorder();
     }
 
+    abstract void doAcquire(Borrower<POOLABLE> borrower);
+
     @SuppressWarnings("WeakerAccess")
     void defaultDestroy(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
@@ -212,14 +214,18 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription  {
 
         final CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual;
+        final AbstractPool<POOLABLE> pool;
 
-        Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual) {
+        Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual, AbstractPool<POOLABLE> pool) {
             this.actual = actual;
+            this.pool = pool;
         }
 
         @Override
         public void request(long n) {
-            //IGNORED, a Borrower is always considered requested upon subscription
+            if (Operators.validate(n)) {
+                pool.doAcquire(this);
+            }
         }
 
         @Override

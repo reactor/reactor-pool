@@ -239,7 +239,6 @@ abstract class AbstractTestMetrics {
         assertThat(allocCounter).as("allocations").hasValue(3);
         assertThat(destroyCounter).as("destructions").hasValue(2);
 
-        recorder.getLifetimeHistogram().outputPercentileDistribution(System.out, 1d);
         assertThat(recorder.getLifetimeHistogram().getMinNonZeroValue())
                 .isCloseTo(550L, Offset.offset(30L));
     }

@@ -96,6 +96,7 @@ class QueuePoolTest {
 
     @Nested
     @DisplayName("Tests around the acquire() manual mode of acquiring")
+    @SuppressWarnings("ClassCanBeStatic")
     class AcquireTest {
 
         @Test
@@ -623,6 +624,7 @@ class QueuePoolTest {
 
     @Nested
     @DisplayName("Tests around the acquireInScope(Function) mode of acquiring")
+    @SuppressWarnings("ClassCanBeStatic")
     class AcquireInScopeTest {
 
         @Test
@@ -1355,6 +1357,7 @@ class QueuePoolTest {
 
     @Nested
     @DisplayName("metrics")
+    @SuppressWarnings("ClassCanBeStatic")
     class QueueMetricsTest extends AbstractTestMetrics {
 
         @Override

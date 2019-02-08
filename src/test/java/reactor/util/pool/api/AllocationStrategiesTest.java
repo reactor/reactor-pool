@@ -247,6 +247,7 @@ class AllocationStrategiesTest {
 
     @DisplayName("unbounded")
     @Nested
+    @SuppressWarnings("ClassCanBeStatic")
     class UnboundedTest {
 
         @Test

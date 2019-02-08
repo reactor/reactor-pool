@@ -16,6 +16,8 @@
 
 package reactor.util.pool.impl;
 
+import org.assertj.core.data.Offset;
+import org.assertj.core.data.Percentage;
 import org.awaitility.Awaitility;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
@@ -104,16 +106,13 @@ class AffinityPoolTest {
         if (releaseLatch.await(35, TimeUnit.SECONDS)) {
             assertThat(acquired1)
                     .as("thread1 acquired")
-                    .hasSize(1)
-                    .containsEntry("thread1", 10);
+                    .hasEntrySatisfying("thread1", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
             assertThat(acquired2)
                     .as("thread2 acquired")
-                    .hasSize(1)
-                    .containsEntry("thread2", 10);
+                    .hasEntrySatisfying("thread2", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
             assertThat(acquired3)
                     .as("thread3 acquired")
-                    .hasSize(1)
-                    .containsEntry("thread3", 10);
+                    .hasEntrySatisfying("thread3", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
         }
         else {
             System.out.println("acquired1: " + acquired1);
@@ -125,6 +124,7 @@ class AffinityPoolTest {
 
     @Nested
     @DisplayName("Tests around the acquire() manual mode of acquiring")
+    @SuppressWarnings("ClassCanBeStatic")
     class AcquireTest {
 
         @Test
@@ -808,8 +808,13 @@ class AffinityPoolTest {
                 System.out.println("slowPath = " + recorder.getSlowPathCount() + ", fastPath = " + recorder.getFastPathCount());
 
                 assertThat(allocator).hasValue(concurrency);
-                assertThat(recorder.getSlowPathCount()).as("slowpath").isZero();
-                assertThat(recorder.getFastPathCount()).as("fastpath").isEqualTo(10L * concurrency);
+                long slowPath = recorder.getSlowPathCount();
+                long fastPath = recorder.getFastPathCount();
+                Offset<Long> errorMargin = Offset.offset((long) (10 * concurrency * 0.2d));
+
+                assertThat(slowPath).as("slowpath").isCloseTo(0L, errorMargin);
+                assertThat(fastPath).as("fastpath").isCloseTo(10L * concurrency, errorMargin);
+                assertThat(slowPath + fastPath).as("fastpath + slowpath").isEqualTo(10L * concurrency);
             } finally {
                 acquireScheduler.dispose();
                 acquireExecutor.shutdownNow();

@@ -18,7 +18,7 @@ package reactor.util.pool.impl;
 
 import reactor.core.publisher.Mono;
 import reactor.util.pool.api.PooledRef;
-import reactor.util.pool.metrics.MetricsRecorder;
+import reactor.util.pool.metrics.PoolMetricsRecorder;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 abstract class AbstractPooledRef<T> implements PooledRef<T> {
 
     final long            creationTimestamp;
-    final MetricsRecorder metricsRecorder;
+    final PoolMetricsRecorder metricsRecorder;
 
     volatile T poolable;
 
@@ -42,7 +42,7 @@ abstract class AbstractPooledRef<T> implements PooledRef<T> {
     volatile long timeSinceRelease;
     static final AtomicLongFieldUpdater<AbstractPooledRef> TIME_SINCE_RELEASE = AtomicLongFieldUpdater.newUpdater(AbstractPooledRef.class, "timeSinceRelease");
 
-    AbstractPooledRef(T poolable, MetricsRecorder metricsRecorder) {
+    AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder) {
         this.poolable = poolable;
         this.metricsRecorder = metricsRecorder;
         this.creationTimestamp = metricsRecorder.now();

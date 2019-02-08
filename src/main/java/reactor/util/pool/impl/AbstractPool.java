@@ -24,7 +24,7 @@ import reactor.util.pool.api.AllocationStrategy;
 import reactor.util.pool.api.Pool;
 import reactor.util.pool.api.PoolConfig;
 import reactor.util.pool.api.PooledRef;
-import reactor.util.pool.metrics.MetricsRecorder;
+import reactor.util.pool.metrics.PoolMetricsRecorder;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -44,7 +44,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     final PoolConfig<POOLABLE> poolConfig;
 
-    final MetricsRecorder metricsRecorder;
+    final PoolMetricsRecorder metricsRecorder;
 
 
     AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {

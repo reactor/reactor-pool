@@ -25,7 +25,7 @@ package reactor.util.pool.metrics;
  *
  * @author Simon Baslé
  */
-public interface MetricsRecorder {
+public interface PoolMetricsRecorder {
 
     /**
      * Get a starting time with milliseconds resolution.

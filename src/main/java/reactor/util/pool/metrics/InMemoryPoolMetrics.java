@@ -23,11 +23,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * A simple in memory {@link MetricsRecorder} based on HdrHistograms than can also be used to get the metrics.
+ * A simple in memory {@link PoolMetricsRecorder} based on HdrHistograms than can also be used to get the metrics.
  *
  * @author Simon Baslé
  */
-public class InMemoryPoolMetrics implements MetricsRecorder {
+public class InMemoryPoolMetrics implements PoolMetricsRecorder {
 
     private final ShortCountsHistogram allocationSuccessHistogram;
     private final ShortCountsHistogram allocationErrorHistogram;

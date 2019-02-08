@@ -21,7 +21,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.annotation.Nullable;
-import reactor.util.pool.metrics.MetricsRecorder;
+import reactor.util.pool.metrics.PoolMetricsRecorder;
 
 import java.util.concurrent.Callable;
 import java.util.function.Function;
@@ -64,7 +64,7 @@ public class PoolConfigBuilder<T> {
     @Nullable
     private Scheduler deliveryScheduler;
     @Nullable
-    private MetricsRecorder metricsRecorder;
+    private PoolMetricsRecorder metricsRecorder;
 
     PoolConfigBuilder(Mono<T> allocator) {
         this.allocator = allocator;
@@ -163,12 +163,12 @@ public class PoolConfigBuilder<T> {
     }
 
     /**
-     * Set up the optional {@link MetricsRecorder} for {@link Pool} to use for instrumentation purposes.
+     * Set up the optional {@link PoolMetricsRecorder} for {@link Pool} to use for instrumentation purposes.
      *
-     * @param recorder the {@link MetricsRecorder}
+     * @param recorder the {@link PoolMetricsRecorder}
      * @return this {@link PoolConfig} builder
      */
-    public PoolConfigBuilder<T> recordMetricsWith(MetricsRecorder recorder) {
+    public PoolConfigBuilder<T> recordMetricsWith(PoolMetricsRecorder recorder) {
         this.metricsRecorder = recorder;
         return this;
     }

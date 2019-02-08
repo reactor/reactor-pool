@@ -17,15 +17,15 @@
 package reactor.util.pool.metrics;
 
 /**
- * A No-Op {@link MetricsRecorder} that can be used as a default if instrumentation is not desired.
+ * A No-Op {@link PoolMetricsRecorder} that can be used as a default if instrumentation is not desired.
  *
  * @author Simon Baslé
  */
-public final class NoOpMetricsRecorder implements MetricsRecorder {
+public final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
 
-    public static final NoOpMetricsRecorder INSTANCE = new NoOpMetricsRecorder();
+    public static final NoOpPoolMetricsRecorder INSTANCE = new NoOpPoolMetricsRecorder();
 
-    private NoOpMetricsRecorder() {
+    private NoOpPoolMetricsRecorder() {
 
     }
 

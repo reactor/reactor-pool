@@ -66,8 +66,8 @@ class AllocationStrategiesTest {
         void onePermitGet() {
             AllocationStrategy test = AllocationStrategies.allocatingMax(1);
 
-            assertThat(test.getPermit()).as("first try").isTrue();
-            assertThat(test.getPermit()).as("second try").isFalse();
+            assertThat(test.getPermits(1)).as("first try").isOne();
+            assertThat(test.getPermits(1)).as("second try").isZero();
         }
 
         @Test
@@ -96,7 +96,7 @@ class AllocationStrategiesTest {
         void returnPermitCanGoOverMax() {
             final AllocationStrategy test = AllocationStrategies.allocatingMax(1);
 
-            test.returnPermit();
+            test.returnPermits(1);
 
             assertThat(test.estimatePermitCount()).isEqualTo(2);
         }
@@ -121,9 +121,9 @@ class AllocationStrategiesTest {
 
             for (int i = 0; i < 1_000_000; i++) {
                 es.submit(() -> {
-                    if (test.getPermit()) {
+                    if (test.getPermits(1) == 1) {
                         counter.increment();
-                        test.returnPermit();
+                        test.returnPermits(1);
                     }
                 });
             }
@@ -191,8 +191,8 @@ class AllocationStrategiesTest {
                     }
                     else {
                         usedGetPermit.increment();
-                        if (test.getPermit()) {
-                            test.returnPermit();
+                        if (test.getPermits(1) == 1) {
+                            test.returnPermits(1);
                         }
                         else {
                             gotZeroCounter.increment();
@@ -230,7 +230,7 @@ class AllocationStrategiesTest {
                     if (got == 0) gotZeroCounter.increment();
                     for (int j = 0; j < got; j++) {
                         counter.increment();
-                        test.returnPermit();
+                        test.returnPermits(1);
                     }
                 });
             }
@@ -257,15 +257,6 @@ class AllocationStrategiesTest {
         }
 
         @Test
-        void getPermitDoesntChangeCount() {
-            AllocationStrategy test = AllocationStrategies.unbounded();
-
-            assertThat(test.getPermit()).as("first try").isTrue();
-            assertThat(test.getPermit()).as("second try").isTrue();
-            assertThat(test.estimatePermitCount()).as("permit count unbounded").isEqualTo(Integer.MAX_VALUE);
-        }
-
-        @Test
         void getPermitsDoesntChangeCount() {
             AllocationStrategy test = AllocationStrategies.unbounded();
 
@@ -286,15 +277,6 @@ class AllocationStrategiesTest {
             AllocationStrategy test = AllocationStrategies.unbounded();
 
             assertThat(test.getPermits(-1)).isZero();
-        }
-
-        @Test
-        void returnPermitDoesntChangeMax() {
-            final AllocationStrategy test = AllocationStrategies.unbounded();
-
-            test.returnPermit();
-
-            assertThat(test.estimatePermitCount()).isEqualTo(Integer.MAX_VALUE);
         }
 
         @Test

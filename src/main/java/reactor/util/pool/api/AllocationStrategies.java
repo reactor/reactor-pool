@@ -27,7 +27,7 @@ public final class AllocationStrategies {
 
     /**
      * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-     * {@link AllocationStrategy#returnPermit()} has been called.
+     * {@link AllocationStrategy#returnPermits(int)} has been called.
      *
      * @param max the maximum number of live resources to keep in the pool
      * @return an {@link AllocationStrategy} that allows at most N live resources
@@ -46,10 +46,6 @@ public final class AllocationStrategies {
     }
 
     private static final AllocationStrategy UNBOUNDED = new AllocationStrategy() {
-        @Override
-        public boolean getPermit() {
-            return true;
-        }
 
         @Override
         public int getPermits(int desired) {
@@ -59,11 +55,6 @@ public final class AllocationStrategies {
         @Override
         public int estimatePermitCount() {
             return Integer.MAX_VALUE;
-        }
-
-        @Override
-        public void returnPermit() {
-            //NO-OP
         }
 
         @Override
@@ -85,17 +76,11 @@ public final class AllocationStrategies {
         }
 
         @Override
-        public boolean getPermit() {
-            if (PERMITS.decrementAndGet(this) >= 0) {
-                return true;
-            }
-            PERMITS.incrementAndGet(this);
-            return false;
-        }
-
-        @Override
         public int getPermits(int desired) {
-            if (desired <= 0) return 0;
+            if (desired < 1) return 0;
+
+            //impl note: this should be more performant compared to the previous approach for desired == 1
+            // (incrementAndGet + decrementAndGet compensation both induce a CAS loop, vs single loop here)
             for (;;) {
                 int p = permits;
                 int possible = Math.min(desired, p);
@@ -109,11 +94,6 @@ public final class AllocationStrategies {
         @Override
         public int estimatePermitCount() {
             return PERMITS.get(this);
-        }
-
-        @Override
-        public void returnPermit() {
-            PERMITS.incrementAndGet(this);
         }
 
         @Override

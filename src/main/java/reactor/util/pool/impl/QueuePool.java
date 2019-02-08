@@ -137,7 +137,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.get() || !poolConfig.allocationStrategy().getPermit()) {
+                    if (borrower.get() || poolConfig.allocationStrategy().getPermits(1) != 1) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
@@ -148,7 +148,7 @@ public final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy().returnPermit();
+                                        poolConfig.allocationStrategy().returnPermits(1);
                                         borrower.fail(e);
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));

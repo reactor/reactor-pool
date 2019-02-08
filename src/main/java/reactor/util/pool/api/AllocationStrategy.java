@@ -26,18 +26,10 @@ package reactor.util.pool.api;
 public interface AllocationStrategy {
 
     /**
-     * Try to get the permission to allocate one new resource. Once a resource is discarded from the pool, it must
-     * update the strategy using {@link #returnPermit()}.
-     *
-     * @return true if it is permissible to allocate one new resource, false otherwise
-     */
-    boolean getPermit();
-
-    /**
-     * Try to get the permission to allocate a {@code desired} number of new resources. Returns the permissible
+     * Try to get the permission to allocate a {@code desired} positive number of new resources. Returns the permissible
      * number of resources which MUST be created (otherwise the internal live counter of the strategy might be off).
      * This permissible number might be zero. Once a resource is discarded from the pool, it must
-     * update the strategy using {@link #returnPermit()}.
+     * update the strategy using {@link #returnPermits(int)} (which can happen in batches or with value {@literal 1}).
      *
      * @param desired the desired number of new resources
      * @return the acceptable number of new resources, might be zero
@@ -51,13 +43,6 @@ public interface AllocationStrategy {
      * @return an ESTIMATED count of how many more resources can currently be allocated
      */
     int estimatePermitCount();
-
-    /**
-     * Update the strategy to indicate that a resource was discarded from the {@link Pool}, potentially leaving space
-     * for a new one to be allocated. Users MUST ensure that this method isn't called more than the number of held
-     * permits it has.
-     */
-    void returnPermit();
 
     /**
      * Update the strategy to indicate that N resources were discarded from the {@link Pool}, potentially leaving space

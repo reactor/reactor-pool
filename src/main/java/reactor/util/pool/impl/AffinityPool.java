@@ -47,9 +47,11 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  *
  * @author Simon Baslé
  */
+@SuppressWarnings("WeakerAccess")
 public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     //FIXME put that info on another volatile
+    @SuppressWarnings("RawTypeCanBeGeneric")
     static final Map TERMINATED = Collections.emptyMap();
 
     final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
@@ -98,7 +100,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     //actual acquire logic is moved in the borrower Mono
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
-        if (poolConfig.allocationStrategy().getPermit()) {
+        if (poolConfig.allocationStrategy().getPermits(1) == 1) {
             long start = metricsRecorder.now();
             poolConfig.allocator()
                     //we expect the allocator will publish in the same thread or a "compatible" one
@@ -110,7 +112,7 @@ public final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                             },
                             e -> {
                                 metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                                poolConfig.allocationStrategy().returnPermit();
+                                poolConfig.allocationStrategy().returnPermits(1);
                                 borrower.fail(e);
                             });
         }

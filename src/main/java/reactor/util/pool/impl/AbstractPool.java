@@ -77,7 +77,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     Mono<Void> destroyPoolable(PooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
-        poolConfig.allocationStrategy().returnPermit();
+        poolConfig.allocationStrategy().returnPermits(1);
         long start = metricsRecorder.now();
         metricsRecorder.recordLifetimeDuration(ref.timeSinceAllocation());
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();

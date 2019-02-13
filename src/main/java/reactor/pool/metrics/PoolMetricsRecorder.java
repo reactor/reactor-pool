@@ -26,6 +26,7 @@ import reactor.pool.Pool;
  *
  * @author Simon Baslé
  */
+//TODO if we only have noop why not moving it to reactor.poll
 public interface PoolMetricsRecorder {
 
     /**

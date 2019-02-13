@@ -26,6 +26,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.pool.AllocationStrategy;
 import reactor.pool.Pool;
 import reactor.pool.PooledRef;
+import reactor.pool.PooledRefMetrics;
 import reactor.pool.metrics.NoOpPoolMetricsRecorder;
 import reactor.pool.metrics.PoolMetricsRecorder;
 import reactor.pool.util.AllocationStrategies;
@@ -91,7 +92,9 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy().returnPermits(1);
         long start = metricsRecorder.now();
-        metricsRecorder.recordLifetimeDuration(ref.timeSinceAllocation());
+        if (ref instanceof PooledRefMetrics) {
+            metricsRecorder.recordLifetimeDuration(((PooledRefMetrics)ref).timeSinceAllocation());
+        }
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
         if (factory == DefaultPoolConfig.NO_OP_FACTORY) {
             return Mono.fromRunnable(() -> {
@@ -110,7 +113,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      *
      * @author Simon Baslé
      */
-    abstract static class AbstractPooledRef<T> implements PooledRef<T> {
+    abstract static class AbstractPooledRef<T> implements PooledRef<T>, PooledRefMetrics {
 
         final long            creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;

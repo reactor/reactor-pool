@@ -43,6 +43,7 @@ public interface AllocationStrategy {
      *
      * @return an ESTIMATED count of how many more resources can currently be allocated
      */
+    //TODO do we need to externalize metrics
     int estimatePermitCount();
 
     /**

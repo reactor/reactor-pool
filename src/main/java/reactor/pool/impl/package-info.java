@@ -19,6 +19,7 @@
  * @author Simon Baslé
  */
 @NonNullApi
+		//TODO Move to reactor.pool
 package reactor.pool.impl;
 
 import reactor.util.annotation.NonNullApi;

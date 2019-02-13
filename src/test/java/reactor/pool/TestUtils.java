@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class TestUtils {
 
-    public static final class TestPooledRef<T> implements PooledRef<T> {
+    public static final class TestPooledRef<T> implements PooledRef<T>, PooledRefMetrics {
 
         final T poolable;
         final int msSinceRelease;

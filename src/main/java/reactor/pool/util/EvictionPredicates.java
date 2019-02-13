@@ -17,6 +17,7 @@ package reactor.pool.util;
 
 import reactor.pool.Pool;
 import reactor.pool.PooledRef;
+import reactor.pool.PooledRefMetrics;
 
 import java.time.Duration;
 import java.util.function.Predicate;
@@ -27,6 +28,7 @@ import java.util.function.Predicate;
  *
  * @author Simon Baslé
  */
+//TODO should be provided by Builder methods directly ?
 public final class EvictionPredicates {
 
     /**
@@ -37,8 +39,9 @@ public final class EvictionPredicates {
      * @param ttl the {@link Duration} after which an object should not be recycled (resolution: ms)
      * @return the allocation ttl eviction strategy
      */
+    //TODO do we need that for a start
     public static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
-        return slot -> slot.timeSinceAllocation() >= ttl.toMillis();
+        return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).timeSinceAllocation() >= ttl.toMillis();
     }
 
     /**
@@ -50,7 +53,7 @@ public final class EvictionPredicates {
      * @return the idle ttl eviction strategy
      */
     public static <T> Predicate<PooledRef<T>> idleMoreThan(Duration ttl) {
-        return slot -> slot.timeSinceRelease() >= ttl.toMillis();
+        return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).timeSinceRelease() >= ttl.toMillis();
     }
 
     /**
@@ -61,8 +64,9 @@ public final class EvictionPredicates {
      * @param acquireMaxInclusive the number of acquires after which an object should not be recycled
      * @return the acquireMax eviction strategy
      */
+    //TODO do we need that for a start
     public static <T> Predicate<PooledRef<T>> acquiredMoreThan(int acquireMaxInclusive) {
-        return slot -> slot.acquireCount() >= acquireMaxInclusive;
+        return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).acquireCount() >= acquireMaxInclusive;
     }
 
     public static <T> Predicate<PooledRef<T>> poolableMatches(Predicate<? super T> poolablePredicate) {

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * @author Simon Baslé
  */
+//TODO We need to move it in a sample/test package
 public class InMemoryPoolMetrics implements PoolMetricsRecorder {
 
     private final ShortCountsHistogram allocationSuccessHistogram;

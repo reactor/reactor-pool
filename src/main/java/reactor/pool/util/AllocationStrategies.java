@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  *
  * @author Simon Baslé
  */
+//TODO should be provided by Builder methods directly ?
 public final class AllocationStrategies {
 
     /**

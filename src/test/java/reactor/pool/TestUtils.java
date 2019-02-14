@@ -15,10 +15,10 @@
  */
 package reactor.pool;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
-
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author Simon Baslé

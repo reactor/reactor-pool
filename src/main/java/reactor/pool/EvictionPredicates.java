@@ -13,11 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.util;
-
-import reactor.pool.Pool;
-import reactor.pool.PooledRef;
-import reactor.pool.PooledRefMetrics;
+package reactor.pool;
 
 import java.time.Duration;
 import java.util.function.Predicate;
@@ -29,7 +25,7 @@ import java.util.function.Predicate;
  * @author Simon Baslé
  */
 //TODO should be provided by Builder methods directly ?
-public final class EvictionPredicates {
+final class EvictionPredicates {
 
     /**
      * Return a {@link Predicate} that matches {@link PooledRef} of resources that were created more than {@code ttl}
@@ -40,7 +36,7 @@ public final class EvictionPredicates {
      * @return the allocation ttl eviction strategy
      */
     //TODO do we need that for a start
-    public static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
+    static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
         return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).timeSinceAllocation() >= ttl.toMillis();
     }
 
@@ -52,7 +48,7 @@ public final class EvictionPredicates {
      * @param ttl the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
      * @return the idle ttl eviction strategy
      */
-    public static <T> Predicate<PooledRef<T>> idleMoreThan(Duration ttl) {
+    static <T> Predicate<PooledRef<T>> idleMoreThan(Duration ttl) {
         return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).timeSinceRelease() >= ttl.toMillis();
     }
 
@@ -65,11 +61,11 @@ public final class EvictionPredicates {
      * @return the acquireMax eviction strategy
      */
     //TODO do we need that for a start
-    public static <T> Predicate<PooledRef<T>> acquiredMoreThan(int acquireMaxInclusive) {
+    static <T> Predicate<PooledRef<T>> acquiredMoreThan(int acquireMaxInclusive) {
         return slot -> slot instanceof PooledRefMetrics && ((PooledRefMetrics)slot).acquireCount() >= acquireMaxInclusive;
     }
 
-    public static <T> Predicate<PooledRef<T>> poolableMatches(Predicate<? super T> poolablePredicate) {
+    static <T> Predicate<PooledRef<T>> poolableMatches(Predicate<? super T> poolablePredicate) {
         return slot -> poolablePredicate.test(slot.poolable());
     }
 }

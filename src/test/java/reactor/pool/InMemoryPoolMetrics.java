@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.metrics;
-
-import org.HdrHistogram.Histogram;
-import org.HdrHistogram.ShortCountsHistogram;
+package reactor.pool;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
+
+import org.HdrHistogram.Histogram;
+import org.HdrHistogram.ShortCountsHistogram;
 
 /**
  * A simple in memory {@link PoolMetricsRecorder} based on HdrHistograms than can also be used to get the metrics.

@@ -13,18 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
-import reactor.pool.Pool;
-import reactor.pool.PooledRef;
-import reactor.pool.impl.AbstractPool.DefaultPoolConfig;
-import reactor.pool.metrics.InMemoryPoolMetrics;
-import reactor.pool.util.AllocationStrategies;
-import reactor.pool.util.EvictionPredicates;
+import reactor.pool.AbstractPool.DefaultPoolConfig;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -54,7 +49,7 @@ abstract class AbstractTestMetrics {
     void recordsAllocationInConstructor() {
         AtomicBoolean flip = new AtomicBoolean();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<String> config = PoolBuilder.queuePoolFrom(
+        DefaultPoolConfig<String> config = PoolBuilder.from(
                 Mono.defer(() -> {
                     if (flip.compareAndSet(false, true))
                         return Mono.just("foo").delayElement(Duration.ofMillis(100));
@@ -63,8 +58,8 @@ abstract class AbstractTestMetrics {
                         return Mono.error(new IllegalStateException("boom"));
                     }
                 }))
-                .initialSizeOf(10)
-                .recordMetricsWith(recorder)
+                .initialSize(10)
+                .metricsRecorder(recorder)
                 .buildConfig();
 
         assertThatIllegalStateException()
@@ -86,7 +81,7 @@ abstract class AbstractTestMetrics {
     void recordsAllocationInBorrow() {
         AtomicBoolean flip = new AtomicBoolean();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<String> config = PoolBuilder.queuePoolFrom(
+        DefaultPoolConfig<String> config = PoolBuilder.from(
                 Mono.defer(() -> {
                     if (flip.compareAndSet(false, true))
                         return Mono.just("foo").delayElement(Duration.ofMillis(100));
@@ -95,7 +90,7 @@ abstract class AbstractTestMetrics {
                         return Mono.error(new IllegalStateException("boom"));
                     }
                 }))
-                .recordMetricsWith(recorder)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<String> pool = createPool(config);
 
@@ -136,8 +131,8 @@ abstract class AbstractTestMetrics {
     void recordsResetLatencies() {
         AtomicBoolean flip = new AtomicBoolean();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<String> config = PoolBuilder.queuePoolFrom(Mono.just("foo"))
-                .resetResourcesWith(s -> {
+        DefaultPoolConfig<String> config = PoolBuilder.from(Mono.just("foo"))
+                .releaseHandler(s -> {
                     if (flip.compareAndSet(false, true))
                         return Mono.delay(Duration.ofMillis(100)).then();
                     else {
@@ -145,7 +140,7 @@ abstract class AbstractTestMetrics {
                         return Mono.empty();
                     }
                 })
-                .recordMetricsWith(recorder)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<String> pool = createPool(config);
 
@@ -165,9 +160,9 @@ abstract class AbstractTestMetrics {
     void recordsDestroyLatencies() {
         AtomicBoolean flip = new AtomicBoolean();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<String> config = PoolBuilder.queuePoolFrom(Mono.just("foo"))
+        DefaultPoolConfig<String> config = PoolBuilder.from(Mono.just("foo"))
                 .evictionPredicate(t -> true)
-                .destroyResourcesWith(s -> {
+                .destroyHandler(s -> {
                     if (flip.compareAndSet(false, true))
                         return Mono.delay(Duration.ofMillis(500)).then();
                     else {
@@ -175,7 +170,7 @@ abstract class AbstractTestMetrics {
                         return Mono.empty();
                     }
                 })
-                .recordMetricsWith(recorder)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<String> pool = createPool(config);
 
@@ -200,9 +195,9 @@ abstract class AbstractTestMetrics {
     void recordsResetVsRecycle() {
         AtomicReference<String> content = new AtomicReference<>("foo");
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<String> config = PoolBuilder.queuePoolFrom(Mono.fromCallable(() -> content.getAndSet("bar")))
+        DefaultPoolConfig<String> config = PoolBuilder.from(Mono.fromCallable(() -> content.getAndSet("bar")))
                 .evictionPredicate(EvictionPredicates.poolableMatches("foo"::equals))
-                .recordMetricsWith(recorder)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<String> pool = createPool(config);
 
@@ -219,11 +214,11 @@ abstract class AbstractTestMetrics {
         AtomicInteger allocCounter = new AtomicInteger();
         AtomicInteger destroyCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<Integer> config = PoolBuilder.queuePoolFrom(Mono.fromCallable(allocCounter::incrementAndGet))
-                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
+        DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+                .allocationStrategy(AllocationStrategies.allocatingMax(2))
                 .evictionPredicate(EvictionPredicates.acquiredMoreThan(2))
-                .destroyResourcesWith(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
-                .recordMetricsWith(recorder)
+                .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<Integer> pool = createPool(config);
 
@@ -255,10 +250,10 @@ abstract class AbstractTestMetrics {
     void recordsIdleTimeFromConstructor() throws InterruptedException {
         AtomicInteger allocCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<Integer> config = PoolBuilder.queuePoolFrom(Mono.fromCallable(allocCounter::incrementAndGet))
-                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
-                .initialSizeOf(2)
-                .recordMetricsWith(recorder)
+        DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+                .allocationStrategy(AllocationStrategies.allocatingMax(2))
+                .initialSize(2)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<Integer> pool = createPool(config);
 
@@ -283,10 +278,10 @@ abstract class AbstractTestMetrics {
     void recordsIdleTimeBetweenAcquires() throws InterruptedException {
         AtomicInteger allocCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
-        DefaultPoolConfig<Integer> config = PoolBuilder.queuePoolFrom(Mono.fromCallable(allocCounter::incrementAndGet))
-                .witAllocationLimit(AllocationStrategies.allocatingMax(2))
-                .initialSizeOf(2)
-                .recordMetricsWith(recorder)
+        DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+                .allocationStrategy(AllocationStrategies.allocatingMax(2))
+                .initialSize(2)
+                .metricsRecorder(recorder)
                 .buildConfig();
         Pool<Integer> pool = createPool(config);
 

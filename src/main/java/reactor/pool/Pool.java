@@ -15,15 +15,16 @@
  */
 package reactor.pool;
 
+import java.util.function.Function;
+
 import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.function.Function;
-
 /**
  * A reactive pool of objects.
+ *
  * @author Simon Baslé
  */
 public interface Pool<POOLABLE> extends Disposable {

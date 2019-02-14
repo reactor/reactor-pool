@@ -180,7 +180,6 @@ configure(rootProject) { project ->
     compile "io.projectreactor:reactor-core"
 
     compile "org.jctools:jctools-core:$jcToolsVersion"
-    compile "org.hdrhistogram:HdrHistogram:$hdrHistogramVersion"
 
     // JSR-305 annotations
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"
@@ -189,6 +188,7 @@ configure(rootProject) { project ->
     optional "org.slf4j:slf4j-api:$slf4jVersion"
 
     // Testing
+    testCompile "org.hdrhistogram:HdrHistogram:$hdrHistogramVersion"
     testCompile "org.assertj:assertj-core:$assertJVersion"
     testCompile "org.awaitility:awaitility:$awaitilityVersion"
     testCompile "io.projectreactor:reactor-test"

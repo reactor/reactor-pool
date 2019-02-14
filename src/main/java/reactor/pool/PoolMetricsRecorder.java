@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.metrics;
-
-import reactor.pool.Pool;
+package reactor.pool;
 
 /**
  * An interface representing ways for {@link Pool} to collect instrumentation data.
@@ -27,6 +25,7 @@ import reactor.pool.Pool;
  * @author Simon Baslé
  */
 //TODO if we only have noop why not moving it to reactor.poll
+//TODO Missing overall state metrics
 public interface PoolMetricsRecorder {
 
     /**
@@ -84,12 +83,14 @@ public interface PoolMetricsRecorder {
     void recordIdleTime(long millisecondsIdle);
 
     /**
-     * Record the fact that the slow path of recycling was used on an {@link reactor.pool.impl.AffinityPool}.
+     * Record the fact that the slow path of recycling was used.
      */
+    //TODO do not leak this in the contract for supposedly test purpose
     void recordSlowPath();
 
     /**
-     * Record the fact that the fast path of recycling was used on an {@link reactor.pool.impl.AffinityPool}.
+     * Record the fact that the fast path of recycling was used.
      */
+    //TODO do not leak this in the contract for supposedly test purpose
     void recordFastPath();
 }

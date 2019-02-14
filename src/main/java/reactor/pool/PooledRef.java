@@ -17,13 +17,12 @@ package reactor.pool;
 
 import reactor.core.publisher.Mono;
 
-import java.util.function.Function;
-
 /**
  * An abstraction over an object in a {@link Pool}, which holds the underlying {@code POOLABLE} object and allows one to
  * manually {@link #release()} it to the pool or {@link #invalidate()} it.
  *
  * @author Simon Baslé
+ * @author Stephane Maldini
  */
 public interface PooledRef<POOLABLE> {
 

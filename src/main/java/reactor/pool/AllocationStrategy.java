@@ -15,8 +15,6 @@
  */
 package reactor.pool;
 
-import reactor.pool.util.AllocationStrategies;
-
 /**
  * A strategy guiding the {@link Pool} on whether or not it is possible to invoke the resource allocator.
  * <p>

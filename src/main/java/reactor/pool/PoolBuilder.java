@@ -13,16 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.AllocationStrategy;
-import reactor.pool.Pool;
-import reactor.pool.PooledRef;
-import reactor.pool.metrics.PoolMetricsRecorder;
 import reactor.pool.util.AllocationStrategies;
 import reactor.pool.util.EvictionPredicates;
 import reactor.util.annotation.Nullable;

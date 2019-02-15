@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
@@ -25,7 +25,6 @@ import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.PooledRef;
 import reactor.util.Loggers;
 import reactor.util.concurrent.Queues;
 

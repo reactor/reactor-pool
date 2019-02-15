@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import org.jctools.queues.MpmcArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
@@ -23,7 +23,6 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.pool.PooledRef;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
 

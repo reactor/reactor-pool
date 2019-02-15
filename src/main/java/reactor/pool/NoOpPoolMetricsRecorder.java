@@ -13,18 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.metrics;
+package reactor.pool;
 
 /**
  * A No-Op {@link PoolMetricsRecorder} that can be used as a default if instrumentation is not desired.
  *
  * @author Simon Baslé
  */
-public final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
+final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
 
-    public static final NoOpPoolMetricsRecorder INSTANCE = new NoOpPoolMetricsRecorder();
+    static final NoOpPoolMetricsRecorder INSTANCE = new NoOpPoolMetricsRecorder();
 
-    private NoOpPoolMetricsRecorder() {
+    NoOpPoolMetricsRecorder() {
 
     }
 

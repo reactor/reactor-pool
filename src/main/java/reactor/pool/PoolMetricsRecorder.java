@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.metrics;
-
-import reactor.pool.Pool;
+package reactor.pool;
 
 /**
  * An interface representing ways for {@link Pool} to collect instrumentation data.
@@ -83,12 +81,12 @@ public interface PoolMetricsRecorder {
     void recordIdleTime(long millisecondsIdle);
 
     /**
-     * Record the fact that the slow path of recycling was used on an {@link reactor.pool.impl.AffinityPool}.
+     * Record the fact that a {@link Pool} has a slow path of recycling and just used it.
      */
     void recordSlowPath();
 
     /**
-     * Record the fact that the fast path of recycling was used on an {@link reactor.pool.impl.AffinityPool}.
+     * Record the fact that a {@link Pool} has a fast path of recycling and just used it.
      */
     void recordFastPath();
 }

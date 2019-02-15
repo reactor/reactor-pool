@@ -13,16 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
-import reactor.pool.Pool;
-import reactor.pool.PooledRef;
-import reactor.pool.impl.AbstractPool.DefaultPoolConfig;
-import reactor.pool.metrics.InMemoryPoolMetrics;
+import reactor.pool.AbstractPool.DefaultPoolConfig;
+import reactor.pool.TestUtils.InMemoryPoolMetrics;
 import reactor.pool.util.AllocationStrategies;
 import reactor.pool.util.EvictionPredicates;
 

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.impl;
+package reactor.pool;
 
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
@@ -26,10 +26,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.Pool;
-import reactor.pool.PooledRef;
 import reactor.pool.TestUtils.PoolableTest;
-import reactor.pool.impl.AbstractPool.DefaultPoolConfig;
+import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.util.AllocationStrategies;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
@@ -51,7 +49,7 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
-import static reactor.pool.impl.PoolBuilder.queuePoolFrom;
+import static reactor.pool.PoolBuilder.queuePoolFrom;
 import static reactor.pool.util.AllocationStrategies.allocatingMax;
 
 /**

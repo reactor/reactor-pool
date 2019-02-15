@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.TestUtils.InMemoryPoolMetrics;
-import reactor.pool.util.EvictionPredicates;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
@@ -199,7 +198,7 @@ abstract class AbstractTestMetrics {
         AtomicReference<String> content = new AtomicReference<>("foo");
         //note the starter method here is irrelevant, only the config is created and passed to createPool
         DefaultPoolConfig<String> config = PoolBuilder.from(Mono.fromCallable(() -> content.getAndSet("bar")))
-                .evictionPredicate(EvictionPredicates.poolableMatches("foo"::equals))
+                .evictionPredicate(ref -> "foo".equals(ref.poolable()))
                 .metricsRecorder(recorder)
                 .buildConfig();
         Pool<String> pool = createPool(config);
@@ -219,7 +218,7 @@ abstract class AbstractTestMetrics {
         //note the starter method here is irrelevant, only the config is created and passed to createPool
         DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
                 .sizeMax(2)
-                .evictionPredicate(EvictionPredicates.acquiredMoreThan(2))
+                .evictionPredicate(ref -> ref.acquireCount() >= 2)
                 .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
                 .metricsRecorder(recorder)
                 .buildConfig();

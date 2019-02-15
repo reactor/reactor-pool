@@ -15,6 +15,7 @@
  */
 package reactor.pool;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
@@ -24,7 +25,6 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.util.EvictionPredicates;
 
 /**
  * A builder for {@link Pool}.
@@ -173,14 +173,29 @@ public class PoolBuilder<T> {
      * Finally, some pool implementations MAY implement a reaper thread mechanism that detect idle resources through
      * this predicate and destroy them.
      * <p>
-     * Defaults to never evicting. See {@link EvictionPredicates} for pre-build eviction predicates.
+     * Defaults to never evicting.
      *
      * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should be destroyed
      * @return this {@link Pool} builder
+     * @see #evictionIdle(Duration)
      */
     public PoolBuilder<T> evictionPredicate(Predicate<PooledRef<T>> evictionPredicate) {
         this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
         return this;
+    }
+
+    /**
+     * Use an {@link #evictionPredicate(Predicate) eviction predicate} that matches {@link PooledRef} of resources
+     * that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
+     * {@link Duration} (inclusive).
+     * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
+     *
+     * @param maxIdleTime the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
+     * @return this {@link Pool} builder
+     * @see #evictionPredicate(Predicate)
+     */
+    public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
+        return evictionPredicate(idlePredicate(maxIdleTime));
     }
 
     /**
@@ -239,6 +254,10 @@ public class PoolBuilder<T> {
     @SuppressWarnings("unchecked")
     static <T> Predicate<PooledRef<T>>  neverPredicate() {
         return (Predicate<PooledRef<T>>) NEVER_PREDICATE;
+    }
+
+    static <T> Predicate<PooledRef<T>> idlePredicate(Duration maxIdleTime) {
+        return slot -> slot.idleTime() >= maxIdleTime.toMillis();
     }
 
     static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();

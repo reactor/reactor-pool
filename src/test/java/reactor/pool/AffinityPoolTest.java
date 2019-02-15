@@ -53,7 +53,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.TestUtils.PoolableTest;
-import reactor.pool.util.EvictionPredicates;
 import reactor.test.StepVerifier;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
@@ -557,7 +556,7 @@ class AffinityPoolTest {
             DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
                                                            .threadAffinity(true)
                                                            .sizeMax(3)
-                                                           .evictionPredicate(EvictionPredicates.acquiredMoreThan(3))
+                                                           .evictionPredicate(ref -> ref.acquireCount() >= 3)
                                                            .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
                                                            .buildConfig();
             AffinityPool<Integer> pool = new AffinityPool<>(config);

@@ -13,41 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package reactor.pool.util;
-
-import reactor.pool.AllocationStrategy;
-import reactor.pool.Pool;
+package reactor.pool;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
- * Various pre-made {@link AllocationStrategy}.
+ * Various pre-made {@link AllocationStrategy} for internal use.
  *
  * @author Simon Baslé
  */
-public final class AllocationStrategies {
+final class AllocationStrategies {
 
-    /**
-     * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-     * {@link AllocationStrategy#returnPermits(int)} has been called.
-     *
-     * @param max the maximum number of live resources to keep in the pool
-     * @return an {@link AllocationStrategy} that allows at most N live resources
-     */
-    public static final AllocationStrategy allocatingMax(int max) {
-        return new SizeBasedAllocationStrategy(max);
-    }
-
-    /**
-     * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
-     *
-     * @return an unbounded {@link AllocationStrategy}
-     */
-    public static final AllocationStrategy unbounded() {
-        return UNBOUNDED;
-    }
-
-    private static final AllocationStrategy UNBOUNDED = new AllocationStrategy() {
+    static final AllocationStrategy UNBOUNDED = new AllocationStrategy() {
 
         @Override
         public int getPermits(int desired) {

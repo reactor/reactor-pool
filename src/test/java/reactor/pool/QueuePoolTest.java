@@ -45,7 +45,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.TestUtils.PoolableTest;
-import reactor.pool.util.AllocationStrategies;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.util.TestLogger;
@@ -55,7 +54,6 @@ import reactor.util.function.Tuple2;
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 import static reactor.pool.PoolBuilder.from;
-import static reactor.pool.util.AllocationStrategies.allocatingMax;
 
 /**
  * @author Simon Baslé
@@ -66,7 +64,7 @@ class QueuePoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
                 .initialSize(minSize)
-                .allocationStrategy(AllocationStrategies.allocatingMax(maxSize))
+                .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate(slot -> !slot.poolable().isHealthy())
                 .buildConfig();
@@ -75,7 +73,7 @@ class QueuePoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
                 .initialSize(minSize)
-                .allocationStrategy(AllocationStrategies.allocatingMax(maxSize))
+                .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate(slot -> !slot.poolable().isHealthy())
                 .acquisitionScheduler(deliveryScheduler)
@@ -86,7 +84,7 @@ class QueuePoolTest {
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
                 .initialSize(minSize)
-                .allocationStrategy(AllocationStrategies.allocatingMax(maxSize))
+                .sizeMax(maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
                     poolableTest.clean();
                     additionalCleaner.accept(poolableTest);
@@ -103,7 +101,7 @@ class QueuePoolTest {
 
         QueuePool<String> pool = new QueuePool<>(
                 from(Mono.just("Hello Reactive World"))
-                        .allocationStrategy(allocatingMax(1))
+                        .sizeMax(1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
 
@@ -1164,7 +1162,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
                         .buildConfig());
@@ -1191,7 +1189,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .initialSize(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
@@ -1229,7 +1227,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .initialSize(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
@@ -1263,7 +1261,7 @@ class QueuePoolTest {
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
                         .initialSize(3)
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
                         .buildConfig());
@@ -1292,7 +1290,7 @@ class QueuePoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
                         .buildConfig());
@@ -1311,7 +1309,7 @@ class QueuePoolTest {
     void poolIsDisposed() {
         QueuePool<PoolableTest> pool = new QueuePool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .allocationStrategy(allocatingMax(3))
+                        .sizeMax(3)
                         .evictionPredicate(slot -> !slot.poolable().isHealthy())
                         .buildConfig());
 
@@ -1328,7 +1326,7 @@ class QueuePoolTest {
 
         QueuePool<Formatter> pool = new QueuePool<>(
                 from(Mono.just(uniqueElement))
-                        .allocationStrategy(allocatingMax(1))
+                        .sizeMax(1)
                         .initialSize(1)
                         .evictionPredicate(slot -> true)
                         .buildConfig());
@@ -1343,7 +1341,7 @@ class QueuePoolTest {
     void allocatorErrorOutsideConstructorIsPropagated() {
         QueuePool<String> pool = new QueuePool<>(
                 from(Mono.<String>error(new IllegalStateException("boom")))
-                        .allocationStrategy(allocatingMax(1))
+                        .sizeMax(1)
                         .initialSize(0)
                         .evictionPredicate(f -> true)
                         .buildConfig());
@@ -1357,7 +1355,7 @@ class QueuePoolTest {
     void allocatorErrorInConstructorIsThrown() {
         DefaultPoolConfig<Object> config = from(Mono.error(new IllegalStateException("boom")))
                 .initialSize(1)
-                .allocationStrategy(allocatingMax(1))
+                .sizeMax(1)
                 .evictionPredicate(f -> true)
                 .buildConfig();
 
@@ -1378,7 +1376,7 @@ class QueuePoolTest {
             QueuePool<Closeable> pool = new QueuePool<>(
                     from(Mono.just(closeable))
                             .initialSize(1)
-                            .allocationStrategy(allocatingMax(1))
+                            .sizeMax(1)
                             .evictionPredicate(f -> true)
                             .buildConfig());
 

@@ -24,7 +24,6 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.util.AllocationStrategies;
 import reactor.pool.util.EvictionPredicates;
 
 /**
@@ -54,7 +53,7 @@ public class PoolBuilder<T> {
 
     boolean                 isThreadAffinity     = true;
     int                     initialSize          = 0;
-    AllocationStrategy      allocationStrategy   = AllocationStrategies.unbounded();
+    AllocationStrategy      allocationStrategy   = AllocationStrategies.UNBOUNDED;
     Function<T, Mono<Void>> releaseHandler       = noopHandler();
     Function<T, Mono<Void>> destroyHandler       = noopHandler();
     Predicate<PooledRef<T>> evictionPredicate    = neverPredicate();
@@ -105,11 +104,36 @@ public class PoolBuilder<T> {
      *
      * @param allocationStrategy the {@link AllocationStrategy} to use
      * @return this {@link Pool} builder
+     * @see #sizeMax(int)
+     * @see #sizeUnbounded()
      */
     public PoolBuilder<T> allocationStrategy(AllocationStrategy allocationStrategy) {
         this.allocationStrategy = Objects.requireNonNull(allocationStrategy, "allocationStrategy");
         return this;
     }
+
+	/**
+	 * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
+	 * some resources have been {@link PooledRef#release() released}.
+	 *
+	 * @param max the maximum number of live resources to keep in the pool
+     * @return this {@link Pool} builder
+	 */
+	public PoolBuilder<T> sizeMax(int max) {
+		return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(max));
+	}
+
+	/**
+	 * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
+	 * <p>
+	 * Note this is the default, if no previous call to {@link #allocationStrategy(AllocationStrategy)}
+	 * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
+	 *
+     * @return this {@link Pool} builder
+	 */
+	public PoolBuilder<T> sizeUnbounded() {
+		return allocationStrategy(AllocationStrategies.UNBOUNDED);
+	}
 
     /**
      * Provide a {@link Function handler} that will derive a reset {@link Mono} whenever a resource is released.

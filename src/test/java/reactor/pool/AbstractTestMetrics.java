@@ -15,20 +15,20 @@
  */
 package reactor.pool;
 
-import org.assertj.core.data.Offset;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
-import reactor.pool.AbstractPool.DefaultPoolConfig;
-import reactor.pool.TestUtils.InMemoryPoolMetrics;
-import reactor.pool.util.AllocationStrategies;
-import reactor.pool.util.EvictionPredicates;
-
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.assertj.core.data.Offset;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import reactor.core.publisher.Mono;
+import reactor.pool.AbstractPool.DefaultPoolConfig;
+import reactor.pool.TestUtils.InMemoryPoolMetrics;
+import reactor.pool.util.EvictionPredicates;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
@@ -218,7 +218,7 @@ abstract class AbstractTestMetrics {
         AtomicInteger destroyCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
         DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
-                .allocationStrategy(AllocationStrategies.allocatingMax(2))
+                .sizeMax(2)
                 .evictionPredicate(EvictionPredicates.acquiredMoreThan(2))
                 .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
                 .metricsRecorder(recorder)
@@ -254,7 +254,7 @@ abstract class AbstractTestMetrics {
         AtomicInteger allocCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
         DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
-                .allocationStrategy(AllocationStrategies.allocatingMax(2))
+                .sizeMax(2)
                 .initialSize(2)
                 .metricsRecorder(recorder)
                 .buildConfig();
@@ -282,7 +282,7 @@ abstract class AbstractTestMetrics {
         AtomicInteger allocCounter = new AtomicInteger();
         //note the starter method here is irrelevant, only the config is created and passed to createPool
         DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
-                .allocationStrategy(AllocationStrategies.allocatingMax(2))
+                .sizeMax(2)
                 .initialSize(2)
                 .metricsRecorder(recorder)
                 .buildConfig();

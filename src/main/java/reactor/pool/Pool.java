@@ -50,7 +50,7 @@ public interface Pool<POOLABLE> extends Disposable {
      * manually managing its lifecycle from there on
      * @see #acquireInScope(Function)
      */
-    Mono<PooledRef<POOLABLE>> acquire(); //TODO should it return Publisher?
+    Mono<PooledRef<POOLABLE>> acquire();
 
     /**
      * Acquire a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing

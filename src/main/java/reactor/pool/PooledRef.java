@@ -22,7 +22,7 @@ import java.util.function.Function;
 /**
  * An abstraction over an object in a {@link Pool}, which holds the underlying {@code POOLABLE} object and allows one to
  * manually {@link #release()} it to the pool or {@link #invalidate()} it. Since the {@link PooledRef} provides a few
- * additional information about its lifecyle, like its {@link #timeSinceAllocation()} and the number of times it has been
+ * additional information about its lifecyle, like its {@link #lifeTime()} and the number of times it has been
  * {@link #acquireCount() acquired}, the {@link Pool} may optionally use that information to automatically invalidate
  * the object, and provide a simplified acquire mechanism where the {@link PooledRef} is not directly exposed (see
  * {@link Pool#acquireInScope(Function)} vs {@link Pool#acquire()}).
@@ -77,7 +77,7 @@ public interface PooledRef<POOLABLE> {
      *
      * @return the wall-clock age (time since allocation) of the underlying object in milliseconds
      */
-    long timeSinceAllocation();
+    long lifeTime();
 
     /**
      * Returns the wall-clock number of milliseconds since the reference was last released (or allocated, if it was
@@ -101,6 +101,6 @@ public interface PooledRef<POOLABLE> {
      *
      * Another possibility is to use a reaper thread that actively removes idle resources from the available set (but that would need some more synchronization).s
      */
-    long timeSinceRelease();
+    long idleTime();
 
 }

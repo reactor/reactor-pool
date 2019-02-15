@@ -38,7 +38,7 @@ public final class EvictionPredicates {
      * @return the allocation ttl eviction strategy
      */
     public static <T> Predicate<PooledRef<T>> agedMoreThan(Duration ttl) {
-        return slot -> slot.timeSinceAllocation() >= ttl.toMillis();
+        return slot -> slot.lifeTime() >= ttl.toMillis();
     }
 
     /**
@@ -50,7 +50,7 @@ public final class EvictionPredicates {
      * @return the idle ttl eviction strategy
      */
     public static <T> Predicate<PooledRef<T>> idleMoreThan(Duration ttl) {
-        return slot -> slot.timeSinceRelease() >= ttl.toMillis();
+        return slot -> slot.idleTime() >= ttl.toMillis();
     }
 
     /**

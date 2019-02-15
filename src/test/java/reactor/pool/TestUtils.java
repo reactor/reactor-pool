@@ -60,12 +60,12 @@ public class TestUtils {
         }
 
         @Override
-        public long timeSinceAllocation() {
+        public long lifeTime() {
             return msSinceAllocation;
         }
 
         @Override
-        public long timeSinceRelease() {
+        public long idleTime() {
             return msSinceRelease;
         }
     }

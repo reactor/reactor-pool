@@ -91,7 +91,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy().returnPermits(1);
         long start = metricsRecorder.now();
-        metricsRecorder.recordLifetimeDuration(ref.timeSinceAllocation());
+        metricsRecorder.recordLifetimeDuration(ref.lifeTime());
         Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
         if (factory == DefaultPoolConfig.NO_OP_FACTORY) {
             return Mono.fromRunnable(() -> {
@@ -163,12 +163,12 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         }
 
         @Override
-        public long timeSinceAllocation() {
+        public long lifeTime() {
             return metricsRecorder.measureTime(creationTimestamp);
         }
 
         @Override
-        public long timeSinceRelease() {
+        public long idleTime() {
             long tsr = this.timeSinceRelease;
             if (tsr == -1L) { //-1 is when it's been marked as acquired
                 return 0L;
@@ -197,8 +197,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         public String toString() {
             return "PooledRef{" +
                     "poolable=" + poolable +
-                    ", timeSinceAllocation=" + timeSinceAllocation() + "ms" +
-                    ", timeSinceRelease=" + timeSinceRelease() + "ms" +
+                    ", lifeTime=" + lifeTime() + "ms" +
+                    ", idleTime=" + idleTime() + "ms" +
                     ", acquireCount=" + acquireCount +
                     '}';
         }

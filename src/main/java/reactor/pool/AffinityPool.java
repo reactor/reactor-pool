@@ -59,7 +59,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         super(poolConfig, Loggers.getLogger(AffinityPool.class));
         this.pools = new ConcurrentHashMap<>();
 
-        int maxSize = poolConfig.allocationStrategy().estimatePermitCount();
+        int maxSize = poolConfig.allocationStrategy.estimatePermitCount();
         if (maxSize == Integer.MAX_VALUE) {
             this.availableElements = new ConcurrentLinkedQueue<>();
         }
@@ -67,17 +67,17 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             this.availableElements = new MpmcArrayQueue<>(Math.max(maxSize, 2));
         }
 
-        int toBuild = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
+        int toBuild = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
 
         for (int i = 0; i < toBuild; i++) {
-            long start = poolConfig.metricsRecorder().now();
+            long start = poolConfig.metricsRecorder.now();
             try {
-                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-                poolConfig.metricsRecorder().recordAllocationSuccessAndLatency(poolConfig.metricsRecorder().measureTime(start));
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator.block(), "allocator returned null in constructor");
+                poolConfig.metricsRecorder.recordAllocationSuccessAndLatency(poolConfig.metricsRecorder.measureTime(start));
                 availableElements.offer(new AffinityPooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
             }
             catch (Throwable t) {
-                poolConfig.metricsRecorder().recordAllocationFailureAndLatency(poolConfig.metricsRecorder().measureTime(start));
+                poolConfig.metricsRecorder.recordAllocationFailureAndLatency(poolConfig.metricsRecorder.measureTime(start));
                 throw t;
             }
         }
@@ -102,7 +102,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (element != null) {
 
             //TODO test this scenario
-            if (poolConfig.evictionPredicate().test(element)) {
+            if (poolConfig.evictionPredicate.test(element)) {
                 destroyPoolable(element).subscribe(); //this returns a permit
                 allocateOrPend(subPool, borrower);
             }
@@ -117,19 +117,19 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
-        if (poolConfig.allocationStrategy().getPermits(1) == 1) {
+        if (poolConfig.allocationStrategy.getPermits(1) == 1) {
             long start = metricsRecorder.now();
-            poolConfig.allocator()
+            poolConfig.allocator
                     //we expect the allocator will publish in the same thread or a "compatible" one
                     // (like EventLoopGroup for Netty connections), which makes it more suitable to use with Schedulers.immediate()
-//                    .publishOn(poolConfig.deliveryScheduler())
+//                    .publishOn(poolConfig.acquisitionScheduler())
                     .subscribe(newInstance -> {
                                 metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
                                 borrower.deliver(new AffinityPooledRef<>(this, newInstance));
                             },
                             e -> {
                                 metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                                poolConfig.allocationStrategy().returnPermits(1);
+                                poolConfig.allocationStrategy.returnPermits(1);
                                 borrower.fail(e);
                             });
         }
@@ -299,7 +299,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             Mono<Void> cleaner;
             try {
-                cleaner = pool.poolConfig.resetResource().apply(poolable);
+                cleaner = pool.poolConfig.releaseHandler.apply(poolable);
             }
             catch (Throwable e) {
                 markReleased(); //TODO should this lead to destroy?
@@ -387,7 +387,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             actual.onComplete();
 
-            if (!pool.poolConfig.evictionPredicate().test(slot)) {
+            if (!pool.poolConfig.evictionPredicate.test(slot)) {
                 pool.recycle(slot);
             }
             else {

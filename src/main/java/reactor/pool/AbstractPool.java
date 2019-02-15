@@ -15,19 +15,6 @@
  */
 package reactor.pool;
 
-import org.reactivestreams.Subscription;
-import reactor.core.CoreSubscriber;
-import reactor.core.Disposable;
-import reactor.core.Scannable;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Operators;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.pool.util.AllocationStrategies;
-import reactor.util.Logger;
-import reactor.util.annotation.Nullable;
-import reactor.util.context.Context;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,6 +22,19 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.function.Function;
 import java.util.function.Predicate;
+
+import org.reactivestreams.Subscription;
+
+import reactor.core.CoreSubscriber;
+import reactor.core.Disposable;
+import reactor.core.Scannable;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.Logger;
+import reactor.util.annotation.Nullable;
+import reactor.util.context.Context;
 
 /**
  * An abstract base version of a {@link Pool}, mutualizing small amounts of code and allowing to build common
@@ -56,7 +56,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     AbstractPool(DefaultPoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
         this.logger = logger;
-        this.metricsRecorder = poolConfig.metricsRecorder();
+        this.metricsRecorder = poolConfig.metricsRecorder;
     }
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);
@@ -76,7 +76,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     }
 
     /**
-     * Apply the configured destroyFactory to get the destroy {@link Mono} AND return a permit to the {@link AllocationStrategy},
+     * Apply the configured destroyHandler to get the destroy {@link Mono} AND return a permit to the {@link AllocationStrategy},
      * which assumes that the {@link Mono} will always be subscribed immediately.
      *
      * @param ref the {@link PooledRef} that is not part of the live set
@@ -84,11 +84,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     Mono<Void> destroyPoolable(PooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
-        poolConfig.allocationStrategy().returnPermits(1);
+        poolConfig.allocationStrategy.returnPermits(1);
         long start = metricsRecorder.now();
         metricsRecorder.recordLifetimeDuration(ref.lifeTime());
-        Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyResource();
-        if (factory == DefaultPoolConfig.NO_OP_FACTORY) {
+        Function<POOLABLE, Mono<Void>> factory = poolConfig.destroyHandler;
+        if (factory == PoolBuilder.NOOP_HANDLER) {
             return Mono.fromRunnable(() -> {
                 defaultDestroy(poolable);
                 metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start));
@@ -268,124 +268,70 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     static class DefaultPoolConfig<POOLABLE> {
 
-        static final Function<?, Mono<Void>> NO_OP_FACTORY = it -> Mono.empty();
-
-        private final Mono<POOLABLE> allocator;
-        private final int initialSize;
-        private final AllocationStrategy allocationStrategy;
-        private final Function<POOLABLE, Mono<Void>> resetFactory;
-        private final Function<POOLABLE, Mono<Void>> destroyFactory;
-        private final Predicate<PooledRef<POOLABLE>> evictionPredicate;
-        private final Scheduler deliveryScheduler;
-        private final PoolMetricsRecorder metricsRecorder;
-
-        DefaultPoolConfig(Mono<POOLABLE> allocator,
-                          int initialSize,
-                          @Nullable AllocationStrategy allocationStrategy,
-                          @Nullable Function<POOLABLE, Mono<Void>> resetFactory,
-                          @Nullable Function<POOLABLE, Mono<Void>> destroyFactory,
-                          @Nullable Predicate<PooledRef<POOLABLE>> evictionPredicate,
-                          @Nullable Scheduler deliveryScheduler,
-                          @Nullable PoolMetricsRecorder metricsRecorder) {
-            this.allocator = allocator;
-            this.initialSize = initialSize < 0 ? 0 : initialSize;
-            this.allocationStrategy = allocationStrategy == null ? AllocationStrategies.unbounded() : allocationStrategy;
-
-            @SuppressWarnings("unchecked")
-            Function<POOLABLE, Mono<Void>> noOp = (Function<POOLABLE, Mono<Void>>) NO_OP_FACTORY;
-
-            this.resetFactory = resetFactory == null ? noOp : resetFactory;
-            this.destroyFactory = destroyFactory == null ? noOp : destroyFactory;
-
-            this.evictionPredicate = evictionPredicate == null ? slot -> false : evictionPredicate;
-            this.deliveryScheduler = deliveryScheduler == null ? Schedulers.immediate() : deliveryScheduler;
-            this.metricsRecorder = metricsRecorder == null ? NoOpPoolMetricsRecorder.INSTANCE : metricsRecorder;
-        }
-
         /**
-         * The asynchronous factory that produces new resources.
-         *
-         * @return a {@link Mono} representing the creation of a resource
+         * The asynchronous factory that produces new resources, represented as a {@link Mono}.
          */
-        Mono<POOLABLE> allocator() {
-            return this.allocator;
-        }
-
+        final Mono<POOLABLE>                 allocator;
+        //TODO to be removed
         /**
-         * Defines a strategy / limit for the number of pooled object to allocate.
-         *
-         * @return the {@link AllocationStrategy} for the pool
+         * The minimum number of objects a {@link Pool} should create at initialization.
          */
-        AllocationStrategy allocationStrategy() {
-            return this.allocationStrategy;
-        }
-
+        final int                            initialSize;
         /**
-         * @return the minimum number of objects a {@link Pool} should create at initialization.
+         * {@link AllocationStrategy} defines a strategy / limit for the number of pooled object to allocate.
          */
-        int initialSize() {
-            return this.initialSize;
-        }
-
+        final AllocationStrategy             allocationStrategy;
         /**
          * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
-         * the resource in order for it to become usable again. The {@link #evictionPredicate()} is applied AFTER this reset.
+         * the resource in order for it to become usable again. The {@link #evictionPredicate} is applied AFTER this reset.
          * <p>
          * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
-         *
-         * @return a {@link Function} representing the asynchronous reset mechanism for a given resource
          */
-        Function<POOLABLE, Mono<Void>> resetResource() {
-            return this.resetFactory;
-        }
-
+        final Function<POOLABLE, Mono<Void>> releaseHandler;
         /**
          * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
          * objects, file handles, socket connections, etc...).
          * <p>
          * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
-         *
-         * @return a {@link Function} representing the asynchronous destroy mechanism for a given resource
          */
-        Function<POOLABLE, Mono<Void>> destroyResource() {
-            return this.destroyFactory;
-        }
-
+        final Function<POOLABLE, Mono<Void>> destroyHandler;
         /**
          * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
          * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
          * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
          * reaping process.
-         *
-         * @return A {@link Predicate} that returns true if the {@link PooledRef} should be destroyed instead of used
          */
-        Predicate<PooledRef<POOLABLE>> evictionPredicate() {
-            return this.evictionPredicate;
-        }
-
+        final Predicate<PooledRef<POOLABLE>> evictionPredicate;
         /**
          * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
-         * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator()} produced new
+         * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator} produced new
          * resources.
          * <p>
          * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
-         *
-         * @return a {@link Scheduler} on which to publish resources
          */
-        Scheduler deliveryScheduler() {
-            return this.deliveryScheduler;
-        }
-
+        final Scheduler                      acquisitionScheduler;
         /**
          * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
          * implementations.
-         * <p>
-         * Defaults to {@link NoOpPoolMetricsRecorder}
-         *
-         * @return the {@link PoolMetricsRecorder} to use
          */
-        PoolMetricsRecorder metricsRecorder() {
-            return this.metricsRecorder;
+        final PoolMetricsRecorder            metricsRecorder;
+
+        DefaultPoolConfig(Mono<POOLABLE> allocator,
+                          int initialSize,
+                          AllocationStrategy allocationStrategy,
+                          Function<POOLABLE, Mono<Void>> releaseHandler,
+                          Function<POOLABLE, Mono<Void>> destroyHandler,
+                          Predicate<PooledRef<POOLABLE>> evictionPredicate,
+                          Scheduler acquisitionScheduler,
+                          PoolMetricsRecorder metricsRecorder) {
+            this.allocator = allocator;
+            this.initialSize = initialSize;
+            this.allocationStrategy = allocationStrategy;
+            this.releaseHandler = releaseHandler;
+            this.destroyHandler = destroyHandler;
+            this.evictionPredicate = evictionPredicate;
+            this.acquisitionScheduler = acquisitionScheduler;
+            this.metricsRecorder = metricsRecorder;
         }
     }
 }

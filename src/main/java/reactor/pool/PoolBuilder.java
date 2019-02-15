@@ -15,24 +15,24 @@
  */
 package reactor.pool;
 
+import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.function.Function;
+import java.util.function.Predicate;
+
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.util.AllocationStrategies;
 import reactor.pool.util.EvictionPredicates;
-import reactor.util.annotation.Nullable;
-
-import java.util.concurrent.Callable;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
 /**
- * A builder for {@link Pool}. Start by choosing the semantics of pooling that best suit your use case and provide a
- * mandatory allocator: {@link #queuePoolFrom(Mono)}, {@link #affinityPoolFrom(Mono)}.
+ * A builder for {@link Pool}.
  *
  * @author Simon Baslé
  */
+@SuppressWarnings("WeakerAccess")
 public class PoolBuilder<T> {
 
     //TODO tests
@@ -41,64 +41,42 @@ public class PoolBuilder<T> {
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
      * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
      * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
-     * <p>
-     * The returned {@link Pool} is based on MPSC queues for both idle resources and pending {@link Pool#acquire()} Monos.
-     * It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
-     * be handed off on any of the following {@link Thread threads}:
-     * <ul>
-     *     <li>any thread on which a resource was last allocated</li>
-     *     <li>any thread on which a resource was recently released</li>
-     *     <li>any thread on which an {@link Pool#acquire()} {@link Mono} was subscribed</li>
-     * </ul>
-     * For a more deterministic approach, the {@link #deliveryScheduler(Scheduler)} property of the builder can be used.
      *
      * @param allocator the asynchronous creator of poolable resources.
      * @param <T> the type of resource created and recycled by the {@link Pool}
      * @return a builder of {@link Pool}
      */
-    public static <T> PoolBuilder<T> queuePoolFrom(Mono<T> allocator) {
-        return new PoolBuilder<>(allocator, false);
+    public static <T> PoolBuilder<T> from(Mono<T> allocator) {
+        return new PoolBuilder<>(allocator);
+    }
+
+    final Mono<T> allocator;
+
+    boolean                 isThreadAffinity     = true;
+    int                     initialSize          = 0;
+    AllocationStrategy      allocationStrategy   = AllocationStrategies.unbounded();
+    Function<T, Mono<Void>> releaseHandler       = noopHandler();
+    Function<T, Mono<Void>> destroyHandler       = noopHandler();
+    Predicate<PooledRef<T>> evictionPredicate    = neverPredicate();
+    Scheduler               acquisitionScheduler = Schedulers.immediate();
+    PoolMetricsRecorder     metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+
+    PoolBuilder(Mono<T> allocator) {
+        this.allocator = allocator;
     }
 
     /**
-     * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
-     * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
-     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
-     * <p>
-     * The returned {@link Pool} attempts to keep resources on the same thread, by prioritizing
+     * If {@code true} the returned {@link Pool} attempts to keep resources on the same thread, by prioritizing
      * pending {@link Pool#acquire()} {@link Mono Monos} that were subscribed on the same thread on which a resource is
      * released. In case no such borrower exists, but some are pending from another thread, it will deliver to these
      * borrowers instead (a slow path with no fairness guarantees).
      *
-     * @param allocator the asynchronous creator of poolable resources.
-     * @param <T> the type of resource created and recycled by the {@link Pool}
-     * @return a builder of {@link Pool}
+     * @param isThreadAffinity {@literal true} to activate thread affinity on the pool.
+     * @return a builder of {@link Pool} with thread affinity.
      */
-    public static <T> PoolBuilder<T> affinityPoolFrom(Mono<T> allocator) {
-        return new PoolBuilder<>(allocator, true);
-    }
-
-    private final Mono<T> allocator;
-    private final boolean isAffinity;
-
-    private int initialSize = 0;
-
-    @Nullable
-    private AllocationStrategy allocationStrategy;
-    @Nullable
-    private Function<T, Mono<Void>> resetFactory;
-    @Nullable
-    private Function<T, Mono<Void>> destroyFactory;
-    @Nullable
-    private Predicate<PooledRef<T>> evictionPredicate;
-    @Nullable
-    private Scheduler deliveryScheduler;
-    @Nullable
-    private PoolMetricsRecorder metricsRecorder;
-
-    private PoolBuilder(Mono<T> allocator, boolean isAffinity) {
-        this.allocator = allocator;
-        this.isAffinity = isAffinity;
+    public PoolBuilder<T> threadAffinity(boolean isThreadAffinity) {
+        this.isThreadAffinity = isThreadAffinity;
+        return this;
     }
 
     /**
@@ -110,7 +88,10 @@ public class PoolBuilder<T> {
      * @param n the initial size of the {@link Pool}.
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> initialSizeOf(int n) {
+    public PoolBuilder<T> initialSize(int n) {
+        if (n < 0) {
+            throw new IllegalArgumentException("initialSize must be >= 0");
+        }
         this.initialSize = n;
         return this;
     }
@@ -125,45 +106,45 @@ public class PoolBuilder<T> {
      * @param allocationStrategy the {@link AllocationStrategy} to use
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> witAllocationLimit(AllocationStrategy allocationStrategy) {
-        this.allocationStrategy = allocationStrategy;
+    public PoolBuilder<T> allocationStrategy(AllocationStrategy allocationStrategy) {
+        this.allocationStrategy = Objects.requireNonNull(allocationStrategy, "allocationStrategy");
         return this;
     }
 
     /**
-     * Provide a {@link Function factory} that will derive a reset {@link Mono} whenever a resource is released.
+     * Provide a {@link Function handler} that will derive a reset {@link Mono} whenever a resource is released.
      * The reset procedure is applied asynchronously before vetting the object through {@link #evictionPredicate}.
-     * If the reset Mono couldn't put the resource back in a usable state, it will be {@link #destroyResourcesWith(Function) destroyed}.
+     * If the reset Mono couldn't put the resource back in a usable state, it will be {@link #destroyHandler(Function) destroyed}.
      * <p>
      * Defaults to not resetting anything.
      *
-     * @param resetFactory the {@link Function} supplying the state-resetting {@link Mono}
+     * @param releaseHandler the {@link Function} supplying the state-resetting {@link Mono}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> resetResourcesWith(Function<T, Mono<Void>> resetFactory) {
-        this.resetFactory = resetFactory;
+    public PoolBuilder<T> releaseHandler(Function<T, Mono<Void>> releaseHandler) {
+        this.releaseHandler = Objects.requireNonNull(releaseHandler, "releaseHandler");
         return this;
     }
 
     /**
-     * Provide a {@link Function factory} that will derive a destroy {@link Mono} whenever a resource isn't fit for
+     * Provide a {@link Function handler} that will derive a destroy {@link Mono} whenever a resource isn't fit for
      * usage anymore (either through eviction, manual invalidation, or because something went wrong with it).
      * The destroy procedure is applied asynchronously and errors are swallowed.
      * <p>
      * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements and disposing them.
      *
-     * @param destroyFactory the {@link Function} supplying the state-resetting {@link Mono}
+     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Mono}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> destroyResourcesWith(Function<T, Mono<Void>> destroyFactory) {
-        this.destroyFactory = destroyFactory;
+    public PoolBuilder<T> destroyHandler(Function<T, Mono<Void>> destroyHandler) {
+        this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
         return this;
     }
 
     /**
      * Provide an eviction {@link Predicate} that allows to decide if a resource is fit for being placed in the {@link Pool}.
      * This can happen whenever a resource is {@link PooledRef#release() released} back to the {@link Pool} (after
-     * it has been {@link #resetResourcesWith(Function) reset}), but also when being {@link Pool#acquire() acquired}
+     * it was processed by the {@link #releaseHandler(Function)}), but also when being {@link Pool#acquire() acquired}
      * from the pool (triggering a second pass if the object is found to be unfit, eg. it has been idle for too long).
      * Finally, some pool implementations MAY implement a reaper thread mechanism that detect idle resources through
      * this predicate and destroy them.
@@ -174,7 +155,7 @@ public class PoolBuilder<T> {
      * @return this {@link Pool} builder
      */
     public PoolBuilder<T> evictionPredicate(Predicate<PooledRef<T>> evictionPredicate) {
-        this.evictionPredicate = evictionPredicate;
+        this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
         return this;
     }
 
@@ -185,11 +166,11 @@ public class PoolBuilder<T> {
      * <p>
      * Defaults to {@link Schedulers#immediate()}.
      *
-     * @param deliveryScheduler the {@link Scheduler} on which to deliver acquired resources
+     * @param acquisitionScheduler the {@link Scheduler} on which to deliver acquired resources
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> deliveryScheduler(Scheduler deliveryScheduler) {
-        this.deliveryScheduler = deliveryScheduler;
+    public PoolBuilder<T> acquisitionScheduler(Scheduler acquisitionScheduler) {
+        this.acquisitionScheduler = Objects.requireNonNull(acquisitionScheduler, "acquisitionScheduler");
         return this;
     }
 
@@ -199,8 +180,8 @@ public class PoolBuilder<T> {
      * @param recorder the {@link PoolMetricsRecorder}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> recordMetricsWith(PoolMetricsRecorder recorder) {
-        this.metricsRecorder = recorder;
+    public PoolBuilder<T> metricsRecorder(PoolMetricsRecorder recorder) {
+        this.metricsRecorder = Objects.requireNonNull(recorder, "recorder");
         return this;
     }
 
@@ -211,7 +192,7 @@ public class PoolBuilder<T> {
      */
     public Pool<T> build() {
         AbstractPool.DefaultPoolConfig<T> config = buildConfig();
-        if (isAffinity) {
+        if (isThreadAffinity) {
             return new AffinityPool<>(config);
         }
         return new QueuePool<>(config);
@@ -219,8 +200,24 @@ public class PoolBuilder<T> {
 
     //kept package-private for the benefit of tests
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy, resetFactory, destroyFactory,
-                evictionPredicate, deliveryScheduler, metricsRecorder);
+        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy,
+                releaseHandler,
+                destroyHandler,
+                evictionPredicate,
+                acquisitionScheduler, metricsRecorder);
     }
+
+    @SuppressWarnings("unchecked")
+    static <T> Function<T, Mono<Void>> noopHandler() {
+        return (Function<T, Mono<Void>>) NOOP_HANDLER;
+    }
+
+    @SuppressWarnings("unchecked")
+    static <T> Predicate<PooledRef<T>>  neverPredicate() {
+        return (Predicate<PooledRef<T>>) NEVER_PREDICATE;
+    }
+
+    static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
+    static final Predicate<?>            NEVER_PREDICATE = it -> false;
 
 }

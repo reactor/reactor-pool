@@ -15,9 +15,16 @@
  */
 package reactor.pool;
 
+import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
@@ -28,13 +35,17 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
 import reactor.util.concurrent.Queues;
 
-import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-
 /**
+ * The {@link QueuePool} is based on MPSC queues for both idle resources and pending {@link Pool#acquire()} Monos.
+ * It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
+ * be handed off on any of the following {@link Thread threads}:
+ * <ul>
+ *     <li>any thread on which a resource was last allocated</li>
+ *     <li>any thread on which a resource was recently released</li>
+ *     <li>any thread on which an {@link Pool#acquire()} {@link Mono} was subscribed</li>
+ * </ul>
+ * For a more deterministic approach, the {@link PoolBuilder#acquisitionScheduler(Scheduler)} property of the builder can be used.
+ *
  * @author Simon Baslé
  */
 final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
@@ -56,7 +67,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     public QueuePool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(QueuePool.class));
         this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
-        int maxSize = poolConfig.allocationStrategy().estimatePermitCount();
+        int maxSize = poolConfig.allocationStrategy.estimatePermitCount();
         if (maxSize == Integer.MAX_VALUE) {
             this.elements = new MpscLinkedQueue8<>();
         }
@@ -64,11 +75,11 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
             this.elements = new MpscArrayQueue<>(Math.max(2, maxSize));
         }
 
-        int initSize = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
+        int initSize = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
         for (int i = 0; i < initSize; i++) {
             long start = metricsRecorder.now();
             try {
-                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator.block(), "allocator returned null in constructor");
                 metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
                 elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
             }
@@ -98,7 +109,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
         if (pending != TERMINATED) {
-            if (!poolConfig.evictionPredicate().test(poolSlot)) {
+            if (!poolConfig.evictionPredicate.test(poolSlot)) {
                 metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
             }
@@ -124,7 +135,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = pending.size();
-            int permits = poolConfig.allocationStrategy().estimatePermitCount();
+            int permits = poolConfig.allocationStrategy.estimatePermitCount();
 
             if (availableCount == 0) {
                 if (pendingCount > 0 && permits > 0) {
@@ -133,13 +144,13 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.get() || poolConfig.allocationStrategy().getPermits(1) != 1) {
+                    if (borrower.get() || poolConfig.allocationStrategy.getPermits(1) != 1) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
                     long start = metricsRecorder.now();
-                    Mono<POOLABLE> allocator = poolConfig.allocator();
-                    Scheduler s = poolConfig.deliveryScheduler();
+                    Mono<POOLABLE> allocator = poolConfig.allocator;
+                    Scheduler s = poolConfig.acquisitionScheduler;
                     if (s != Schedulers.immediate())  {
                         allocator = allocator.publishOn(s);
                     }
@@ -147,7 +158,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy().returnPermits(1);
+                                        poolConfig.allocationStrategy.returnPermits(1);
                                         borrower.fail(e);
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
@@ -159,7 +170,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 if (slot == null) continue;
 
                 //TODO test the idle eviction scenario
-                if (poolConfig.evictionPredicate().test(slot)) {
+                if (poolConfig.evictionPredicate.test(slot)) {
                     destroyPoolable(slot).subscribe();
                     continue;
                 }
@@ -171,7 +182,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                     continue;
                 }
                 ACQUIRED.incrementAndGet(this);
-                poolConfig.deliveryScheduler().schedule(() -> inner.deliver(slot));
+                poolConfig.acquisitionScheduler.schedule(() -> inner.deliver(slot));
             }
 
             missed = WIP.addAndGet(this, -missed);
@@ -221,7 +232,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             Mono<Void> cleaner;
             try {
-                cleaner = pool.poolConfig.resetResource().apply(poolable);
+                cleaner = pool.poolConfig.releaseHandler.apply(poolable);
             }
             catch (Throwable e) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state

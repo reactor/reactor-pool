@@ -23,6 +23,8 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.pool.PooledRef;
 import reactor.util.Loggers;
 import reactor.util.concurrent.Queues;
@@ -137,9 +139,12 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     long start = metricsRecorder.now();
-                    poolConfig.allocator()
-                            .publishOn(poolConfig.deliveryScheduler())
-                            .subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
+                    Mono<POOLABLE> allocator = poolConfig.allocator();
+                    Scheduler s = poolConfig.deliveryScheduler();
+                    if (s != Schedulers.immediate())  {
+                        allocator = allocator.publishOn(s);
+                    }
+                    allocator.subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);

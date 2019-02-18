@@ -72,20 +72,6 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         else {
             this.elements = new MpscArrayQueue<>(Math.max(2, maxSize));
         }
-
-        int initSize = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
-        for (int i = 0; i < initSize; i++) {
-            long start = metricsRecorder.now();
-            try {
-                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator.block(), "allocator returned null in constructor");
-                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
-                elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
-            }
-            catch (Throwable e) {
-                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                throw e;
-            }
-        }
     }
 
     /**

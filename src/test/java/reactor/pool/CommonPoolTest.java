@@ -99,12 +99,13 @@ public class CommonPoolTest {
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
-				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(2).block()).as("initial size 2").isEqualTo(2);
+
 
 		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
 		pool.acquire().subscribe(acquired1::add);
@@ -153,11 +154,11 @@ public class CommonPoolTest {
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
-				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(2).block()).as("initial size 2").isEqualTo(2);
 
 		TestPublisher<Integer> trigger1 = TestPublisher.create();
 		TestPublisher<Integer> trigger2 = TestPublisher.create();
@@ -216,12 +217,12 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
 				          .subscribeOn(Schedulers.newParallel("poolable test allocator")))
-				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(2).block()).as("initial size 2").isEqualTo(2);
 
 		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
 		CountDownLatch latch1 = new CountDownLatch(3);
@@ -284,7 +285,6 @@ public class CommonPoolTest {
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.initialSize(1)
 				.sizeMax(1)
 				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					poolableTest.clean();
@@ -293,6 +293,7 @@ public class CommonPoolTest {
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
 		//acquire the only element
 		PooledRef<PoolableTest> slot = pool.acquire().block();
@@ -315,7 +316,6 @@ public class CommonPoolTest {
 		AtomicInteger releasedCount = new AtomicInteger();
 		PoolBuilder<PoolableTest> builder =
 				PoolBuilder.from(Mono.fromCallable(PoolableTest::new))
-				           .initialSize(1)
 				           .sizeMax(1)
 				           .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					           poolableTest.clean();
@@ -323,6 +323,7 @@ public class CommonPoolTest {
 				           }))
 				           .evictionPredicate(slot -> !slot.poolable().isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
 		//acquire the only element
 		PooledRef<PoolableTest> slot = pool.acquire().block();
@@ -382,7 +383,6 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest> builder =
 				PoolBuilder.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
 				                     .subscribeOn(scheduler))
-				           .initialSize(0)
 				           .sizeMax(1)
 				           .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					           poolableTest.clean();
@@ -488,11 +488,11 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeMax(3)
-				.initialSize(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(3).block()).as("initial size 3").isEqualTo(3);
 
 		PooledRef<PoolableTest> slot1 = pool.acquire().block();
 		PooledRef<PoolableTest> slot2 = pool.acquire().block();
@@ -528,10 +528,10 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeMax(3)
-				.initialSize(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
 				.evictionPredicate(slot -> !slot.poolable().isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(3).block()).as("initial size 3").isEqualTo(3);
 
 		PooledRef<PoolableTest> slot1 = pool.acquire().block();
 		PooledRef<PoolableTest> slot2 = pool.acquire().block();
@@ -600,9 +600,9 @@ public class CommonPoolTest {
 		PoolBuilder<Formatter> builder = PoolBuilder
 				.from(Mono.just(uniqueElement))
 				.sizeMax(1)
-				.initialSize(1)
 				.evictionPredicate(slot -> true);
 		AbstractPool<Formatter> pool = configAdjuster.apply(builder);
+		assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
 		pool.dispose();
 
@@ -612,31 +612,32 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void allocatorErrorOutsideConstructorIsPropagated(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+	void allocatorErrorInAcquireIsPropagated(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.<String>error(new IllegalStateException("boom")))
 				.sizeMax(1)
-				.initialSize(0)
 				.evictionPredicate(f -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
-		assertThatExceptionOfType(IllegalStateException.class)
-				.isThrownBy(pool.acquire()::block)
-				.withMessage("boom");
+		StepVerifier.create(pool.acquire())
+		            .verifyErrorSatisfies(e -> assertThat(e)
+				            .isInstanceOf(IllegalStateException.class)
+				            .hasMessage("boom"));
 	}
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void allocatorErrorInConstructorIsThrown(Function<PoolBuilder<Object>, AbstractPool<Object>> configAdjuster) {
+	void allocatorErrorInGrowIdleIsThrown(Function<PoolBuilder<Object>, AbstractPool<Object>> configAdjuster) {
 		final PoolBuilder<Object> builder = PoolBuilder
 				.from(Mono.error(new IllegalStateException("boom")))
-				.initialSize(1)
 				.sizeMax(1)
 				.evictionPredicate(f -> true);
+		AbstractPool<Object> pool = configAdjuster.apply(builder);
 
-		assertThatExceptionOfType(IllegalStateException.class)
-				.isThrownBy(() -> configAdjuster.apply(builder))
-				.withMessage("boom");
+		StepVerifier.create(pool.growIdle(1))
+		            .verifyErrorSatisfies(e -> assertThat(e)
+				            .isInstanceOf(IllegalStateException.class)
+				            .hasMessage("boom"));
 	}
 
 	@ParameterizedTest
@@ -651,10 +652,10 @@ public class CommonPoolTest {
 
 			PoolBuilder<Closeable> builder = PoolBuilder
 					.from(Mono.just(closeable))
-					.initialSize(1)
 					.sizeMax(1)
 					.evictionPredicate(f -> true);
 			AbstractPool<Closeable> pool = configAdjuster.apply(builder);
+			assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
 			pool.dispose();
 
@@ -678,36 +679,37 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationInConstructor(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
-		AtomicBoolean flip = new AtomicBoolean();
+	void recordsAllocationInGrowIdle(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		AtomicInteger flipCountdown = new AtomicInteger(5);
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.defer(() -> {
-					if (flip.compareAndSet(false, true)) {
-						return Mono.just("foo")
+					int flip = flipCountdown.getAndDecrement();
+					if (flip > 0) {
+						return Mono.just("foo" + flip)
 						           .delayElement(Duration.ofMillis(100));
 					}
 					else {
-						flip.compareAndSet(true, false);
 						return Mono.error(new IllegalStateException("boom"));
 					}
 				}))
-				.initialSize(10)
 				.metricsRecorder(recorder);
+		Pool<String> pool = configAdjuster.apply(builder);
 
 		assertThatIllegalStateException()
-				.isThrownBy(() -> configAdjuster.apply(builder));
+				.isThrownBy(() -> pool.growIdle(10).block())
+				.withMessage("boom");
 
-		assertThat(recorder.getAllocationTotalCount()).isEqualTo(2);
+		assertThat(recorder.getAllocationTotalCount()).isEqualTo(6);
 		assertThat(recorder.getAllocationSuccessCount())
-				.isOne()
+				.isEqualTo(5)
 				.isEqualTo(recorder.getAllocationSuccessHistogram().getTotalCount());
 		assertThat(recorder.getAllocationErrorCount())
-				.isOne()
+				.isEqualTo(1)
 				.isEqualTo(recorder.getAllocationErrorHistogram().getTotalCount());
 
 		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
-		assertThat(minSuccess).isBetween(100L, 150L);
+		assertThat(minSuccess).as("minSuccess").isBetween(100L, 150L);
 	}
 
 	@ParameterizedTest
@@ -903,16 +905,16 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsIdleTimeFromConstructor(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) throws InterruptedException {
+	void recordsIdleTimeFromGrowIdle(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) throws InterruptedException {
 		AtomicInteger allocCounter = new AtomicInteger();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<Integer> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeMax(2)
-				.initialSize(2)
 				.metricsRecorder(recorder);
 		Pool<Integer> pool = configAdjuster.apply(builder);
 
+		assertThat(pool.growIdle(2).block()).as("initial size 2").isEqualTo(2);
 
 		//wait 125ms and 250ms before first acquire respectively
 		Thread.sleep(125);
@@ -940,9 +942,10 @@ public class CommonPoolTest {
 		PoolBuilder<Integer> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeMax(2)
-				.initialSize(2)
 				.metricsRecorder(recorder);
 		Pool<Integer> pool = configAdjuster.apply(builder);
+
+		assertThat(pool.growIdle(2).block()).as("initial size 2").isEqualTo(2);
 
 		//both idle for 125ms
 		Thread.sleep(125);

@@ -58,31 +58,7 @@ import static org.awaitility.Awaitility.await;
  */
 class AffinityPoolTest {
 
-    //==utils for package-private config==
-    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
-        return PoolBuilder.from(allocator)
-                          .threadAffinity(true)
-                          .initialSize(minSize)
-                          .sizeMax(maxSize)
-                          .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-                          .evictionPredicate(slot -> !slot.poolable().isHealthy())
-                          .buildConfig();
-    }
-
-    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
-            Consumer<? super PoolableTest> additionalCleaner) {
-        return PoolBuilder.from(allocator)
-                          .threadAffinity(true)
-                          .initialSize(minSize)
-                          .sizeMax(maxSize)
-                          .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
-                              poolableTest.clean();
-                              additionalCleaner.accept(poolableTest);
-                          }))
-                          .evictionPredicate(slot -> !slot.poolable().isHealthy())
-                          .buildConfig();
-    }
-    //======
+	//======
 
     @Test
     void threadAffinity() throws InterruptedException, ExecutionException {
@@ -194,10 +170,17 @@ class AffinityPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
-                    Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
-                        .subscribeOn(scheduler),
-                    pt -> releasedCount.incrementAndGet());
+	        DefaultPoolConfig<PoolableTest> testConfig =
+			        PoolBuilder.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
+			                             .subscribeOn(scheduler))
+			                   .threadAffinity(true)
+			                   .sizeMax(1)
+			                   .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
+				                   poolableTest.clean();
+				                   releasedCount.incrementAndGet();
+			                   }))
+			                   .evictionPredicate(slot -> !slot.poolable().isHealthy())
+			                   .buildConfig();
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //acquire the only element and capture the subscription, don't request just yet
@@ -233,10 +216,16 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
+	        DefaultPoolConfig<PoolableTest> testConfig =
+			        PoolBuilder.from(Mono.fromCallable(PoolableTest::new)
+			                             .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+			                   .threadAffinity(true)
+			                   .sizeMax(1)
+			                   .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+			                   .evictionPredicate(slot -> !slot.poolable().isHealthy())
+			                   .buildConfig();
+	        AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
+	        assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
             //the pool is started with one available element
             //we prepare to acquire it
@@ -255,9 +244,14 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+	        DefaultPoolConfig<PoolableTest> testConfig =
+			        PoolBuilder.from(Mono.fromCallable(PoolableTest::new)
+			                             .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+			                   .threadAffinity(true)
+			                   .sizeMax(1)
+			                   .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+			                   .evictionPredicate(slot -> !slot.poolable().isHealthy())
+			                   .buildConfig();
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
 
             //the pool is started with no elements, and has capacity for 1
@@ -280,10 +274,16 @@ class AffinityPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
-                    Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+	        DefaultPoolConfig<PoolableTest> testConfig =
+			        PoolBuilder.from(Mono.fromCallable(PoolableTest::new)
+			                             .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+			                   .threadAffinity(true)
+			                   .sizeMax(1)
+			                   .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+			                   .evictionPredicate(slot -> !slot.poolable().isHealthy())
+			                   .buildConfig();
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
+	        assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -338,11 +338,17 @@ class AffinityPoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
-                    Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+	        DefaultPoolConfig<PoolableTest> testConfig =
+			        PoolBuilder.from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
+			                             .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+			                   .threadAffinity(true)
+			                   .sizeMax(1)
+			                   .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+			                   .evictionPredicate(slot -> !slot.poolable().isHealthy())
+			                   .buildConfig();
 
             AffinityPool<PoolableTest> pool = new AffinityPool<>(testConfig);
+	        assertThat(pool.growIdle(1).block()).as("initial size 1").isEqualTo(1);
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release

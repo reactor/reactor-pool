@@ -77,4 +77,5 @@ public interface Pool<POOLABLE> extends Disposable {
                 PooledRef::release);
     }
 
+    Mono<Integer> growIdle(int desired);
 }

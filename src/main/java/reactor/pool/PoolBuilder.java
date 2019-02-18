@@ -52,7 +52,6 @@ public class PoolBuilder<T> {
     final Mono<T> allocator;
 
     boolean                 isThreadAffinity     = true;
-    int                     initialSize          = 0;
     AllocationStrategy      allocationStrategy   = AllocationStrategies.UNBOUNDED;
     Function<T, Mono<Void>> releaseHandler       = noopHandler();
     Function<T, Mono<Void>> destroyHandler       = noopHandler();
@@ -75,23 +74,6 @@ public class PoolBuilder<T> {
      */
     public PoolBuilder<T> threadAffinity(boolean isThreadAffinity) {
         this.isThreadAffinity = isThreadAffinity;
-        return this;
-    }
-
-    /**
-     * How many resources the {@link Pool} should allocate upon creation.
-     * This parameter MAY be ignored by some implementations (although they should state so in their documentation).
-     * <p>
-     * Defaults to {@code 0}.
-     *
-     * @param n the initial size of the {@link Pool}.
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T> initialSize(int n) {
-        if (n < 0) {
-            throw new IllegalArgumentException("initialSize must be >= 0");
-        }
-        this.initialSize = n;
         return this;
     }
 
@@ -239,7 +221,7 @@ public class PoolBuilder<T> {
 
     //kept package-private for the benefit of tests
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy,
+        return new AbstractPool.DefaultPoolConfig<>(allocator, allocationStrategy,
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,

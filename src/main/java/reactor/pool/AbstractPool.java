@@ -23,11 +23,14 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Scannable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
@@ -101,6 +104,25 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             return factory.apply(poolable)
                     .doFinally(fin -> metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start)));
         }
+    }
+
+    @Override
+    public Mono<Integer> growIdle(final int desired) {
+        return Mono.defer(() -> {
+            int toBuild = poolConfig.allocationStrategy.getPermits(desired);
+            if (toBuild == 0) {
+                return Mono.just(0);
+            }
+            if (toBuild == 1) {
+                return new GrowIdleMono<>(poolConfig.allocator, this, 1);
+            }
+
+            @SuppressWarnings("unchecked") Mono<POOLABLE>[] toBuildMonos = new Mono[toBuild];
+            for (int i = 0; i < toBuild; i++) {
+                toBuildMonos[i] = poolConfig.allocator;
+            }
+            return new GrowIdleMono<>(Flux.concat(toBuildMonos), this, toBuild);
+        });
     }
 
     /**
@@ -202,6 +224,160 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         }
     }
 
+    static final class GrowIdleMono<POOLABLE> extends Mono<Integer> implements Scannable{
+
+        final Publisher<? extends POOLABLE> source;
+        final AbstractPool<POOLABLE>        pool;
+        final int                           permits;
+
+        public GrowIdleMono(Publisher<? extends POOLABLE> source, AbstractPool<POOLABLE> pool, int permits) {
+            this.source = source;
+            this.pool = pool;
+            this.permits = permits;
+        }
+
+        @Override
+        @Nullable
+        public Object scanUnsafe(Scannable.Attr key) {
+            if (key == Scannable.Attr.PARENT) return source;
+            return null;
+        }
+
+
+        @Override
+        public void subscribe(CoreSubscriber<? super Integer> actual) {
+            GrowIdleSubscriber<POOLABLE> growIdleSubscriber = new GrowIdleSubscriber<>(actual,
+                    pool, permits);
+            source.subscribe(growIdleSubscriber);
+        }
+
+        @Override
+        public String toString() {
+            return getClass().getSimpleName();
+        }
+    }
+
+    /**
+     * Common inner {@link Subscription} to be used to allocate new poolable directly into the idle state.
+     *
+     * @author Simon Baslé
+     */
+    static final class GrowIdleSubscriber<POOLABLE> extends AtomicBoolean implements Scannable, Subscriber<POOLABLE>, Subscription  {
+
+        final CoreSubscriber<? super Integer> actual;
+        final AbstractPool<POOLABLE>          pool;
+        final int                             permits;
+
+        boolean done;
+        Subscription upstream;
+        long startTime;
+
+        volatile     int                                           seen;
+        static final AtomicIntegerFieldUpdater<GrowIdleSubscriber> SEEN = AtomicIntegerFieldUpdater.newUpdater(GrowIdleSubscriber.class, "seen");
+
+        GrowIdleSubscriber(CoreSubscriber<? super Integer> actual, AbstractPool<POOLABLE> pool, int permits) {
+            this.actual = actual;
+            this.pool = pool;
+            this.permits = permits;
+        }
+
+        @Override
+        public void onSubscribe(Subscription s) {
+            if (Operators.validate(upstream, s)) {
+                upstream = s;
+                actual.onSubscribe(this);
+            }
+        }
+
+        @Override
+        public void request(long n) {
+            if (Operators.validate(n)) {
+                startTime = pool.poolConfig.metricsRecorder.now();
+                upstream.request(n);
+            }
+        }
+
+        @Override
+        public void cancel() {
+            set(true);
+            upstream.cancel();
+        }
+
+        @Override
+        public void onNext(POOLABLE poolable) {
+            //TODO should we destroy eagerly rather than passing to protocol error hooks?
+            if (done || SEEN.incrementAndGet(this) > permits) {
+                Operators.onNextDropped(poolable, actual.currentContext());
+                return;
+            }
+            if (get()) {
+                Operators.onDiscard(poolable, actual.currentContext());
+                return;
+            }
+
+            if (!pool.elementOffer(poolable)) {
+                //TODO should it be possible at all that offer is rejected if allocationStrategy gave a permit?
+                pool.poolConfig.allocationStrategy.returnPermits(1);
+                pool.poolConfig.destroyHandler.apply(poolable).subscribe();
+                //TODO do we consider queue rejection an allocation error?
+            }
+            PoolMetricsRecorder metricsRecorder = pool.poolConfig.metricsRecorder;
+            metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(startTime));
+        }
+
+        @Override
+        public void onComplete() {
+            if (done) {
+                return;
+            }
+            done = true;
+
+            int seenOnTerminate = SEEN.get(this);
+            int diff = permits - seenOnTerminate;
+            if (diff > 0) {
+                pool.poolConfig.allocationStrategy.returnPermits(diff);
+            }
+
+            actual.onNext(seenOnTerminate);
+            actual.onComplete();
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            if (done) {
+                Operators.onErrorDropped(t, actual.currentContext());
+                return;
+            }
+            done = true;
+
+            int seenOnTerminate = SEEN.get(this);
+            int diff = permits - seenOnTerminate;
+            if (diff > 0) {
+                pool.poolConfig.allocationStrategy.returnPermits(diff);
+            }
+
+            PoolMetricsRecorder metricsRecorder = pool.poolConfig.metricsRecorder;
+            metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(startTime));
+            actual.onError(t);
+        }
+
+        @Override
+        @Nullable
+        public Object scanUnsafe(Attr key) {
+            if (key == Attr.PARENT) return upstream;
+            if (key == Attr.ACTUAL) return actual;
+            if (key == Attr.CANCELLED) return get();
+            if (key == Attr.TERMINATED) return done;
+
+            return null;
+        }
+
+        @Override
+        public String toString() {
+            return "GrowIdleSubscriber";
+        }
+    }
+
     /**
      * Common inner {@link Subscription} to be used to deliver poolable elements wrapped in {@link AbstractPooledRef} from
      * an {@link AbstractPool}.
@@ -275,11 +451,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          * The asynchronous factory that produces new resources, represented as a {@link Mono}.
          */
         final Mono<POOLABLE>                 allocator;
-        //TODO to be removed
-        /**
-         * The minimum number of objects a {@link Pool} should create at initialization.
-         */
-        final int                            initialSize;
         /**
          * {@link AllocationStrategy} defines a strategy / limit for the number of pooled object to allocate.
          */
@@ -320,7 +491,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         final PoolMetricsRecorder            metricsRecorder;
 
         DefaultPoolConfig(Mono<POOLABLE> allocator,
-                          int initialSize,
                           AllocationStrategy allocationStrategy,
                           Function<POOLABLE, Mono<Void>> releaseHandler,
                           Function<POOLABLE, Mono<Void>> destroyHandler,
@@ -328,7 +498,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
                           Scheduler acquisitionScheduler,
                           PoolMetricsRecorder metricsRecorder) {
             this.allocator = allocator;
-            this.initialSize = initialSize;
             this.allocationStrategy = allocationStrategy;
             this.releaseHandler = releaseHandler;
             this.destroyHandler = destroyHandler;

@@ -1234,7 +1234,7 @@ public class CommonPoolTest {
 		PoolBuilder<Integer> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeMax(2)
-				.evictionPredicate(ref -> ref.acquireCount() >= 2)
+				.evictionPredicate(ref -> ref.metadata().acquireCount() >= 2)
 				.destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
 				.metricsRecorder(recorder);
 		Pool<Integer> pool = configAdjuster.apply(builder);

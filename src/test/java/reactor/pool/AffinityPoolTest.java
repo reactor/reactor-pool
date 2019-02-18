@@ -384,7 +384,7 @@ class AffinityPoolTest {
             DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
                                                            .threadAffinity(true)
                                                            .sizeMax(3)
-                                                           .evictionPredicate(ref -> ref.acquireCount() >= 3)
+                                                           .evictionPredicate(ref -> ref.metadata().acquireCount() >= 3)
                                                            .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
                                                            .buildConfig();
             AffinityPool<Integer> pool = new AffinityPool<>(config);

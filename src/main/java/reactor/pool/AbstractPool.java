@@ -87,7 +87,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      * @param ref the {@link PooledRef} that is not part of the live set
      * @return the destroy {@link Mono}, which MUST be subscribed immediately
      */
-    Mono<Void> destroyPoolable(PooledRef<POOLABLE> ref) {
+    Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy.returnPermits(1);
         long start = metricsRecorder.now();
@@ -110,7 +110,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      *
      * @author Simon Baslé
      */
-    abstract static class AbstractPooledRef<T> implements PooledRef<T> {
+    abstract static class AbstractPooledRef<T> implements PooledRef<T>, PooledRefMetadata {
 
         final long            creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;
@@ -134,6 +134,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         @Override
         public T poolable() {
             return poolable;
+        }
+
+        @Override
+        public PooledRefMetadata metadata() {
+            return this;
         }
 
         /**

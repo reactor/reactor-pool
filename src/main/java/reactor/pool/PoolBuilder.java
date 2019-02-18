@@ -311,7 +311,7 @@ public class PoolBuilder<T> {
     }
 
     static <T> Predicate<PooledRef<T>> idlePredicate(Duration maxIdleTime) {
-        return slot -> slot.idleTime() >= maxIdleTime.toMillis();
+        return slot -> slot.metadata().idleTime() >= maxIdleTime.toMillis();
     }
 
     static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();

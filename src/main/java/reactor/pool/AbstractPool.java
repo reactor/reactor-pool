@@ -67,6 +67,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);
 
+    abstract void drain();
+
     private void defaultDestroy(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
             ((Disposable) poolable).dispose();
@@ -108,6 +110,10 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     @Override
     public Mono<Integer> growIdle(final int desired) {
+        if (desired < 0) {
+            throw new IllegalArgumentException("desired must be positive");
+        }
+        if (desired == 0) return Mono.just(0);
         return Mono.defer(() -> {
             int toBuild = poolConfig.allocationStrategy.getPermits(desired);
             if (toBuild == 0) {
@@ -340,6 +346,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
             actual.onNext(seenOnTerminate);
             actual.onComplete();
+
+            pool.drain();
         }
 
         @Override
@@ -359,6 +367,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             PoolMetricsRecorder metricsRecorder = pool.poolConfig.metricsRecorder;
             metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(startTime));
             actual.onError(t);
+
+            pool.drain();
         }
 
         @Override

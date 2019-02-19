@@ -140,11 +140,11 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         SubPool<POOLABLE> subPool = pools.get(Thread.currentThread().getId());
         if (subPool == null || !subPool.tryDirectRecycle(pooledRef)) {
             availableElements.offer(pooledRef);
-            slowPathRecycle();
+            drain();
         }
     }
 
-    void slowPathRecycle() {
+    void drain() {
         if (SLOWPATH_WIP.getAndIncrement(this) != 0) {
             return;
         }

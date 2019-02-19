@@ -34,6 +34,7 @@ import java.util.function.Function;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -42,6 +43,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.StepVerifier;
+import reactor.test.StepVerifierOptions;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
@@ -665,6 +667,145 @@ public class CommonPoolTest {
 		finally {
 			Loggers.resetLoggerFactory();
 		}
+	}
+
+	// === GROW IDLE tests ===
+
+	private AtomicInteger allocationCounter;
+	private AtomicInteger releaseCounter;
+	private AtomicInteger destroyCounter;
+
+	Pool<String> growIdleZeroToThreePool(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		PoolBuilder<String> builder =
+				PoolBuilder.from(Mono.fromCallable(() -> "resource#" + allocationCounter.getAndIncrement()))
+				           .sizeMax(3)
+				           .destroyHandler(s -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+				           .releaseHandler(s -> Mono.fromRunnable(releaseCounter::incrementAndGet))
+				           .evictionPredicate(ref -> ref.acquireCount() > 10);
+
+		return configAdjuster.apply(builder);
+	}
+
+	@BeforeEach
+	void initGrowIdleCounters() {
+		this.allocationCounter = new AtomicInteger();
+		this.releaseCounter = new AtomicInteger();
+		this.destroyCounter = new AtomicInteger();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void desiredNegative(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		assertThatIllegalArgumentException().isThrownBy(() -> pool.growIdle(-1))
+		                                    .withMessage("desired must be positive");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void desiredZero(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		StepVerifier.create(pool.growIdle(0))
+		            .expectNext(0)
+		            .verifyComplete();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void desiredPositive(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		StepVerifier.create(pool.growIdle(1))
+		            .expectNext(1)
+		            .verifyComplete();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void desiredPositiveAboveCapacity(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		StepVerifier.create(pool.growIdle(10))
+		            .expectNext(3)
+		            .verifyComplete();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void desiredPositiveButZeroCapacity(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		assertThat(pool.growIdle(3).block()).as("initial grow to max").isEqualTo(3);
+
+		StepVerifier.create(pool.growIdle(1))
+		            .expectNext(0)
+		            .verifyComplete();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledBeforePending(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		final Pool<String> pool = growIdleZeroToThreePool(configAdjuster);
+
+		StepVerifier.create(pool.growIdle(3), StepVerifierOptions.create().scenarioName("initial grow"))
+		            .expectNext(3)
+		            .verifyComplete();
+
+		StepVerifier.create(pool.acquire()
+		                        .repeat(2)
+		                        .map(PooledRef::poolable).log())
+		            .expectNext("resource#0", "resource#1", "resource#2")
+		            .verifyComplete();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledAfterPending(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledWithIntermittentAllocatorFailure(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledWithPersistentAllocatorFailure(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledWithAlwaysAllocatorFailure(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleCalledWithPoolOfferRejected(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("growIdle")
+	void growIdleRaceWithAcquire(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		fail("TODO");
 	}
 
 	// === METRICS ===

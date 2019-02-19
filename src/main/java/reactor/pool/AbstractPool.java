@@ -329,6 +329,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             }
             PoolMetricsRecorder metricsRecorder = pool.poolConfig.metricsRecorder;
             metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(startTime));
+            pool.drain();
         }
 
         @Override
@@ -346,8 +347,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
             actual.onNext(seenOnTerminate);
             actual.onComplete();
-
-            pool.drain();
         }
 
         @Override
@@ -367,8 +366,6 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             PoolMetricsRecorder metricsRecorder = pool.poolConfig.metricsRecorder;
             metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(startTime));
             actual.onError(t);
-
-            pool.drain();
         }
 
         @Override

@@ -25,6 +25,10 @@ import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -766,12 +771,7 @@ public class CommonPoolTest {
 		            .verifyComplete();
 	}
 
-	@ParameterizedTest
-	@MethodSource("allPools")
-	@Tag("growIdle")
-	void growIdleCalledAfterPending(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
-		fail("TODO");
-	}
+	//note: after pending doesn't really happens unless there is a race between acquire and grow
 
 	@ParameterizedTest
 	@MethodSource("allPools")
@@ -804,8 +804,51 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("growIdle")
-	void growIdleRaceWithAcquire(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
-		fail("TODO");
+	void growIdleRaceWithAcquire(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster)
+			throws ExecutionException, InterruptedException {
+		CountDownLatch acquireLatch = new CountDownLatch(1);
+		CountDownLatch pendingLatch = new CountDownLatch(3);
+		AtomicInteger acquisitionCounter = new AtomicInteger();
+		final ScheduledExecutorService service = Executors.newScheduledThreadPool(3);
+
+		PoolBuilder<String> builder =
+				PoolBuilder.from(Mono.fromCallable(() -> {
+					acquireLatch.await();
+					return "resource#" + allocationCounter.getAndIncrement();
+				}))
+				           .sizeMax(3)
+				           .destroyHandler(s -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+				           .releaseHandler(s -> Mono.fromRunnable(releaseCounter::incrementAndGet))
+				           .evictionPredicate(ref -> ref.acquireCount() > 10);
+
+		Pool<String> pool = configAdjuster.apply(builder);
+
+		//grow to 3, acquiring the permits but delaying the actual production
+		Future<Integer> f1 = service.submit(() -> pool.growIdle(3)
+		                                              .block());
+
+		//trigger 3 acquire that should miss the permit but queue themselves
+		Future<List<String>> f2 = service.submit(() -> Flux
+				.merge(
+						pool.acquire().doOnRequest(l -> pendingLatch.countDown()),
+						pool.acquire().doOnRequest(l -> pendingLatch.countDown()),
+						pool.acquire().doOnRequest(l -> pendingLatch.countDown())
+				)
+				.doOnNext(v -> acquisitionCounter.incrementAndGet())
+				.map(PooledRef::poolable)
+				.collectList()
+				.block());
+
+		pendingLatch.await();
+		acquireLatch.countDown();
+
+		assertThat(f1.get()).as("grew to 3").isEqualTo(3);
+		assertThat(f2.get()).as("acquired").containsExactly("resource#0", "resource#1", "resource#2");
+
+		assertThat(allocationCounter).as("allocationCounter").hasValue(3);
+		assertThat(destroyCounter).as("destroyCounter").hasValue(0);
+		assertThat(acquisitionCounter).as("acquisitionCounter").hasValue(3);
+		assertThat(releaseCounter).as("releaseCounter").hasValue(0);
 	}
 
 	// === METRICS ===

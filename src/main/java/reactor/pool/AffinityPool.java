@@ -165,33 +165,46 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
         //TODO should we randomize the order of subpools to try?
         for(;;) {
-            AffinityPooledRef<POOLABLE> ref = availableElements.poll();
-            boolean delivered = false;
-            if (ref != null) {
+            if (availableElements.peek() != null) { //do not poll immediately
+                boolean lookAtSubPools = true;
                 SubPool<POOLABLE> directMatch = pools.get(Thread.currentThread().getId());
                 if (directMatch != null && directMatch.tryLockForSlowPath()) {
                     Borrower<POOLABLE> pending = directMatch.getPendingAndUnlock();
                     if (pending != null) {
-                        delivered = true;
-                        metricsRecorder.recordSlowPath();
-                        pending.deliver(ref);
+                        //this might return null, racing with doAcquire
+                        AffinityPooledRef<POOLABLE> ref = availableElements.poll();
+                        if (ref != null) {
+                            lookAtSubPools = false;
+                            metricsRecorder.recordSlowPath();
+                            pending.deliver(ref);
+                        }
+                        else {
+                            //this reorders the pending but should happen rarely enough
+                            directMatch.localPendings.offer(pending);
+                            continue; //loop again to re-evaluate availableElements
+                        }
                     }
                 }
-                if (!delivered) {
+
+                if (lookAtSubPools) {
+                    //we only arrive at this point if there was no direct match
                     for (SubPool<POOLABLE> subPool : pools.values()) {
                         if (subPool.tryLockForSlowPath()) {
                             Borrower<POOLABLE> pending = subPool.getPendingAndUnlock();
                             if (pending != null) {
-                                delivered = true;
-                                metricsRecorder.recordSlowPath();
-                                pending.deliver(ref);
-                                break;
+                                AffinityPooledRef<POOLABLE> ref = availableElements.poll();
+                                if (ref == null) {
+                                    subPool.localPendings.offer(pending);
+                                    //continue
+                                }
+                                else {
+                                    metricsRecorder.recordSlowPath();
+                                    pending.deliver(ref);
+                                    break; //break out of the subpool iteration
+                                }
                             }
                         }
                     }
-                }
-                if (!delivered) {
-                    availableElements.offer(ref);
                 }
             }
 
@@ -344,7 +357,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
-            Objects.requireNonNull(actual, "subscribing with null");
             Borrower<T> borrower = new Borrower<>(actual, parent);
             actual.onSubscribe(borrower);
         }

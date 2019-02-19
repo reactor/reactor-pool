@@ -19,7 +19,6 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
@@ -34,7 +33,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
-import reactor.util.concurrent.Queues;
 
 /**
  * The {@link SimplePool} is based on MPSC queues for idle resources and FIFO or LIFO data structures for
@@ -129,7 +127,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
         if (!isDisposed()) {
-            if (!poolConfig.evictionPredicate.test(poolSlot)) {
+            if (!poolConfig.evictionPredicate.test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
             }
@@ -190,7 +188,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 if (slot == null) continue;
 
                 //TODO test the idle eviction scenario
-                if (poolConfig.evictionPredicate.test(slot)) {
+                if (poolConfig.evictionPredicate.test(slot.poolable, slot)) {
                     destroyPoolable(slot).subscribe();
                     continue;
                 }

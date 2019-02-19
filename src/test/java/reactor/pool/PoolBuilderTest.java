@@ -16,6 +16,7 @@
 package reactor.pool;
 
 import java.time.Duration;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import org.junit.jupiter.api.Test;
@@ -26,13 +27,15 @@ class PoolBuilderTest {
 
     @Test
     void idlePredicate() {
-        Predicate<PooledRef<Object>> predicate = PoolBuilder.idlePredicate(Duration.ofSeconds(3));
+        BiPredicate<Object, PooledRefMetadata> predicate = PoolBuilder.idlePredicate(Duration.ofSeconds(3));
 
-        assertThat(predicate).as("clearly out of bounds")
-                             .accepts(new TestUtils.TestPooledRef<>("anything", 100, 4, 100))
-                             .rejects(new TestUtils.TestPooledRef<>("anything", 100, 2, 100));
+        TestUtils.TestPooledRef<String> outbounds = new TestUtils.TestPooledRef<>("anything", 100, 4, 100);
+        assertThat(predicate.test(outbounds.poolable, outbounds.metadata())).as("clearly out of bounds").isTrue();
 
-        assertThat(predicate).as("ttl is inclusive")
-                             .accepts(new TestUtils.TestPooledRef<>("anything", 100, 3, 100));
+        TestUtils.TestPooledRef<String> inbounds = new TestUtils.TestPooledRef<>("anything", 100, 2, 100);
+        assertThat(predicate.test(inbounds.poolable, inbounds.metadata())).as("clearly within bounds").isFalse();
+
+        TestUtils.TestPooledRef<String> barelyOutbounds = new TestUtils.TestPooledRef<>("anything", 100, 3, 100);
+        assertThat(predicate.test(barelyOutbounds.poolable, barelyOutbounds.metadata())).as("ttl is inclusive").isTrue();
     }
 }

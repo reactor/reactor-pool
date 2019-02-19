@@ -144,7 +144,7 @@ public class CommonPoolTest {
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -198,7 +198,7 @@ public class CommonPoolTest {
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		TestPublisher<Integer> trigger1 = TestPublisher.create();
@@ -261,7 +261,7 @@ public class CommonPoolTest {
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -369,7 +369,7 @@ public class CommonPoolTest {
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((value, metadata) -> !value.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
@@ -421,7 +421,7 @@ public class CommonPoolTest {
 				           .initialSize(2)
 				           .sizeMax(3)
 				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				           .evictionPredicate(slot -> !slot.poolable().isHealthy());
+				           .evictionPredicate((value, metadata) -> !value.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		TestPublisher<Integer> trigger1 = TestPublisher.create();
@@ -487,7 +487,7 @@ public class CommonPoolTest {
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((value, metadata) -> !value.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 
@@ -558,7 +558,7 @@ public class CommonPoolTest {
 					poolableTest.clean();
 					releasedCount.incrementAndGet();
 				}))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -589,7 +589,7 @@ public class CommonPoolTest {
 					           poolableTest.clean();
 					           releasedCount.incrementAndGet();
 				           }))
-				           .evictionPredicate(slot -> !slot.poolable().isHealthy());
+				           .evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		//acquire the only element
@@ -622,7 +622,7 @@ public class CommonPoolTest {
 					poolableTest.clean();
 					releasedCount.incrementAndGet();
 				}))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -656,7 +656,7 @@ public class CommonPoolTest {
 					           poolableTest.clean();
 					           releasedCount.incrementAndGet();
 				           }))
-				           .evictionPredicate(slot -> !slot.poolable().isHealthy());
+				           .evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		//acquire the only element and immediately dispose
@@ -777,7 +777,7 @@ public class CommonPoolTest {
 					poolableTest.clean();
 					throw new IllegalStateException("boom");
 				}))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -799,7 +799,7 @@ public class CommonPoolTest {
 					poolableTest.clean();
 					throw new IllegalStateException("boom");
 				}))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -823,7 +823,7 @@ public class CommonPoolTest {
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeMax(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -853,7 +853,7 @@ public class CommonPoolTest {
 				.sizeMax(3)
 				.initialSize(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -893,7 +893,7 @@ public class CommonPoolTest {
 				.sizeMax(3)
 				.initialSize(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		PooledRef<PoolableTest> slot1 = pool.acquire().block();
@@ -926,7 +926,7 @@ public class CommonPoolTest {
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeMax(3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		assertThat(pool.idleSize()).as("idleSize").isZero();
@@ -945,7 +945,7 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeMax(3)
-				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		assertThat(pool.isDisposed()).as("not yet disposed").isFalse();
@@ -964,7 +964,7 @@ public class CommonPoolTest {
 				.from(Mono.just(uniqueElement))
 				.sizeMax(1)
 				.initialSize(1)
-				.evictionPredicate(slot -> true);
+				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<Formatter> pool = configAdjuster.apply(builder);
 
 		pool.dispose();
@@ -980,7 +980,7 @@ public class CommonPoolTest {
 				.from(Mono.<String>error(new IllegalStateException("boom")))
 				.sizeMax(1)
 				.initialSize(0)
-				.evictionPredicate(f -> true);
+				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		assertThatExceptionOfType(IllegalStateException.class)
@@ -995,7 +995,7 @@ public class CommonPoolTest {
 				.from(Mono.error(new IllegalStateException("boom")))
 				.initialSize(1)
 				.sizeMax(1)
-				.evictionPredicate(f -> true);
+				.evictionPredicate((poolable, metadata) -> true);
 
 		assertThatExceptionOfType(IllegalStateException.class)
 				.isThrownBy(() -> configAdjuster.apply(builder))
@@ -1016,7 +1016,7 @@ public class CommonPoolTest {
 					.from(Mono.just(closeable))
 					.initialSize(1)
 					.sizeMax(1)
-					.evictionPredicate(f -> true);
+					.evictionPredicate((poolable, metadata) -> true);
 			AbstractPool<Closeable> pool = configAdjuster.apply(builder);
 
 			pool.dispose();
@@ -1170,7 +1170,7 @@ public class CommonPoolTest {
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.just("foo"))
-				.evictionPredicate(t -> true)
+				.evictionPredicate((poolable, metadata) -> true)
 				.destroyHandler(s -> {
 					if (flip.compareAndSet(false,
 							true)) {
@@ -1212,7 +1212,7 @@ public class CommonPoolTest {
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.fromCallable(() -> content.getAndSet("bar")))
-				.evictionPredicate(ref -> "foo".equals(ref.poolable()))
+				.evictionPredicate((poolable, metadata) -> "foo".equals(poolable))
 				.metricsRecorder(recorder);
 		Pool<String> pool = configAdjuster.apply(builder);
 
@@ -1234,7 +1234,7 @@ public class CommonPoolTest {
 		PoolBuilder<Integer> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeMax(2)
-				.evictionPredicate(ref -> ref.metadata().acquireCount() >= 2)
+				.evictionPredicate((poolable, metadata) -> metadata.acquireCount() >= 2)
 				.destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
 				.metricsRecorder(recorder);
 		Pool<Integer> pool = configAdjuster.apply(builder);

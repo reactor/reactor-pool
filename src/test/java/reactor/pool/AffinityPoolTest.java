@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.reactivestreams.Subscription;
 
@@ -84,8 +85,9 @@ class AffinityPoolTest {
     }
     //======
 
-    @Test
-    void threadAffinity() throws InterruptedException, ExecutionException {
+    @ParameterizedTest
+    @ValueSource(strings ={"true", "false"})
+    void threadAffinity(boolean lifo) throws InterruptedException, ExecutionException {
         ScheduledExecutorService thread1 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread1"));
         ScheduledExecutorService thread2 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread2"));
         ScheduledExecutorService thread3 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread3"));
@@ -94,6 +96,7 @@ class AffinityPoolTest {
             AffinityPool<String> pool = new AffinityPool<>(
                     PoolBuilder.from(Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)))
                                .threadAffinity(true)
+                               .lifo(lifo)
                                .sizeMax(3)
                                .buildConfig());
 
@@ -405,9 +408,9 @@ class AffinityPoolTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2, 3})
+    @CsvSource({"1, true", "1, false", "2, true", "2, false", "3, true", "3, false"})
     @Tag("metrics")
-    void fastPathMetrics(int concurrency) {
+    void fastPathMetrics(int concurrency, boolean lifo) {
         final TestUtils.InMemoryPoolMetrics recorder = new TestUtils.InMemoryPoolMetrics();
         ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(concurrency);
         Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
@@ -419,6 +422,7 @@ class AffinityPoolTest {
             Pool<String> pool = new AffinityPool<>(
                     PoolBuilder.from(Mono.fromCallable(() -> "---" + allocator.incrementAndGet() + "-->" + Thread.currentThread().getName()))
                                .threadAffinity(true)
+                               .lifo(lifo)
                                .sizeMax(concurrency)
                                .metricsRecorder(recorder)
                                .buildConfig());
@@ -475,9 +479,9 @@ class AffinityPoolTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 3, 10, 100})
+    @CsvSource({"1, true", "1, false", "3, true", "3, false", "10, true", "10, false", "100, true", "100, false"})
     @Tag("metrics")
-    void slowPathMetrics(int max) {
+    void slowPathMetrics(int max, boolean lifo) {
         final TestUtils.InMemoryPoolMetrics recorder = new TestUtils.InMemoryPoolMetrics();
         ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(max + 1);
         Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
@@ -495,6 +499,7 @@ class AffinityPoolTest {
                         return Thread.currentThread().getName();
                     }))
                                .threadAffinity(true)
+                               .lifo(lifo)
                                .sizeMax(max)
                                .metricsRecorder(recorder)
                                .buildConfig());

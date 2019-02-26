@@ -319,14 +319,21 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          */
         final PoolMetricsRecorder            metricsRecorder;
 
+        /**
+         * The order in which pending borrowers are served ({@code false} for FIFO, {@code true} for LIFO).
+         * Defaults to {@code false} (FIFO).
+         */
+        final boolean isLifo;
+
         DefaultPoolConfig(Mono<POOLABLE> allocator,
-                          int initialSize,
-                          AllocationStrategy allocationStrategy,
-                          Function<POOLABLE, Mono<Void>> releaseHandler,
-                          Function<POOLABLE, Mono<Void>> destroyHandler,
-                          Predicate<PooledRef<POOLABLE>> evictionPredicate,
-                          Scheduler acquisitionScheduler,
-                          PoolMetricsRecorder metricsRecorder) {
+                int initialSize,
+                AllocationStrategy allocationStrategy,
+                Function<POOLABLE, Mono<Void>> releaseHandler,
+                Function<POOLABLE, Mono<Void>> destroyHandler,
+                Predicate<PooledRef<POOLABLE>> evictionPredicate,
+                Scheduler acquisitionScheduler,
+                PoolMetricsRecorder metricsRecorder,
+                boolean isLifo) {
             this.allocator = allocator;
             this.initialSize = initialSize;
             this.allocationStrategy = allocationStrategy;
@@ -335,6 +342,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
             this.evictionPredicate = evictionPredicate;
             this.acquisitionScheduler = acquisitionScheduler;
             this.metricsRecorder = metricsRecorder;
+            this.isLifo = isLifo;
         }
     }
 }

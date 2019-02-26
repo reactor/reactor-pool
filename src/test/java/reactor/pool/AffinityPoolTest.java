@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -84,69 +85,86 @@ class AffinityPoolTest {
     //======
 
     @Test
-    void threadAffinity() throws InterruptedException {
-        AffinityPool<String> pool = new AffinityPool<>(
-                PoolBuilder.from(Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)))
-                           .threadAffinity(true)
-                           .sizeMax(3)
-                           .buildConfig());
+    void threadAffinity() throws InterruptedException, ExecutionException {
+        ScheduledExecutorService thread1 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread1"));
+        ScheduledExecutorService thread2 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread2"));
+        ScheduledExecutorService thread3 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r,"thread3"));
 
-        Scheduler thread1 = Schedulers.newSingle("thread1");
-        Map<String, Integer> acquired1 = new HashMap<>(3);
+        try {
+            AffinityPool<String> pool = new AffinityPool<>(
+                    PoolBuilder.from(Mono.fromCallable(() -> Thread.currentThread().getName().substring(0, 7)))
+                               .threadAffinity(true)
+                               .sizeMax(3)
+                               .buildConfig());
 
-        Scheduler thread2 = Schedulers.newSingle("thread2");
-        Map<String, Integer> acquired2 = new HashMap<>(3);
+            Map<String, Integer> acquired1 = new HashMap<>(3);
+            Map<String, Integer> acquired2 = new HashMap<>(3);
+            Map<String, Integer> acquired3 = new HashMap<>(3);
 
-        Scheduler thread3 = Schedulers.newSingle("thread3");
-        Map<String, Integer> acquired3 = new HashMap<>(3);
+            //create the resources and get them for the first triggering release
+            PooledRef<String> ref1 = thread1.submit(() -> pool.acquire().block()).get();
+            PooledRef<String> ref2 = thread2.submit(() -> pool.acquire().block()).get();
+            PooledRef<String> ref3 = thread3.submit(() -> pool.acquire().block()).get();
 
-        final CountDownLatch releaseLatch = new CountDownLatch(10 * 3);
-        for (int i = 0; i < 10; i++) {
-            thread1.schedule(() -> pool.acquire()
-                                       .subscribe(slot -> {
-                                           acquired1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                           if (!slot.poolable().equals("thread1")) {
-                                               System.out.println("unexpected in thread1: " + slot);
-                                           }
+            final CountDownLatch releaseLatch = new CountDownLatch(10 * 3);
+            for (int i = 0; i < 10; i++) {
+                thread1.submit(() -> pool.acquire()
+                                         .subscribe(slot -> {
+                                             acquired1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                             if (!slot.poolable().equals("thread1")) {
+                                                 System.out.println("unexpected in thread1: " + slot);
+                                             }
+                                           thread1.schedule(() -> slot.release().subscribe(), 25, TimeUnit.MILLISECONDS);
+                                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
-                                           thread1.schedule(() -> slot.release().subscribe(), 150, TimeUnit.MILLISECONDS);
-                                       }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+                thread2.submit(() -> pool.acquire()
+                                         .subscribe(slot -> {
+                                             acquired2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                             if (!slot.poolable().equals("thread2")) {
+                                                 System.out.println("unexpected in thread2: " + slot);
+                                             }
+                                           thread2.schedule(() -> slot.release().subscribe(), 25, TimeUnit.MILLISECONDS);
+                                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
-            thread2.schedule(() -> pool.acquire()
-                                       .subscribe(slot -> {
-                                           acquired2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                           if (!slot.poolable().equals("thread2")) {
-                                               System.out.println("unexpected in thread2: " + slot);
-                                           }
-                                           thread2.schedule(() -> slot.release().subscribe(), 200, TimeUnit.MILLISECONDS);
-                                       }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+                thread3.submit(() -> pool.acquire()
+                                         .subscribe(slot -> {
+                                             acquired3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+                                             if (!slot.poolable().equals("thread3")) {
+                                                 System.out.println("unexpected in thread3: " + slot);
+                                             }
+                                           thread3.schedule(() -> slot.release().subscribe(), 25, TimeUnit.MILLISECONDS);
+                                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
 
-            thread3.schedule(() -> pool.acquire()
-                                       .subscribe(slot -> {
-                                           acquired3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
-                                           if (!slot.poolable().equals("thread3")) {
-                                               System.out.println("unexpected in thread3: " + slot);
-                                           }
-                                           thread3.schedule(() -> slot.release().subscribe(), 100, TimeUnit.MILLISECONDS);
-                                       }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+            }
+            thread1.submit((Runnable) ref1.release()::block);
+            thread2.submit((Runnable) ref2.release()::block);
+            thread3.submit((Runnable) ref3.release()::block);
+
+            if (releaseLatch.await(35, TimeUnit.SECONDS)) {
+                assertThat(acquired1)
+                        .as("thread1 acquired")
+                        .containsEntry("thread1", 10)
+                        .hasSize(1);
+                assertThat(acquired2)
+                        .as("thread2 acquired")
+                        .containsEntry("thread2", 10)
+                        .hasSize(1);
+                assertThat(acquired3)
+                        .as("thread3 acquired")
+                        .containsEntry("thread3", 10)
+                        .hasSize(1);
+            }
+            else {
+                System.out.println("acquired1: " + acquired1);
+                System.out.println("acquired2: " + acquired2);
+                System.out.println("acquired3: " + acquired3);
+                fail("didn't release all, but " + releaseLatch.getCount());
+            }
         }
-
-        if (releaseLatch.await(35, TimeUnit.SECONDS)) {
-            assertThat(acquired1)
-                    .as("thread1 acquired")
-                    .hasEntrySatisfying("thread1", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
-            assertThat(acquired2)
-                    .as("thread2 acquired")
-                    .hasEntrySatisfying("thread2", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
-            assertThat(acquired3)
-                    .as("thread3 acquired")
-                    .hasEntrySatisfying("thread3", i -> assertThat(i).isCloseTo(10, Offset.offset(2)));
-        }
-        else {
-            System.out.println("acquired1: " + acquired1);
-            System.out.println("acquired2: " + acquired2);
-            System.out.println("acquired3: " + acquired3);
-            fail("didn't release all, but " + releaseLatch.getCount());
+        finally {
+            thread1.shutdown();
+            thread2.shutdown();
+            thread3.shutdown();
         }
     }
 

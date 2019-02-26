@@ -59,6 +59,9 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         this.metricsRecorder = poolConfig.metricsRecorder;
     }
 
+    abstract boolean elementOffer(POOLABLE element);
+    abstract int idleSize();
+
     abstract void doAcquire(Borrower<POOLABLE> borrower);
 
     private void defaultDestroy(@Nullable POOLABLE poolable) {

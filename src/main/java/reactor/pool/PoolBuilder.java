@@ -234,7 +234,7 @@ public class PoolBuilder<T> {
         if (isThreadAffinity) {
             return new AffinityPool<>(config);
         }
-        return new QueuePool<>(config);
+        return new SimpleFifoPool<>(config);
     }
 
     //kept package-private for the benefit of tests

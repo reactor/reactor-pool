@@ -116,6 +116,16 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
+    @Override
+    boolean elementOffer(POOLABLE element) {
+        return availableElements.offer(new AffinityPooledRef<>(this, element));
+    }
+
+    @Override
+    int idleSize() {
+        return availableElements.size();
+    }
+
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
         if (poolConfig.allocationStrategy.getPermits(1) == 1) {
             long start = metricsRecorder.now();
@@ -135,7 +145,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
         else {
             //cannot create, add to pendingLocal
-            subPool.localPendings.offer(borrower);
+            subPool.offerPending(borrower);
             //now it's just a matter of waiting for a #release
         }
     }
@@ -220,9 +230,9 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         Map<Long, SubPool<POOLABLE>> toClose = POOLS.getAndSet(this, TERMINATED);
         if (toClose != TERMINATED) {
             for (SubPool<POOLABLE> subPool : toClose.values()) {
-                Queue<Borrower<POOLABLE>> q = subPool.localPendings;
-                while(!q.isEmpty()) {
-                    q.poll().fail(new RuntimeException("Pool has been shut down"));
+                Borrower<POOLABLE> pending;
+                while((pending = subPool.pollPending()) != null) {
+                    pending.fail(new RuntimeException("Pool has been shut down"));
                 }
             }
             toClose.clear();
@@ -252,7 +262,15 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             this.localPendings = new MpscLinkedQueue8<>();
         }
 
-        boolean tryLockForSlowPath() {
+        public void offerPending(Borrower<POOLABLE> pending) {
+            this.localPendings.offer(pending);
+        }
+
+        public Borrower<POOLABLE> pollPending() {
+            return this.localPendings.poll();
+        }
+
+        public boolean tryLockForSlowPath() {
             return DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1);
         }
 

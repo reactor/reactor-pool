@@ -33,10 +33,12 @@ import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
+import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
 
 /**
- * The {@link QueuePool} is based on MPSC queues for both idle resources and pending {@link Pool#acquire()} Monos.
+ * The {@link SimplePool} is based on MPSC queues for idle resources and FIFO or LIFO data structures for
+ * pending {@link Pool#acquire()} Monos.
  * It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
  * be handed off on any of the following {@link Thread threads}:
  * <ul>
@@ -48,25 +50,21 @@ import reactor.util.concurrent.Queues;
  *
  * @author Simon Baslé
  */
-final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
-
-    private static final Queue TERMINATED = Queues.empty().get();
+abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     final Queue<QueuePooledRef<POOLABLE>> elements;
 
-    volatile int acquired;
-    private static final AtomicIntegerFieldUpdater<QueuePool> ACQUIRED = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "acquired");
+    volatile int                                               acquired;
+    private static final AtomicIntegerFieldUpdater<SimplePool> ACQUIRED = AtomicIntegerFieldUpdater.newUpdater(
+            SimplePool.class, "acquired");
 
-    volatile Queue<Borrower<POOLABLE>> pending;
-    private static final AtomicReferenceFieldUpdater<QueuePool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(QueuePool.class, Queue.class, "pending");
-
-    volatile int wip;
-    private static final AtomicIntegerFieldUpdater<QueuePool> WIP = AtomicIntegerFieldUpdater.newUpdater(QueuePool.class, "wip");
+    volatile int                                               wip;
+    private static final AtomicIntegerFieldUpdater<SimplePool> WIP = AtomicIntegerFieldUpdater.newUpdater(
+            SimplePool.class, "wip");
 
 
-    public QueuePool(DefaultPoolConfig<POOLABLE> poolConfig) {
-        super(poolConfig, Loggers.getLogger(QueuePool.class));
-        this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
+    SimplePool(DefaultPoolConfig<POOLABLE> poolConfig) {
+        super(poolConfig, Loggers.getLogger(SimplePool.class));
         int maxSize = poolConfig.allocationStrategy.estimatePermitCount();
         if (maxSize == Integer.MAX_VALUE) {
             this.elements = new MpscLinkedQueue8<>();
@@ -90,6 +88,23 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
+    /**
+     * @return number of pending borrowers
+     */
+    abstract int pendingSize();
+
+    /**
+     * @return the next {@link reactor.pool.AbstractPool.Borrower} to serve
+     */
+    @Nullable
+    abstract Borrower<POOLABLE> pendingPoll();
+
+    /**
+     * @param pending a new {@link reactor.pool.AbstractPool.Borrower} to register as pending
+     * @return true if the pool had capacity to register this new pending
+     */
+    abstract boolean pendingOffer(Borrower<POOLABLE> pending);
+
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
         return new QueueBorrowerMono<>(this); //the mono is unknown to the pool until requested
@@ -97,18 +112,28 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     void doAcquire(Borrower<POOLABLE> borrower) {
-        if (pending == TERMINATED) {
+        if (isDisposed()) {
             borrower.fail(new RuntimeException("Pool has been shut down"));
             return;
         }
 
-        pending.add(borrower);
+        pendingOffer(borrower);
         drain();
+    }
+
+    @Override
+    boolean elementOffer(POOLABLE element) {
+        return elements.offer(new QueuePooledRef<>(this, element));
+    }
+
+    @Override
+    int idleSize() {
+        return elements.size();
     }
 
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
-        if (pending != TERMINATED) {
+        if (!isDisposed()) {
             if (!poolConfig.evictionPredicate.test(poolSlot)) {
                 metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
@@ -123,7 +148,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    private void drain() {
+    void drain() {
         if (WIP.getAndIncrement(this) == 0) {
             drainLoop();
         }
@@ -134,12 +159,12 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         for (;;) {
             int availableCount = elements.size();
-            int pendingCount = pending.size();
+            int pendingCount = pendingSize();
             int permits = poolConfig.allocationStrategy.estimatePermitCount();
 
             if (availableCount == 0) {
                 if (pendingCount > 0 && permits > 0) {
-                    final Borrower<POOLABLE> borrower = pending.poll(); //shouldn't be null
+                    final Borrower<POOLABLE> borrower = pendingPoll(); //shouldn't be null
                     if (borrower == null) {
                         continue;
                     }
@@ -176,7 +201,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 }
 
                 //there is a party currently pending acquiring
-                Borrower<POOLABLE> inner = pending.poll();
+                Borrower<POOLABLE> inner = pendingPoll();
                 if (inner == null) {
                     elements.offer(slot);
                     continue;
@@ -192,39 +217,18 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    @Override
-    public void dispose() {
-        @SuppressWarnings("unchecked")
-        Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
-        if (q != TERMINATED) {
-            while(!q.isEmpty()) {
-                q.poll().fail(new RuntimeException("Pool has been shut down"));
-            }
-
-            while (!elements.isEmpty()) {
-                destroyPoolable(elements.poll()).block();
-            }
-        }
-    }
-
-    @Override
-    public boolean isDisposed() {
-        return pending == TERMINATED;
-    }
-
-
     static final class QueuePooledRef<T> extends AbstractPooledRef<T> {
 
-        final QueuePool<T> pool;
+        final SimplePool<T> pool;
 
-        QueuePooledRef(QueuePool<T> pool, T poolable) {
+        QueuePooledRef(SimplePool<T> pool, T poolable) {
             super(poolable, pool.metricsRecorder);
             this.pool = pool;
         }
 
         @Override
         public Mono<Void> release() {
-            if (PENDING.get(pool) == TERMINATED) {
+            if (pool.isDisposed()) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state
                 markReleased();
                 return pool.destroyPoolable(this);
@@ -255,9 +259,9 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     static final class QueueBorrowerMono<T> extends Mono<PooledRef<T>> {
 
-        final QueuePool<T> parent;
+        final SimplePool<T> parent;
 
-        QueueBorrowerMono(QueuePool<T> pool) {
+        QueueBorrowerMono(SimplePool<T> pool) {
             this.parent = pool;
         }
 
@@ -272,7 +276,7 @@ final class QueuePool<POOLABLE> extends AbstractPool<POOLABLE> {
     private static final class QueuePoolRecyclerInner<T> implements CoreSubscriber<Void>, Scannable, Subscription {
 
         final CoreSubscriber<? super Void> actual;
-        final QueuePool<T> pool;
+        final SimplePool<T>                pool;
 
         //poolable can be checked for null to protect against protocol errors
         QueuePooledRef<T> pooledRef;

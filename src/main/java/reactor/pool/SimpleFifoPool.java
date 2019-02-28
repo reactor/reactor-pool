@@ -45,17 +45,30 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
     @Override
     int pendingSize() {
-        return PENDING.get(this).size();
+        return PENDING_COUNT.get(this);
     }
 
     @Override
     boolean pendingOffer(Borrower<POOLABLE> pending) {
-        return PENDING.get(this).offer(pending);
+        int maxPending = poolConfig.maxPending;
+        for (;;) {
+            int currentPending = PENDING_COUNT.get(this);
+            if (maxPending >= 0 && currentPending == maxPending) {
+                pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                return false;
+            }
+            else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
+                return this.pending.offer(pending);
+            }
+        }
     }
 
     @Override
     Borrower<POOLABLE> pendingPoll() {
-        return (Borrower<POOLABLE>) PENDING.get(this).poll();
+        Queue<Borrower<POOLABLE>> q = this.pending;
+        Borrower<POOLABLE> b = q.poll();
+        if (b != null) PENDING_COUNT.decrementAndGet(this);
+        return b;
     }
 
     @Override

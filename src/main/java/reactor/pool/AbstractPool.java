@@ -52,6 +52,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
     final PoolMetricsRecorder metricsRecorder;
 
+    volatile     int                                     pendingCount;
+    static final AtomicIntegerFieldUpdater<AbstractPool> PENDING_COUNT = AtomicIntegerFieldUpdater.newUpdater(AbstractPool.class, "pendingCount");
 
     AbstractPool(DefaultPoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
@@ -285,6 +287,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          */
         final AllocationStrategy             allocationStrategy;
         /**
+         * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediatately fail any acquire
+         * when no idle resource is available and the pool cannot grow. Use a negative number to deactivate.
+         */
+        final int                            maxPending;
+        /**
          * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
          * the resource in order for it to become usable again. The {@link #evictionPredicate} is applied AFTER this reset.
          * <p>
@@ -326,17 +333,19 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         final boolean isLifo;
 
         DefaultPoolConfig(Mono<POOLABLE> allocator,
-                int initialSize,
-                AllocationStrategy allocationStrategy,
-                Function<POOLABLE, Mono<Void>> releaseHandler,
-                Function<POOLABLE, Mono<Void>> destroyHandler,
-                Predicate<PooledRef<POOLABLE>> evictionPredicate,
-                Scheduler acquisitionScheduler,
-                PoolMetricsRecorder metricsRecorder,
-                boolean isLifo) {
+                          int initialSize,
+                          AllocationStrategy allocationStrategy,
+                          int maxPending,
+                          Function<POOLABLE, Mono<Void>> releaseHandler,
+                          Function<POOLABLE, Mono<Void>> destroyHandler,
+                          Predicate<PooledRef<POOLABLE>> evictionPredicate,
+                          Scheduler acquisitionScheduler,
+                          PoolMetricsRecorder metricsRecorder,
+                          boolean isLifo) {
             this.allocator = allocator;
             this.initialSize = initialSize;
             this.allocationStrategy = allocationStrategy;
+            this.maxPending = maxPending;
             this.releaseHandler = releaseHandler;
             this.destroyHandler = destroyHandler;
             this.evictionPredicate = evictionPredicate;

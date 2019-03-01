@@ -44,6 +44,16 @@ public interface AllocationStrategy {
     int estimatePermitCount();
 
     /**
+     * @return the maximum number of permits this strategy can grant in total, or {@link Integer#MAX_VALUE} for unbounded.
+     */
+    int permitMaximum();
+
+    /**
+     * @return a best estimate of the number of permits currently granted, between 0 and {@link Integer#MAX_VALUE}
+     */
+    int permitGranted();
+
+    /**
      * Update the strategy to indicate that N resources were discarded from the {@link Pool}, potentially leaving space
      * for N new ones to be allocated. Users MUST ensure that this method isn't called with a value greater than the
      * number of held permits it has.

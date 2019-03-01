@@ -57,12 +57,11 @@ public class PoolBuilder<T> {
     }
 
     final Mono<T> allocator;
-
     boolean                                isThreadAffinity     = true;
     boolean                                isLifo               = false;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
-    AllocationStrategy                     allocationStrategy   = AllocationStrategies.UNBOUNDED;
+    AllocationStrategy                     allocationStrategy   = null;
     Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
     Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
     BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
@@ -185,7 +184,7 @@ public class PoolBuilder<T> {
      * @return this {@link Pool} builder
 	 */
 	public PoolBuilder<T> sizeUnbounded() {
-		return allocationStrategy(AllocationStrategies.UNBOUNDED);
+		return allocationStrategy(new AllocationStrategies.UnboundedAllocationStrategy());
 	}
 
     /**
@@ -298,7 +297,7 @@ public class PoolBuilder<T> {
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
         return new AbstractPool.DefaultPoolConfig<>(allocator,
                 initialSize,
-                allocationStrategy,
+                allocationStrategy == null ? new AllocationStrategies.UnboundedAllocationStrategy() : allocationStrategy,
                 maxPending,
                 releaseHandler,
                 destroyHandler,

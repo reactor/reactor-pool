@@ -120,7 +120,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     @Override
-    int idleSize() {
+    public int idleSize() {
         return elements.size();
     }
 

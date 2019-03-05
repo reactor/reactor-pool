@@ -44,11 +44,6 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     }
 
     @Override
-    int pendingSize() {
-        return PENDING_COUNT.get(this);
-    }
-
-    @Override
     boolean pendingOffer(Borrower<POOLABLE> pending) {
         int maxPending = poolConfig.maxPending;
         for (;;) {
@@ -58,7 +53,8 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
                 return false;
             }
             else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
-                return this.pending.offer(pending);
+                this.pending.offer(pending); //unbounded
+                return true;
             }
         }
     }

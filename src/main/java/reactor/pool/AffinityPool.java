@@ -382,12 +382,27 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         public void offerPending(Borrower<POOLABLE> pending) {
-            this.localPendings.push(pending);
+            int maxPending = parent.poolConfig.maxPending;
+            for (;;) {
+                int currentPending = AbstractPool.PENDING_COUNT.get(parent);
+                if (maxPending >= 0 && currentPending == maxPending) {
+                    pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                    return;
+                }
+                else if (AbstractPool.PENDING_COUNT.compareAndSet(parent, currentPending, currentPending + 1)) {
+                    this.localPendings.push(pending);
+                    return;
+                }
+            }
         }
 
         @Override
         public Borrower<POOLABLE> pollPending() {
-            return this.localPendings.pop();
+            Borrower<POOLABLE> b = this.localPendings.pop();
+            if (b != null) {
+                AbstractPool.PENDING_COUNT.decrementAndGet(parent);
+            }
+            return b;
         }
 
         @Override

@@ -40,18 +40,27 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     }
 
     @Override
-    int pendingSize() {
-        return PENDING.get(this).size();
-    }
-
-    @Override
     boolean pendingOffer(Borrower<POOLABLE> pending) {
-        return this.pending.push(pending);
+        int maxPending = poolConfig.maxPending;
+        for (;;) {
+            int currentPending = PENDING_COUNT.get(this);
+            if (maxPending >= 0 && currentPending == maxPending) {
+                pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                return false;
+            }
+            else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
+                this.pending.push(pending); //unbounded
+                return true;
+            }
+        }
     }
 
     @Override
     Borrower<POOLABLE> pendingPoll() {
-        return this.pending.pop();
+        TreiberStack<Borrower<POOLABLE>> q = this.pending;
+        Borrower<POOLABLE> b = q.pop();
+        if (b != null) PENDING_COUNT.decrementAndGet(this);
+        return b;
     }
 
     @Override

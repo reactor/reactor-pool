@@ -37,12 +37,16 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
+import reactor.test.util.RaceTestUtils;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
 
@@ -666,6 +670,101 @@ public class CommonPoolTest {
 						() -> assertThat(releasedCount).as("released").hasValue(1));
 
 		assertThat(newCount).as("created").hasValue(1);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void pendingLimitSync(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger allocatorCount = new AtomicInteger();
+		Disposable.Composite composite = Disposables.composite();
+
+		try {
+			PoolBuilder<Integer> builder = PoolBuilder.from(Mono.fromCallable(allocatorCount::incrementAndGet))
+			                                          .sizeMax(1)
+			                                          .initialSize(1)
+			                                          .maxPendingAcquire(1);
+			AbstractPool<Integer> pool = configAdjuster.apply(builder);
+			PooledRef<Integer> hold = pool.acquire().block();
+
+			AtomicReference<Throwable> error = new AtomicReference<>();
+			AtomicInteger errorCount = new AtomicInteger();
+			AtomicInteger otherTerminationCount = new AtomicInteger();
+
+			for (int i = 0; i < 2; i++) {
+				composite.add(
+						pool.acquire()
+						    .doFinally(fin -> {
+							    if (SignalType.ON_ERROR == fin) errorCount.incrementAndGet();
+							    else otherTerminationCount.incrementAndGet();
+						    })
+						    .doOnError(error::set)
+						    .subscribe()
+				);
+			}
+
+			assertThat(AbstractPool.PENDING_COUNT.get(pool)).as("pending counter limited to 1").isEqualTo(1);
+
+			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
+			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);
+			assertThat(error.get()).as("extraneous pending error")
+			                       .isInstanceOf(IllegalStateException.class)
+			                       .hasMessage("Pending acquire queue has reached its maximum size of 1");
+
+			hold.release().block();
+
+			assertThat(errorCount).as("error count stable after release").hasValue(1);
+			assertThat(otherTerminationCount).as("pending succeeds after release").hasValue(1);
+		}
+		finally {
+			composite.dispose();
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void pendingLimitAsync(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger allocatorCount = new AtomicInteger();
+		final Disposable.Composite composite = Disposables.composite();
+
+		try {
+			PoolBuilder<Integer> builder = PoolBuilder.from(Mono.fromCallable(allocatorCount::incrementAndGet))
+			                                          .sizeMax(1)
+			                                          .initialSize(1)
+			                                          .maxPendingAcquire(1);
+			AbstractPool<Integer> pool = configAdjuster.apply(builder);
+			PooledRef<Integer> hold = pool.acquire().block();
+
+			AtomicReference<Throwable> error = new AtomicReference<>();
+			AtomicInteger errorCount = new AtomicInteger();
+			AtomicInteger otherTerminationCount = new AtomicInteger();
+
+			final Runnable runnable = () -> composite.add(
+					pool.acquire()
+					    .doFinally(fin -> {
+					    	if (SignalType.ON_ERROR == fin) errorCount.incrementAndGet();
+					    	else otherTerminationCount.incrementAndGet();
+					    })
+					    .doOnError(error::set)
+					    .subscribe()
+			);
+			RaceTestUtils.race(runnable, runnable);
+
+			assertThat(AbstractPool.PENDING_COUNT.get(pool)).as("pending counter limited to 1").isEqualTo(1);
+
+			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
+			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);
+			assertThat(error.get()).as("extraneous pending error")
+			                       .isInstanceOf(IllegalStateException.class)
+			                       .hasMessage("Pending acquire queue has reached its maximum size of 1");
+
+			hold.release().block();
+
+			assertThat(errorCount).as("error count stable after release").hasValue(1);
+			assertThat(otherTerminationCount).as("pending succeeds after release").hasValue(1);
+		}
+		finally {
+			composite.dispose();
+		}
 	}
 
 	@ParameterizedTest

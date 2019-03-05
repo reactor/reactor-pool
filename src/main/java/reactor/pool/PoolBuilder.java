@@ -54,6 +54,7 @@ public class PoolBuilder<T> {
     boolean                 isThreadAffinity     = true;
     boolean                 isLifo               = false;
     int                     initialSize          = 0;
+    int                     maxPending           = -1;
     AllocationStrategy      allocationStrategy   = AllocationStrategies.UNBOUNDED;
     Function<T, Mono<Void>> releaseHandler       = noopHandler();
     Function<T, Mono<Void>> destroyHandler       = noopHandler();
@@ -63,6 +64,37 @@ public class PoolBuilder<T> {
 
     PoolBuilder(Mono<T> allocator) {
         this.allocator = allocator;
+    }
+
+    /**
+     * Set the maximum number of <i>subscribed</i> {@link Pool#acquire()} Monos that can
+     * be in a pending state (ie they wait for a resource to be released, as no idle
+     * resource was immediately available, and the pool add already allocated the maximum
+     * permitted amount). Set to {@code 0} to immediately fail all such acquisition attempts.
+     * Set to {@code -1} to deactivate (or prefer using the more explicit {@link #maxPendingAcquireUnbounded()}).
+     * <p>
+     * Default to -1.
+     *
+     * @param maxPending the maximum number of registered acquire monos to keep in a pending queue
+     * @return a builder of {@link Pool} with a maximum pending queue size.
+     */
+    public PoolBuilder<T> maxPendingAcquire(int maxPending) {
+        this.maxPending = maxPending;
+        return this;
+    }
+
+    /**
+     * Uncap the number of <i>subscribed</i> {@link Pool#acquire()} Monos that can be in a
+     * pending state (ie they wait for a resource to be released, as no idle resource was
+     * immediately available, and the pool add already allocated the maximum permitted amount).
+     * <p>
+     * This is the default.
+     *
+     * @return a builder of {@link Pool} with no maximum pending queue size.
+     */
+    public PoolBuilder<T> maxPendingAcquireUnbounded() {
+        this.maxPending = -1;
+        return this;
     }
 
     /**
@@ -259,6 +291,7 @@ public class PoolBuilder<T> {
         return new AbstractPool.DefaultPoolConfig<>(allocator,
                 initialSize,
                 allocationStrategy,
+                maxPending,
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,

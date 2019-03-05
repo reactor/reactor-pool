@@ -89,11 +89,6 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     /**
-     * @return number of pending borrowers
-     */
-    abstract int pendingSize();
-
-    /**
      * @return the next {@link reactor.pool.AbstractPool.Borrower} to serve
      */
     @Nullable
@@ -159,7 +154,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         for (;;) {
             int availableCount = elements.size();
-            int pendingCount = pendingSize();
+            int pendingCount = PENDING_COUNT.get(this);
             int permits = poolConfig.allocationStrategy.estimatePermitCount();
 
             if (availableCount == 0) {

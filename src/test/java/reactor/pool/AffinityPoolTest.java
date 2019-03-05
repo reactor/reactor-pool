@@ -66,7 +66,7 @@ class AffinityPoolTest {
                           .initialSize(minSize)
                           .sizeMax(maxSize)
                           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-                          .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                          .evictionPredicate((value, metadata) -> !value.isHealthy())
                           .buildConfig();
     }
 
@@ -80,7 +80,7 @@ class AffinityPoolTest {
                               poolableTest.clean();
                               additionalCleaner.accept(poolableTest);
                           }))
-                          .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                          .evictionPredicate((value, metadata) -> !value.isHealthy())
                           .buildConfig();
     }
     //======
@@ -384,7 +384,7 @@ class AffinityPoolTest {
             DefaultPoolConfig<Integer> config = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
                                                            .threadAffinity(true)
                                                            .sizeMax(3)
-                                                           .evictionPredicate(ref -> ref.acquireCount() >= 3)
+                                                           .evictionPredicate((value, metadata) -> metadata.acquireCount() >= 3)
                                                            .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
                                                            .buildConfig();
             AffinityPool<Integer> pool = new AffinityPool<>(config);

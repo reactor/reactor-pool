@@ -29,7 +29,8 @@ import java.util.concurrent.atomic.LongAdder;
  */
 public class TestUtils {
 
-    public static final class TestPooledRef<T> implements PooledRef<T> {
+    public static final class TestPooledRef<T> implements PooledRef<T>,
+                                                          PooledRefMetadata {
 
         final T poolable;
         final int msSinceRelease;
@@ -56,6 +57,11 @@ public class TestUtils {
         @Override
         public Mono<Void> invalidate() {
             return Mono.empty();
+        }
+
+        @Override
+        public PooledRefMetadata metadata() {
+            return this;
         }
 
         @Override

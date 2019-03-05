@@ -20,8 +20,8 @@ import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 import org.reactivestreams.Subscription;
 
@@ -87,7 +87,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      * @param ref the {@link PooledRef} that is not part of the live set
      * @return the destroy {@link Mono}, which MUST be subscribed immediately
      */
-    Mono<Void> destroyPoolable(PooledRef<POOLABLE> ref) {
+    Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy.returnPermits(1);
         long start = metricsRecorder.now();
@@ -110,7 +110,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      *
      * @author Simon Baslé
      */
-    abstract static class AbstractPooledRef<T> implements PooledRef<T> {
+    abstract static class AbstractPooledRef<T> implements PooledRef<T>, PooledRefMetadata {
 
         final long            creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;
@@ -134,6 +134,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         @Override
         public T poolable() {
             return poolable;
+        }
+
+        @Override
+        public PooledRefMetadata metadata() {
+            return this;
         }
 
         /**
@@ -304,14 +309,14 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          * <p>
          * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
          */
-        final Function<POOLABLE, Mono<Void>> destroyHandler;
+        final Function<POOLABLE, Mono<Void>>           destroyHandler;
         /**
-         * A {@link Predicate} that checks if a resource should be disposed ({@code true}) or is still in a valid state
+         * A {@link BiPredicate} that checks if a resource should be destroyed ({@code true}) or is still in a valid state
          * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
          * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
-         * reaping process.
+         * reaping process. Both the resource and some {@link PooledRefMetadata metrics} about the resource's life within the pool are provided.
          */
-        final Predicate<PooledRef<POOLABLE>> evictionPredicate;
+        final BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate;
         /**
          * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
          * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator} produced new
@@ -319,7 +324,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          * <p>
          * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
          */
-        final Scheduler                      acquisitionScheduler;
+        final Scheduler                                acquisitionScheduler;
         /**
          * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
          * implementations.
@@ -338,7 +343,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
                           int maxPending,
                           Function<POOLABLE, Mono<Void>> releaseHandler,
                           Function<POOLABLE, Mono<Void>> destroyHandler,
-                          Predicate<PooledRef<POOLABLE>> evictionPredicate,
+                          BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
                           Scheduler acquisitionScheduler,
                           PoolMetricsRecorder metricsRecorder,
                           boolean isLifo) {

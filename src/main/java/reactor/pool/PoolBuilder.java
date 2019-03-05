@@ -18,6 +18,7 @@ package reactor.pool;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -51,16 +52,16 @@ public class PoolBuilder<T> {
 
     final Mono<T> allocator;
 
-    boolean                 isThreadAffinity     = true;
-    boolean                 isLifo               = false;
-    int                     initialSize          = 0;
-    int                     maxPending           = -1;
-    AllocationStrategy      allocationStrategy   = AllocationStrategies.UNBOUNDED;
-    Function<T, Mono<Void>> releaseHandler       = noopHandler();
-    Function<T, Mono<Void>> destroyHandler       = noopHandler();
-    Predicate<PooledRef<T>> evictionPredicate    = neverPredicate();
-    Scheduler               acquisitionScheduler = Schedulers.immediate();
-    PoolMetricsRecorder     metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    boolean                           isThreadAffinity     = true;
+    boolean                           isLifo               = false;
+    int                               initialSize          = 0;
+    int                               maxPending           = -1;
+    AllocationStrategy                allocationStrategy   = AllocationStrategies.UNBOUNDED;
+    Function<T, Mono<Void>>           releaseHandler       = noopHandler();
+    Function<T, Mono<Void>>           destroyHandler       = noopHandler();
+    BiPredicate<T, PooledRefMetadata> evictionPredicate    = neverPredicate();
+    Scheduler                         acquisitionScheduler = Schedulers.immediate();
+    PoolMetricsRecorder               metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
     PoolBuilder(Mono<T> allocator) {
         this.allocator = allocator;
@@ -212,33 +213,34 @@ public class PoolBuilder<T> {
     }
 
     /**
-     * Provide an eviction {@link Predicate} that allows to decide if a resource is fit for being placed in the {@link Pool}.
+     * Provide an eviction {@link BiPredicate} that allows to decide if a resource is fit for being placed in the {@link Pool}.
      * This can happen whenever a resource is {@link PooledRef#release() released} back to the {@link Pool} (after
      * it was processed by the {@link #releaseHandler(Function)}), but also when being {@link Pool#acquire() acquired}
      * from the pool (triggering a second pass if the object is found to be unfit, eg. it has been idle for too long).
      * Finally, some pool implementations MAY implement a reaper thread mechanism that detect idle resources through
      * this predicate and destroy them.
      * <p>
-     * Defaults to never evicting.
+     * Defaults to never evicting (a {@link BiPredicate} that always returns false).
      *
-     * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should be destroyed
+     * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should
+     * be destroyed, {@code false} if it should be put back into the pool.
      * @return this {@link Pool} builder
      * @see #evictionIdle(Duration)
      */
-    public PoolBuilder<T> evictionPredicate(Predicate<PooledRef<T>> evictionPredicate) {
+    public PoolBuilder<T> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
         this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
         return this;
     }
 
     /**
-     * Use an {@link #evictionPredicate(Predicate) eviction predicate} that matches {@link PooledRef} of resources
-     * that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
+     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that causes eviction (ie returns {@code true})
+     * of resources that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
      * {@link Duration} (inclusive).
      * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
      *
      * @param maxIdleTime the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
      * @return this {@link Pool} builder
-     * @see #evictionPredicate(Predicate)
+     * @see #evictionPredicate(BiPredicate)
      */
     public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
         return evictionPredicate(idlePredicate(maxIdleTime));
@@ -306,15 +308,15 @@ public class PoolBuilder<T> {
     }
 
     @SuppressWarnings("unchecked")
-    static <T> Predicate<PooledRef<T>>  neverPredicate() {
-        return (Predicate<PooledRef<T>>) NEVER_PREDICATE;
+    static <T> BiPredicate<T, PooledRefMetadata> neverPredicate() {
+        return (BiPredicate<T, PooledRefMetadata>) NEVER_PREDICATE;
     }
 
-    static <T> Predicate<PooledRef<T>> idlePredicate(Duration maxIdleTime) {
-        return slot -> slot.idleTime() >= maxIdleTime.toMillis();
+    static <T> BiPredicate<T, PooledRefMetadata> idlePredicate(Duration maxIdleTime) {
+        return (poolable, meta) -> meta.idleTime() >= maxIdleTime.toMillis();
     }
 
     static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
-    static final Predicate<?>            NEVER_PREDICATE = it -> false;
+    static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
 
 }

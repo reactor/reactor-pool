@@ -59,7 +59,7 @@ class SimpleLifoPoolTest {
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .lifo(true)
                 .buildConfig();
     }
@@ -69,7 +69,7 @@ class SimpleLifoPoolTest {
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .acquisitionScheduler(deliveryScheduler)
                 .lifo(true)
                 .buildConfig();
@@ -84,7 +84,7 @@ class SimpleLifoPoolTest {
                     poolableTest.clean();
                     additionalCleaner.accept(poolableTest);
                 }))
-                .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .lifo(true)
                 .buildConfig();
     }
@@ -730,7 +730,7 @@ class SimpleLifoPoolTest {
                         .initialSize(3)
                         .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
-                        .evictionPredicate(slot -> !slot.poolable().isHealthy())
+                        .evictionPredicate((value, metadata) -> !value.isHealthy())
                         .buildConfig());
 
         PooledRef<PoolableTest> acquired1 = pool.acquire().block();

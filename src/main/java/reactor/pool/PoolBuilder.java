@@ -52,6 +52,7 @@ public class PoolBuilder<T> {
     final Mono<T> allocator;
 
     boolean                 isThreadAffinity     = true;
+    boolean                 isLifo               = false;
     int                     initialSize          = 0;
     AllocationStrategy      allocationStrategy   = AllocationStrategies.UNBOUNDED;
     Function<T, Mono<Void>> releaseHandler       = noopHandler();
@@ -75,6 +76,19 @@ public class PoolBuilder<T> {
      */
     public PoolBuilder<T> threadAffinity(boolean isThreadAffinity) {
         this.isThreadAffinity = isThreadAffinity;
+        return this;
+    }
+
+    /**
+     * Change the order in which pending {@link Pool#acquire()} {@link Mono Monos} are served
+     * whenever a resource becomes available. The default is FIFO, but passing true to this
+     * method changes it to LIFO.
+     *
+     * @param isLastInFirstOut should the pending order be LIFO ({@code true}) or FIFO ({@code false})?
+     * @return a builder of {@link Pool} with the requested pending acquire ordering.
+     */
+    public PoolBuilder<T> lifo(boolean isLastInFirstOut) {
+        this.isLifo = isLastInFirstOut;
         return this;
     }
 
@@ -234,16 +248,23 @@ public class PoolBuilder<T> {
         if (isThreadAffinity) {
             return new AffinityPool<>(config);
         }
+        if (isLifo) {
+            return new SimpleLifoPool<>(config);
+        }
         return new SimpleFifoPool<>(config);
     }
 
     //kept package-private for the benefit of tests
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, allocationStrategy,
+        return new AbstractPool.DefaultPoolConfig<>(allocator,
+                initialSize,
+                allocationStrategy,
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,
-                acquisitionScheduler, metricsRecorder);
+                acquisitionScheduler,
+                metricsRecorder,
+                isLifo);
     }
 
     @SuppressWarnings("unchecked")

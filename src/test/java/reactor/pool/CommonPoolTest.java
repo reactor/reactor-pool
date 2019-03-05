@@ -59,6 +59,7 @@ public class CommonPoolTest {
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T> builder) {
 				return (AbstractPool<T>) builder.threadAffinity(true)
+				                                .lifo(false)
 				                                .build();
 			}
 
@@ -74,6 +75,7 @@ public class CommonPoolTest {
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T> builder) {
 				return (AbstractPool<T>) builder.threadAffinity(false)
+				                                .lifo(false)
 				                                .build();
 			}
 
@@ -84,12 +86,48 @@ public class CommonPoolTest {
 		};
 	}
 
+	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> affinityPoolLifo() {
+		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
+			@Override
+			public AbstractPool<T> apply(PoolBuilder<T> builder) {
+				return (AbstractPool<T>) builder.threadAffinity(true)
+				                                .lifo(true)
+				                                .build();
+			}
+
+			@Override
+			public String toString() {
+				return "affinityPool LIFO";
+			}
+		};
+	}
+
+	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> simplePoolLifo() {
+		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
+			@Override
+			public AbstractPool<T> apply(PoolBuilder<T> builder) {
+				return (AbstractPool<T>) builder.threadAffinity(false)
+				                                .lifo(true)
+				                                .build();
+			}
+
+			@Override
+			public String toString() {
+				return "simplePool LIFO";
+			}
+		};
+	}
+
 	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> allPools() {
-		return Arrays.asList(simplePoolFifo(), affinityPoolFifo());
+		return Arrays.asList(simplePoolFifo(), simplePoolLifo(), affinityPoolFifo(), affinityPoolLifo());
 	}
 
 	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> fifoPools() {
 		return Arrays.asList(simplePoolFifo(), affinityPoolFifo());
+	}
+
+	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> lifoPools() {
+		return Arrays.asList(simplePoolLifo(), affinityPoolLifo());
 	}
 
 	@ParameterizedTest
@@ -274,6 +312,232 @@ public class CommonPoolTest {
 		}
 		else {
 			fail("not enough new elements generated, missing " + latch3.getCount());
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("lifoPools")
+	void simpleLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster)
+			throws InterruptedException {
+		CountDownLatch latch = new CountDownLatch(2);
+		AtomicInteger verif = new AtomicInteger();
+		AtomicInteger newCount = new AtomicInteger();
+
+		PoolBuilder<PoolableTest> builder =
+				PoolBuilder.from(Mono.defer(() ->
+						Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				           .sizeMax(1)
+				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean));
+
+		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		PooledRef<PoolableTest> ref = pool.acquire().block();
+
+		pool.acquire()
+		    .doOnNext(v -> {
+			    verif.compareAndSet(1, 2);
+			    System.out.println("first in got " + v);
+		    })
+		    .flatMap(PooledRef::release)
+		    .subscribe(v -> {}, e -> latch.countDown(), latch::countDown);
+
+		pool.acquire()
+		    .doOnNext(v -> {
+			    verif.compareAndSet(0, 1);
+			    System.out.println("second in got " + v);
+		    })
+		    .flatMap(PooledRef::release)
+		    .subscribe(v -> {}, e -> latch.countDown(), latch::countDown);
+
+		ref.release().block();
+		latch.await(1, TimeUnit.SECONDS);
+
+		assertThat(verif).as("second in, first out").hasValue(2);
+		assertThat(newCount).as("created one").hasValue(1);
+	}
+
+	@ParameterizedTest
+	@MethodSource("lifoPools")
+	void smokeTestLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster) throws InterruptedException {
+		AtomicInteger newCount = new AtomicInteger();
+		PoolBuilder<PoolableTest> builder = PoolBuilder
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				.initialSize(2)
+				.sizeMax(3)
+				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
+		pool.acquire().subscribe(acquired1::add);
+		pool.acquire().subscribe(acquired1::add);
+		pool.acquire().subscribe(acquired1::add);
+		List<PooledRef<PoolableTest>> acquired2 = new ArrayList<>();
+		pool.acquire().subscribe(acquired2::add);
+		pool.acquire().subscribe(acquired2::add);
+		pool.acquire().subscribe(acquired2::add);
+		List<PooledRef<PoolableTest>> acquired3 = new ArrayList<>();
+		pool.acquire().subscribe(acquired3::add);
+		pool.acquire().subscribe(acquired3::add);
+		pool.acquire().subscribe(acquired3::add);
+
+		assertThat(acquired1).hasSize(3);
+		assertThat(acquired2).isEmpty();
+		assertThat(acquired3).isEmpty();
+
+		Thread.sleep(1000);
+		for (PooledRef<PoolableTest> slot : acquired1) {
+			slot.release().block();
+		}
+		assertThat(acquired3).hasSize(3);
+		assertThat(acquired2).isEmpty();
+
+		Thread.sleep(1000);
+		for (PooledRef<PoolableTest> slot : acquired3) {
+			slot.release().block();
+		}
+		assertThat(acquired2).hasSize(3);
+
+		assertThat(acquired1)
+				.as("acquired1/3 all used up")
+				.hasSameElementsAs(acquired3)
+				.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+
+		assertThat(acquired2)
+				.as("acquired2 all new")
+				.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isZero());
+	}
+
+	@ParameterizedTest
+	@MethodSource("lifoPools")
+	void smokeTestInScopeLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster) {
+		AtomicInteger newCount = new AtomicInteger();
+		PoolBuilder<PoolableTest> builder =
+				PoolBuilder.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				           .initialSize(2)
+				           .sizeMax(3)
+				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+				           .evictionPredicate(slot -> !slot.poolable().isHealthy());
+		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		TestPublisher<Integer> trigger1 = TestPublisher.create();
+		TestPublisher<Integer> trigger2 = TestPublisher.create();
+		TestPublisher<Integer> cleanupTrigger = TestPublisher.create();
+
+		List<PoolableTest> acquired1 = new ArrayList<>();
+
+		Mono.when(
+				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1))
+		).subscribe();
+
+		List<PoolableTest> acquired2 = new ArrayList<>();
+		Mono.when(
+				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger))
+		).subscribe();
+
+		List<PoolableTest> acquired3 = new ArrayList<>();
+		Mono.when(
+				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2))
+		).subscribe();
+
+		assertThat(acquired1).as("first batch not pending").hasSize(3);
+		assertThat(acquired2).as("second and third pending").hasSameSizeAs(acquired3).isEmpty();
+
+		trigger1.emit(1);
+
+		assertThat(acquired3).as("batch3 after trigger1").hasSize(3);
+		assertThat(acquired2).as("batch2 after trigger1").isEmpty();
+
+		trigger2.emit(1);
+		assertThat(acquired2).as("batch2 after trigger2").hasSize(3);
+
+		assertThat(newCount).as("allocated total").hasValue(6);
+
+		cleanupTrigger.emit(1); //release the objects
+
+		assertThat(acquired1)
+				.as("acquired1/3 all used up")
+				.hasSameElementsAs(acquired3)
+				.allSatisfy(elem -> assertThat(elem.usedUp).isEqualTo(2));
+
+		assertThat(acquired2)
+				.as("acquired2 all new (released once)")
+				.allSatisfy(elem -> assertThat(elem.usedUp).isOne());
+	}
+
+	@ParameterizedTest
+	@MethodSource("lifoPools")
+	void smokeTestAsyncLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster) throws InterruptedException {
+		AtomicInteger newCount = new AtomicInteger();
+
+		PoolBuilder<PoolableTest> builder = PoolBuilder
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
+				          .subscribeOn(Schedulers.newParallel(
+						          "poolable test allocator")))
+				.initialSize(2)
+				.sizeMax(3)
+				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+				.evictionPredicate(slot -> !slot.poolable().isHealthy());
+		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+
+
+		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
+		CountDownLatch latch1 = new CountDownLatch(3);
+		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
+		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
+		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
+
+		List<PooledRef<PoolableTest>> acquired2 = new ArrayList<>();
+		CountDownLatch latch2 = new CountDownLatch(3);
+		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
+		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
+		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
+
+		List<PooledRef<PoolableTest>> acquired3 = new ArrayList<>();
+		pool.acquire().subscribe(acquired3::add);
+		pool.acquire().subscribe(acquired3::add);
+		pool.acquire().subscribe(acquired3::add);
+
+		if (!latch1.await(1, TimeUnit.SECONDS)) { //wait for creation of max elements
+			fail("not enough elements created initially, missing " + latch1.getCount());
+		}
+		assertThat(acquired1).hasSize(3);
+		assertThat(acquired2).isEmpty();
+		assertThat(acquired3).isEmpty();
+
+		Thread.sleep(1000);
+		for (PooledRef<PoolableTest> slot : acquired1) {
+			slot.release().block();
+		}
+		assertThat(acquired3).hasSize(3);
+		assertThat(acquired2).isEmpty();
+
+		Thread.sleep(1000);
+		for (PooledRef<PoolableTest> slot : acquired3) {
+			slot.release().block();
+		}
+
+		if (latch2.await(2, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
+
+			assertThat(acquired2).hasSize(3);
+
+			assertThat(acquired1)
+					.as("acquired1/3 all used up")
+					.hasSameElementsAs(acquired3)
+					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+
+			assertThat(acquired2)
+					.as("acquired2 all new")
+					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isZero());
+		}
+		else {
+			fail("not enough new elements generated, missing " + latch2.getCount());
 		}
 	}
 

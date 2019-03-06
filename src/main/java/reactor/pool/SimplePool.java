@@ -22,12 +22,12 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
+import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -227,7 +227,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return pool.destroyPoolable(this);
             }
 
-            Mono<Void> cleaner;
+            Publisher<Void> cleaner;
             try {
                 cleaner = pool.poolConfig.releaseHandler.apply(poolable);
             }
@@ -372,12 +372,13 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    private static final class QueuePoolRecyclerMono<T> extends MonoOperator<Void, Void> {
+    private static final class QueuePoolRecyclerMono<T> extends Mono<Void> implements Scannable {
 
+        final Publisher<Void> source;
         final AtomicReference<QueuePooledRef<T>> slotRef;
 
-        QueuePoolRecyclerMono(Mono<? extends Void> source, QueuePooledRef<T> poolSlot) {
-            super(source);
+        QueuePoolRecyclerMono(Publisher<Void> source, QueuePooledRef<T> poolSlot) {
+            this.source = source;
             this.slotRef = new AtomicReference<>(poolSlot);
         }
 
@@ -392,6 +393,14 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 QueuePoolRecyclerInner<T> qpr = new QueuePoolRecyclerInner<>(actual, slot);
                 source.subscribe(qpr);
             }
+        }
+
+        @Override
+        @Nullable
+        public Object scanUnsafe(Attr key) {
+            if (key == Attr.PREFETCH) return Integer.MAX_VALUE;
+            if (key == Attr.PARENT) return source;
+            return null;
         }
     }
 

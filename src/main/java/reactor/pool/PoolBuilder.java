@@ -67,16 +67,16 @@ public class PoolBuilder<T> {
 
     final Mono<T> allocator;
 
-    boolean                           isThreadAffinity     = true;
-    boolean                           isLifo               = false;
-    int                               initialSize          = 0;
-    int                               maxPending           = -1;
-    AllocationStrategy                allocationStrategy   = AllocationStrategies.UNBOUNDED;
-    Function<T, Mono<Void>>           releaseHandler       = noopHandler();
-    Function<T, Mono<Void>>           destroyHandler       = noopHandler();
-    BiPredicate<T, PooledRefMetadata> evictionPredicate    = neverPredicate();
-    Scheduler                         acquisitionScheduler = Schedulers.immediate();
-    PoolMetricsRecorder               metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    boolean                                isThreadAffinity     = true;
+    boolean                                isLifo               = false;
+    int                                    initialSize          = 0;
+    int                                    maxPending           = -1;
+    AllocationStrategy                     allocationStrategy   = AllocationStrategies.UNBOUNDED;
+    Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
+    Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
+    BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
+    Scheduler                              acquisitionScheduler = Schedulers.immediate();
+    PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
     @SuppressWarnings("unchecked")
     PoolBuilder(Mono<? extends T> allocator) {
@@ -199,31 +199,31 @@ public class PoolBuilder<T> {
 	}
 
     /**
-     * Provide a {@link Function handler} that will derive a reset {@link Mono} whenever a resource is released.
+     * Provide a {@link Function handler} that will derive a reset {@link Publisher} whenever a resource is released.
      * The reset procedure is applied asynchronously before vetting the object through {@link #evictionPredicate}.
-     * If the reset Mono couldn't put the resource back in a usable state, it will be {@link #destroyHandler(Function) destroyed}.
+     * If the reset Publisher couldn't put the resource back in a usable state, it will be {@link #destroyHandler(Function) destroyed}.
      * <p>
      * Defaults to not resetting anything.
      *
-     * @param releaseHandler the {@link Function} supplying the state-resetting {@link Mono}
+     * @param releaseHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> releaseHandler(Function<T, Mono<Void>> releaseHandler) {
+    public PoolBuilder<T> releaseHandler(Function<T, ? extends Publisher<Void>> releaseHandler) {
         this.releaseHandler = Objects.requireNonNull(releaseHandler, "releaseHandler");
         return this;
     }
 
     /**
-     * Provide a {@link Function handler} that will derive a destroy {@link Mono} whenever a resource isn't fit for
+     * Provide a {@link Function handler} that will derive a destroy {@link Publisher} whenever a resource isn't fit for
      * usage anymore (either through eviction, manual invalidation, or because something went wrong with it).
      * The destroy procedure is applied asynchronously and errors are swallowed.
      * <p>
      * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements and disposing them.
      *
-     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Mono}
+     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> destroyHandler(Function<T, Mono<Void>> destroyHandler) {
+    public PoolBuilder<T> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
         this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
         return this;
     }

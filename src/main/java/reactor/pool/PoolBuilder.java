@@ -39,23 +39,12 @@ public class PoolBuilder<T> {
 
     /**
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
-     * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
-     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
-     *
-     * @param allocator the asynchronous creator of poolable resources.
-     * @param <T> the type of resource created and recycled by the {@link Pool}
-     * @return a builder of {@link Pool}
-     */
-    public static <T> PoolBuilder<T> from(Mono<? extends T> allocator) {
-        @SuppressWarnings("unchecked") Mono<T> source = (Mono<T>) allocator;
-        return new PoolBuilder<>(source);
-    }
-
-    /**
-     * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
      * Note that the {@link Publisher} {@code allocator} is subscribed to each time a new resource is
-     * needed and will be cancelled past the first received element (unless it is already a {@link Mono}, see
-     * {@link #from(Mono)}). It should NEVER block its thread.
+     * needed and will be cancelled past the first received element (unless it is already a {@link Mono}).
+     * <p>
+     * Adapting from blocking code is only acceptable if ensuring the work is offset on another {@link Scheduler}
+     * (eg. a constructor materialized via {@link Mono#fromCallable(Callable)} should be augmented
+     * with {@link Mono#subscribeOn(Scheduler)}).
      *
      * @param allocator the asynchronous creator of poolable resources, subscribed each time a new
      * resource needs to be created.

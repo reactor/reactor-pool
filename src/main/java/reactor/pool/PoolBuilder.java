@@ -22,6 +22,8 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.reactivestreams.Publisher;
+
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -46,8 +48,21 @@ public class PoolBuilder<T> {
      * @param <T> the type of resource created and recycled by the {@link Pool}
      * @return a builder of {@link Pool}
      */
-    public static <T> PoolBuilder<T> from(Mono<T> allocator) {
+    public static <T> PoolBuilder<T> from(Mono<? extends T> allocator) {
         return new PoolBuilder<>(allocator);
+    }
+
+    /**
+     * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
+     * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
+     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
+     *
+     * @param allocator the asynchronous creator of poolable resources.
+     * @param <T> the type of resource created and recycled by the {@link Pool}
+     * @return a builder of {@link Pool}
+     */
+    public static <T> PoolBuilder<T> from(Publisher<? extends T> allocator) {
+        return new PoolBuilder<>(Mono.from(allocator));
     }
 
     final Mono<T> allocator;
@@ -63,8 +78,9 @@ public class PoolBuilder<T> {
     Scheduler                         acquisitionScheduler = Schedulers.immediate();
     PoolMetricsRecorder               metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
-    PoolBuilder(Mono<T> allocator) {
-        this.allocator = allocator;
+    @SuppressWarnings("unchecked")
+    PoolBuilder(Mono<? extends T> allocator) {
+        this.allocator = (Mono<T>) allocator;
     }
 
     /**

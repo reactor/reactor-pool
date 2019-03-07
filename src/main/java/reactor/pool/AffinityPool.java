@@ -29,12 +29,12 @@ import java.util.function.Function;
 
 import org.jctools.queues.MpmcArrayQueue;
 import org.jctools.queues.MpscLinkedQueue8;
+import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
@@ -452,7 +452,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return pool.destroyPoolable(this);
             }
 
-            Mono<Void> cleaner;
+            Publisher<Void> cleaner;
             try {
                 cleaner = pool.poolConfig.releaseHandler.apply(poolable);
             }
@@ -576,14 +576,15 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         }
     }
 
-    private static final class AffinityPoolRecyclerMono<T> extends MonoOperator<Void, Void> {
+    private static final class AffinityPoolRecyclerMono<T> extends Mono<Void> implements Scannable {
 
+        final Publisher<Void> source;
         final AtomicReference<AffinityPoolRecyclerInner<T>> recyclerRef;
 
         AffinityPooledRef<T> slot;
 
-        AffinityPoolRecyclerMono(Mono<? extends Void> source, AffinityPooledRef<T> poolSlot) {
-            super(source);
+        AffinityPoolRecyclerMono(Publisher<Void> source, AffinityPooledRef<T> poolSlot) {
+            this.source = source;
             this.recyclerRef = new AtomicReference<>();
             this.slot = poolSlot;
         }
@@ -604,6 +605,14 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                     Operators.complete(actual);
                 }
             }
+        }
+
+        @Override
+        @Nullable
+        public Object scanUnsafe(Attr key) {
+            if (key == Attr.PREFETCH) return Integer.MAX_VALUE;
+            if (key == Attr.PARENT) return source;
+            return null;
         }
     }
 }

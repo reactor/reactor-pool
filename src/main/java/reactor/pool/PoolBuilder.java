@@ -22,6 +22,8 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.reactivestreams.Publisher;
+
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -35,33 +37,37 @@ import reactor.core.scheduler.Schedulers;
 @SuppressWarnings("WeakerAccess")
 public class PoolBuilder<T> {
 
-    //TODO tests
-
     /**
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
-     * Note that the {@link Mono} {@code allocator} should NEVER block its thread (thus adapting from blocking code,
-     * eg. a constructor, via {@link Mono#fromCallable(Callable)} should be augmented with {@link Mono#subscribeOn(Scheduler)}).
+     * Note that the {@link Publisher} {@code allocator} is subscribed to each time a new resource is
+     * needed and will be cancelled past the first received element (unless it is already a {@link Mono}).
+     * <p>
+     * Adapting from blocking code is only acceptable if ensuring the work is offset on another {@link Scheduler}
+     * (eg. a constructor materialized via {@link Mono#fromCallable(Callable)} should be augmented
+     * with {@link Mono#subscribeOn(Scheduler)}).
      *
-     * @param allocator the asynchronous creator of poolable resources.
+     * @param allocator the asynchronous creator of poolable resources, subscribed each time a new
+     * resource needs to be created.
      * @param <T> the type of resource created and recycled by the {@link Pool}
      * @return a builder of {@link Pool}
      */
-    public static <T> PoolBuilder<T> from(Mono<T> allocator) {
-        return new PoolBuilder<>(allocator);
+    public static <T> PoolBuilder<T> from(Publisher<? extends T> allocator) {
+        Mono<T> source = Mono.from(allocator);
+        return new PoolBuilder<>(source);
     }
 
     final Mono<T> allocator;
 
-    boolean                           isThreadAffinity     = true;
-    boolean                           isLifo               = false;
-    int                               initialSize          = 0;
-    int                               maxPending           = -1;
-    AllocationStrategy                allocationStrategy   = AllocationStrategies.UNBOUNDED;
-    Function<T, Mono<Void>>           releaseHandler       = noopHandler();
-    Function<T, Mono<Void>>           destroyHandler       = noopHandler();
-    BiPredicate<T, PooledRefMetadata> evictionPredicate    = neverPredicate();
-    Scheduler                         acquisitionScheduler = Schedulers.immediate();
-    PoolMetricsRecorder               metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    boolean                                isThreadAffinity     = true;
+    boolean                                isLifo               = false;
+    int                                    initialSize          = 0;
+    int                                    maxPending           = -1;
+    AllocationStrategy                     allocationStrategy   = AllocationStrategies.UNBOUNDED;
+    Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
+    Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
+    BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
+    Scheduler                              acquisitionScheduler = Schedulers.immediate();
+    PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
     PoolBuilder(Mono<T> allocator) {
         this.allocator = allocator;
@@ -183,31 +189,31 @@ public class PoolBuilder<T> {
 	}
 
     /**
-     * Provide a {@link Function handler} that will derive a reset {@link Mono} whenever a resource is released.
+     * Provide a {@link Function handler} that will derive a reset {@link Publisher} whenever a resource is released.
      * The reset procedure is applied asynchronously before vetting the object through {@link #evictionPredicate}.
-     * If the reset Mono couldn't put the resource back in a usable state, it will be {@link #destroyHandler(Function) destroyed}.
+     * If the reset Publisher couldn't put the resource back in a usable state, it will be {@link #destroyHandler(Function) destroyed}.
      * <p>
      * Defaults to not resetting anything.
      *
-     * @param releaseHandler the {@link Function} supplying the state-resetting {@link Mono}
+     * @param releaseHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> releaseHandler(Function<T, Mono<Void>> releaseHandler) {
+    public PoolBuilder<T> releaseHandler(Function<T, ? extends Publisher<Void>> releaseHandler) {
         this.releaseHandler = Objects.requireNonNull(releaseHandler, "releaseHandler");
         return this;
     }
 
     /**
-     * Provide a {@link Function handler} that will derive a destroy {@link Mono} whenever a resource isn't fit for
+     * Provide a {@link Function handler} that will derive a destroy {@link Publisher} whenever a resource isn't fit for
      * usage anymore (either through eviction, manual invalidation, or because something went wrong with it).
      * The destroy procedure is applied asynchronously and errors are swallowed.
      * <p>
      * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements and disposing them.
      *
-     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Mono}
+     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> destroyHandler(Function<T, Mono<Void>> destroyHandler) {
+    public PoolBuilder<T> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
         this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
         return this;
     }

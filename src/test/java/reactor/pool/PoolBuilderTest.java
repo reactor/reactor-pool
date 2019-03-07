@@ -16,10 +16,18 @@
 package reactor.pool;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
+import io.reactivex.Flowable;
 import org.junit.jupiter.api.Test;
+
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+import reactor.test.publisher.PublisherProbe;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,5 +45,66 @@ class PoolBuilderTest {
 
         TestUtils.TestPooledRef<String> barelyOutbounds = new TestUtils.TestPooledRef<>("anything", 100, 3, 100);
         assertThat(predicate.test(barelyOutbounds.poolable, barelyOutbounds.metadata())).as("ttl is inclusive").isTrue();
+    }
+
+    @Test
+    void fromPublisherMonoDoesntCancel() {
+        AtomicInteger source = new AtomicInteger();
+        final PublisherProbe<Integer> probe = PublisherProbe.of(Mono.fromCallable(source::incrementAndGet));
+
+        PoolBuilder<Integer> builder = PoolBuilder.from(probe.mono());
+        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+
+        StepVerifier.create(config.allocator)
+                    .expectNext(1)
+                    .verifyComplete();
+
+        probe.assertWasNotCancelled();
+        probe.assertWasSubscribed();
+    }
+
+    @Test
+    void fromPublisherFluxCancels() {
+        AtomicInteger source = new AtomicInteger();
+        final PublisherProbe<Integer> probe = PublisherProbe.of(Mono.fromCallable(source::incrementAndGet).repeat(3));
+
+        PoolBuilder<Integer> builder = PoolBuilder.from(probe.flux());
+        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+
+        StepVerifier.create(config.allocator)
+                    .expectNext(1)
+                    .verifyComplete();
+
+        probe.assertWasCancelled();
+        probe.assertWasSubscribed();
+    }
+
+    @Test
+    void fromPublisherFlowableCancels() {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        Flowable<Integer> source = Flowable.range(1, 4)
+                                  .doOnCancel(() -> cancelled.set(true));
+
+        PoolBuilder<Integer> builder = PoolBuilder.from(source);
+        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+
+        StepVerifier.create(config.allocator)
+                    .expectNext(1)
+                    .verifyComplete();
+
+        assertThat(cancelled).isTrue();
+    }
+
+    @Test
+    void fromDowncastedMono() {
+        Mono<Long> source = Flux.range(1, 10).count();
+        Predicate<Number> numberPredicate = n -> n.intValue() == 10;
+
+        PoolBuilder<Number> poolBuilder = PoolBuilder.from(source);
+        AbstractPool.DefaultPoolConfig<Number> config = poolBuilder.buildConfig();
+
+        StepVerifier.create(config.allocator)
+                    .assertNext(n -> assertThat(n).matches(numberPredicate))
+                    .verifyComplete();
     }
 }

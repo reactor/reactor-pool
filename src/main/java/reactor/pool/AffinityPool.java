@@ -269,7 +269,17 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
 
-    interface SubPool<POOLABLE> {
+    static abstract class SubPool<POOLABLE> {
+
+        final AffinityPool<POOLABLE> parent;
+
+        volatile int directReleaseInProgress;
+        static final AtomicIntegerFieldUpdater<SubPool> DIRECT_RELEASE_WIP = AtomicIntegerFieldUpdater.newUpdater(SubPool.class, "directReleaseInProgress");
+
+
+        protected SubPool(AffinityPool<POOLABLE> parent) {
+            this.parent = parent;
+        }
 
         /**
          * Add a new pending {@link Borrower} to the subpool, which
@@ -278,7 +288,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
          *
          * @param pending the pending {@link Borrower} to add to the SubPool
          */
-        void offerPending(Borrower<POOLABLE> pending);
+        abstract void offerPending(Borrower<POOLABLE> pending);
 
         /**
          * Remove a pending from the subpool and return it, or {@code null} if it is empty.
@@ -288,26 +298,43 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
          * @return the next pending {@link Borrower} to serve, or null if none
          */
         @Nullable
-        Borrower<POOLABLE> pollPending();
+        abstract Borrower<POOLABLE> pollPending();
 
-        boolean tryLockForSlowPath();
+        public boolean tryLockForSlowPath() {
+            return DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1);
+        }
 
         @Nullable
-        Borrower<POOLABLE> getPendingAndUnlock();
+        public Borrower<POOLABLE> getPendingAndUnlock() {
+            Borrower<POOLABLE> m = pollPending();
+            DIRECT_RELEASE_WIP.decrementAndGet(this);
+            return m;
+        }
 
-        boolean tryDirectRecycle(AffinityPooledRef<POOLABLE> ref);
+        public boolean tryDirectRecycle(AffinityPooledRef<POOLABLE> ref) {
+            if (!DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1)) {
+                return false;
+            }
+
+            Borrower<POOLABLE> m = pollPending();
+
+            DIRECT_RELEASE_WIP.decrementAndGet(this);
+
+            if (m != null) {
+                parent.metricsRecorder.recordFastPath();
+                m.deliver(ref);
+                return true;
+            }
+            return false;
+        }
     }
 
-    static final class FifoSubPool<POOLABLE> implements SubPool<POOLABLE> {
+    static final class FifoSubPool<POOLABLE> extends SubPool<POOLABLE> {
 
-        final AffinityPool<POOLABLE> parent;
         final Queue<Borrower<POOLABLE>> localPendings; //needs to be MPSC. Producer: any thread that doAcquire. Consumer: whomever has the LOCKED.
 
-        volatile int directReleaseInProgress;
-        static final AtomicIntegerFieldUpdater<FifoSubPool> DIRECT_RELEASE_WIP = AtomicIntegerFieldUpdater.newUpdater(FifoSubPool.class, "directReleaseInProgress");
-
         FifoSubPool(AffinityPool<POOLABLE> parent) {
-            this.parent = parent;
+            super(parent);
             this.localPendings = new MpscLinkedQueue8<>();
         }
 
@@ -336,47 +363,14 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             return b;
         }
 
-        @Override
-        public boolean tryLockForSlowPath() {
-            return DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1);
-        }
-
-        @Override
-        public Borrower<POOLABLE> getPendingAndUnlock() {
-            Borrower<POOLABLE> m = pollPending();
-            DIRECT_RELEASE_WIP.decrementAndGet(this);
-            return m;
-        }
-
-        @Override
-        public boolean tryDirectRecycle(AffinityPooledRef<POOLABLE> ref) {
-            if (!DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1)) {
-                return false;
-            }
-
-            Borrower<POOLABLE> m = pollPending();
-
-            DIRECT_RELEASE_WIP.decrementAndGet(this);
-
-            if (m != null) {
-                parent.metricsRecorder.recordFastPath();
-                m.deliver(ref);
-                return true;
-            }
-            return false;
-        }
     }
 
-    static final class LifoSubPool<POOLABLE> implements SubPool<POOLABLE> {
+    static final class LifoSubPool<POOLABLE> extends SubPool<POOLABLE> {
 
-        final AffinityPool<POOLABLE> parent;
         final TreiberStack<Borrower<POOLABLE>> localPendings;
 
-        volatile int directReleaseInProgress;
-        static final AtomicIntegerFieldUpdater<LifoSubPool> DIRECT_RELEASE_WIP = AtomicIntegerFieldUpdater.newUpdater(LifoSubPool.class, "directReleaseInProgress");
-
         LifoSubPool(AffinityPool<POOLABLE> parent) {
-            this.parent = parent;
+            super(parent);
             this.localPendings = new TreiberStack<>();
         }
 
@@ -403,36 +397,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 AbstractPool.PENDING_COUNT.decrementAndGet(parent);
             }
             return b;
-        }
-
-        @Override
-        public boolean tryLockForSlowPath() {
-            return DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1);
-        }
-
-        @Override
-        public Borrower<POOLABLE> getPendingAndUnlock() {
-            Borrower<POOLABLE> m = localPendings.pop();
-            DIRECT_RELEASE_WIP.decrementAndGet(this);
-            return m;
-        }
-
-        @Override
-        public boolean tryDirectRecycle(AffinityPooledRef<POOLABLE> ref) {
-            if (!DIRECT_RELEASE_WIP.compareAndSet(this, 0, 1)) {
-                return false;
-            }
-
-            Borrower<POOLABLE> m = localPendings.pop();
-
-            DIRECT_RELEASE_WIP.decrementAndGet(this);
-
-            if (m != null) {
-                parent.metricsRecorder.recordFastPath();
-                m.deliver(ref);
-                return true;
-            }
-            return false;
         }
     }
 

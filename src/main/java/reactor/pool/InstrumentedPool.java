@@ -25,14 +25,9 @@ package reactor.pool;
 public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 
 	/**
-	 * @return a {@link PoolIntrospection} object to be used to get live gauges about the {@link Pool}
+	 * @return a {@link PoolMetrics} object to be used to get live gauges about the {@link Pool}
 	 */
-	PoolIntrospection introspect();
-
-	/**
-	 * @return a {@link PoolMetricsRecorder} that is used by the {@link Pool} to record timing metrics.
-	 */
-	PoolMetricsRecorder metricsRecorder();
+	PoolMetrics metrics();
 
 	/**
 	 * An object that can be used to get live information about a {@link Pool}, suitable
@@ -42,18 +37,15 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 	 * whereas other methods can be used as gauges to introspect the current state of the
 	 * pool.
 	 */
-	interface PoolIntrospection {
+	interface PoolMetrics {
 
 		/**
-		 * Measure the current number of "pending" {@link Pool#acquire() acquire Monos} in
-		 * the {@link Pool}.
-		 * <p>
-		 * An acquire is in the pending state when it is attempted at a point when no idle
-		 * resource is available in the pool, and no new resource can be created.
+		 * Measure the current number of allocated resources in the {@link Pool}, acquired
+		 * or idle.
 		 *
-		 * @return the number of pending acquire
+		 * @return the total number of allocated resources managed by the {@link Pool}
 		 */
-		int pendingSize();
+		int allocatedSize();
 
 		/**
 		 * Measure the current number of idle resources in the {@link Pool}.
@@ -67,12 +59,23 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		int idleSize();
 
 		/**
-		 * Measure the current number of allocated resources in the {@link Pool}, acquired
-		 * or idle.
+		 * Measure the current number of resources that have been successfully
+		 * {@link Pool#acquire() acquired} and are in active use.
 		 *
-		 * @return the total number of allocated resources managed by the {@link Pool}
+		 * @return the number of acquired resources
 		 */
-		int allocatedSize();
+		int acquiredSize();
+
+		/**
+		 * Measure the current number of "pending" {@link Pool#acquire() acquire Monos} in
+		 * the {@link Pool}.
+		 * <p>
+		 * An acquire is in the pending state when it is attempted at a point when no idle
+		 * resource is available in the pool, and no new resource can be created.
+		 *
+		 * @return the number of pending acquire
+		 */
+		int pendingAcquireSize();
 
 		/**
 		 * Get the maximum number of live resources this {@link Pool} will allow.
@@ -93,6 +96,6 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 *
 		 * @return the maximum number of pending acquire that can be enqueued by this {@link Pool}.
 		 */
-		int getMaxPendingSize();
+		int getMaxPendingAcquireSize();
 	}
 }

@@ -43,6 +43,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.pool.InstrumentedPool.PoolMetrics;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
@@ -1335,5 +1336,114 @@ public class CommonPoolTest {
 		assertThat(recorder.getIdleTimeHistogram().getMaxValue())
 				.as("max idle time")
 				.isCloseTo(300L, Offset.offset(40L));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void instrumentedPoolsMetricsAreSelfViews(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1));
+		Pool<Integer> pool = configAdjuster.apply(builder);
+
+		assertThat(pool).isInstanceOf(InstrumentedPool.class);
+
+		PoolMetrics metrics = ((InstrumentedPool) pool).metrics();
+
+		assertThat(pool).isSameAs(metrics);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void instrumentAllocatedIdleAcquired(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+				.sizeMax(1);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		assertThat(poolMetrics.allocatedSize()).as("allocated at start").isZero();
+
+		PooledRef<Integer> ref = pool.acquire().block();
+
+		assertThat(poolMetrics.allocatedSize()).as("allocated at first acquire").isOne();
+		assertThat(poolMetrics.idleSize()).as("idle at first acquire").isZero();
+		assertThat(poolMetrics.acquiredSize()).as("acquired size at first acquire").isOne();
+
+		ref.release().block();
+
+		assertThat(poolMetrics.allocatedSize()).as("allocated after release").isOne();
+		assertThat(poolMetrics.idleSize()).as("idle after release").isOne();
+		assertThat(poolMetrics.acquiredSize()).as("acquired after release").isZero();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void instrumentPendingAcquire(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+				.sizeMax(1);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		PooledRef<Integer> ref = pool.acquire().block();
+
+		assertThat(poolMetrics.pendingAcquireSize()).as("first acquire not pending").isZero();
+
+
+		pool.acquire().subscribe();
+
+		assertThat(poolMetrics.pendingAcquireSize()).as("second acquire put in pending").isOne();
+
+		ref.release().block();
+
+		assertThat(poolMetrics.pendingAcquireSize()).as("second acquire not pending after release").isZero();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void getConfigMaxPendingAcquire(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+		                                          .maxPendingAcquire(12);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		assertThat(poolMetrics.getMaxPendingAcquireSize()).isEqualTo(12);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void getConfigMaxPendingAcquireUnbounded(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+		                                          .maxPendingAcquireUnbounded();
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		assertThat(poolMetrics.getMaxPendingAcquireSize()).isEqualTo(Integer.MAX_VALUE);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void getConfigMaxSize(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+		                                          .sizeMax(22);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		assertThat(poolMetrics.getMaxAllocatedSize()).isEqualTo(22);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void getConfigMaxSizeUnbounded(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+		                                          .sizeUnbounded();
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		assertThat(poolMetrics.getMaxAllocatedSize()).isEqualTo(Integer.MAX_VALUE);
 	}
 }

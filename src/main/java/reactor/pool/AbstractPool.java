@@ -44,7 +44,7 @@ import reactor.util.context.Context;
  * @author Simon Baslé
  */
 abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
-                                                 InstrumentedPool.PoolIntrospection {
+                                                 InstrumentedPool.PoolMetrics {
 
     //A pool should be rare enough that having instance loggers should be ok
     //This helps with testability of some methods that for now mainly log
@@ -66,26 +66,26 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     // == pool introspection methods ==
 
     @Override
-    public PoolMetricsRecorder metricsRecorder() {
-        return metricsRecorder;
-    }
-
-    @Override
-    public PoolIntrospection introspect() {
+    public PoolMetrics metrics() {
         return this;
     }
 
     @Override
-    public int pendingSize() {
+    public int pendingAcquireSize() {
         return PENDING_COUNT.get(this);
+    }
+
+    @Override
+    public int allocatedSize() {
+        return poolConfig.allocationStrategy.permitGranted();
     }
 
     @Override
     abstract public int idleSize();
 
     @Override
-    public int allocatedSize() {
-        return poolConfig.allocationStrategy.permitGranted();
+    public int acquiredSize() {
+        return allocatedSize() - idleSize();
     }
 
     @Override
@@ -94,7 +94,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     }
 
     @Override
-    public int getMaxPendingSize() {
+    public int getMaxPendingAcquireSize() {
         return poolConfig.maxPending < 0 ? Integer.MAX_VALUE : poolConfig.maxPending;
     }
 

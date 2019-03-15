@@ -6,4 +6,4 @@ Work in progress
 
 _Licensed under [Apache Software License 2.0](www.apache.org/licenses/LICENSE-2.0)_
 
-_Sponsored by [Pivotal](http://pivotal.io)_
+_Sponsored by [Pivotal](https://pivotal.io)_

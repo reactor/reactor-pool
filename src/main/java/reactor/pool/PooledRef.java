@@ -22,7 +22,7 @@ import java.util.function.Function;
 /**
  * An abstraction over an object in a {@link Pool}, which holds the underlying {@code POOLABLE} object and allows one to
  * manually {@link #release()} it to the pool or {@link #invalidate()} it. Through its {@link #metadata()},
- * the {@link PooledRef} provides a few additional information about its lifecyle, like its age and the number of times
+ * the {@link PooledRef} provides a few additional information about its lifecycle, like its age and the number of times
  * it has been acquired, so the {@link Pool} may optionally use that information to automatically invalidate
  * the object, and provide a simplified acquire mechanism where the {@link PooledRef} is not directly exposed (see
  * {@link Pool#acquireInScope(Function)} vs {@link Pool#acquire()}).

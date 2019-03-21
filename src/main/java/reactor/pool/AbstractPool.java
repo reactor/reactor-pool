@@ -293,7 +293,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
          */
         final AllocationStrategy                            allocationStrategy;
         /**
-         * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediatately fail any acquire
+         * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediately fail any acquire
          * when no idle resource is available and the pool cannot grow. Use a negative number to deactivate.
          */
         final int                                           maxPending;

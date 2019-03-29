@@ -692,7 +692,7 @@ class SimpleLifoPoolTest {
                 Mono<PoolableTest> firstBorrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
                 Mono<PoolableTest> otherBorrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
 
-                CountDownLatch latch = new CountDownLatch(1);
+                CountDownLatch latch = new CountDownLatch(3);
 
                 //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
                 acquire1Scheduler.schedule(() -> firstBorrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
@@ -703,7 +703,10 @@ class SimpleLifoPoolTest {
                 RaceTestUtils.race(
                         () -> otherBorrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
                                 , e -> latch.countDown(), latch::countDown),
-                        uniqueSlot.release()::block,
+                        () -> {
+                            uniqueSlot.release().block();
+                            latch.countDown();
+                        },
                         racerScheduler);
                 latch.await(1, TimeUnit.SECONDS);
 

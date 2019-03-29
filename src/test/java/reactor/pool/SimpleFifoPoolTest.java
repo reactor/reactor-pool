@@ -657,38 +657,54 @@ class SimpleFifoPoolTest {
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
+            Scheduler allocatorScheduler = Schedulers.newParallel("poolable test allocator");
 
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
-                    Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+            try {
+                DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+                        Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
+                            .subscribeOn(allocatorScheduler));
 
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
 
-            //the pool is started with one elements, and has capacity for 1.
-            //we actually first acquire that element so that next acquire will wait for a release
-            PooledRef<PoolableTest> uniqueSlot = pool.acquire().block();
-            assertThat(uniqueSlot).isNotNull();
+                //the pool is started with one elements, and has capacity for 1.
+                //we actually first acquire that element so that next acquire will wait for a release
+                PooledRef<PoolableTest> uniqueSlot = pool.acquire().block();
+                assertThat(uniqueSlot).isNotNull();
 
-            //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
-            CountDownLatch latch = new CountDownLatch(1);
+                //we prepare next acquire
+                Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+                CountDownLatch latch = new CountDownLatch(3);
 
-            //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
-            acquire1Scheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
-                    , e -> latch.countDown(), latch::countDown));
+                //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
+                acquire1Scheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
+                        , e -> latch.countDown(), latch::countDown));
 
-            //in parallel, we'll both attempt concurrent acquire AND release the unique element (each on their dedicated threads)
-            racerAcquireScheduler.schedule(pool.acquire()::block, 100, TimeUnit.MILLISECONDS);
-            racerReleaseScheduler.schedule(uniqueSlot.release()::block, 100, TimeUnit.MILLISECONDS);
-            latch.await(1, TimeUnit.SECONDS);
+                //in parallel, we'll both attempt concurrent acquire AND release the unique element (each on their dedicated threads)
+                racerAcquireScheduler.schedule(() -> {
+                    pool.acquire().block();
+                    latch.countDown();
+                }, 100, TimeUnit.MILLISECONDS);
+                racerReleaseScheduler.schedule(() -> {
+                    uniqueSlot.release().block();
+                    latch.countDown();
+                }, 100, TimeUnit.MILLISECONDS);
 
-            assertThat(newCount).as("created 1 poolable in round " + round).hasValue(1);
+                assertThat(latch.await(1, TimeUnit.SECONDS)).as("1s").isTrue();
 
-            //we expect that sometimes the race will let the second borrower thread drain, which would mean first borrower
-            //will get the element delivered from racerAcquire thread. Yet the rest of the time it would get drained by racerRelease.
-            if (threadName.get().startsWith("racerRelease")) releaserWins.incrementAndGet();
-            else if (threadName.get().startsWith("racerAcquire")) borrowerWins.incrementAndGet();
-            else System.out.println(threadName.get());
+                assertThat(newCount).as("created 1 poolable in round " + round).hasValue(1);
+
+                //we expect that sometimes the race will let the second borrower thread drain, which would mean first borrower
+                //will get the element delivered from racerAcquire thread. Yet the rest of the time it would get drained by racerRelease.
+                if (threadName.get().startsWith("racerRelease")) releaserWins.incrementAndGet();
+                else if (threadName.get().startsWith("racerAcquire")) borrowerWins.incrementAndGet();
+                else System.out.println(threadName.get());
+            }
+            finally {
+                acquire1Scheduler.dispose();
+                racerAcquireScheduler.dispose();
+                racerReleaseScheduler.dispose();
+                allocatorScheduler.dispose();
+            }
         }
 
         @Test

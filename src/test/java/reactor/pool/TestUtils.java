@@ -87,14 +87,20 @@ public class TestUtils {
         public int usedUp;
         public int discarded;
         public final int id;
+        public final int maxUse;
 
         public PoolableTest() {
             this(defaultId.incrementAndGet());
         }
 
         public PoolableTest(int id) {
+            this(id, 5);
+        }
+
+        public PoolableTest(int id, int maxUse) {
             this.id = id;
             this.usedUp = 0;
+            this.maxUse = maxUse;
         }
 
         public void clean() {
@@ -102,7 +108,7 @@ public class TestUtils {
         }
 
         public boolean isHealthy() {
-            return usedUp < 2;
+            return usedUp < maxUse;
         }
 
         @Override
@@ -117,7 +123,7 @@ public class TestUtils {
 
         @Override
         public String toString() {
-            return "PoolableTest{id=" + id + ", used=" + usedUp + "}";
+            return "PoolableTest{id=" + id + ", used=" + usedUp + "/" + maxUse + "}";
         }
     }
 

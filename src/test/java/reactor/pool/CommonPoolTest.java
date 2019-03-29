@@ -140,7 +140,8 @@ public class CommonPoolTest {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				//default maxUse is 5, but this test relies on it being 2
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -194,7 +195,8 @@ public class CommonPoolTest {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				//default maxUse is 5, but this test relies on it being 2
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -256,7 +258,8 @@ public class CommonPoolTest {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
+				//default maxUse is 5, but this test relies on it being 2
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2)))
 				          .subscribeOn(Schedulers.newParallel("poolable test allocator")))
 				.initialSize(2)
 				.sizeMax(3)
@@ -365,7 +368,8 @@ public class CommonPoolTest {
 	void smokeTestLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster) throws InterruptedException {
 		AtomicInteger newCount = new AtomicInteger();
 		PoolBuilder<PoolableTest> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				//default maxUse is 5, but this test relies on it being 2
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -417,7 +421,8 @@ public class CommonPoolTest {
 	void smokeTestInScopeLifo(Function<PoolBuilder<PoolableTest>, AbstractPool<PoolableTest>> configAdjuster) {
 		AtomicInteger newCount = new AtomicInteger();
 		PoolBuilder<PoolableTest> builder =
-				PoolBuilder.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+				//default maxUse is 5, but this test relies on it being 2
+				PoolBuilder.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
 				           .initialSize(2)
 				           .sizeMax(3)
 				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -481,7 +486,8 @@ public class CommonPoolTest {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))
+				//default maxUse is 5, but this test relies on it being 2
+				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2)))
 				          .subscribeOn(Schedulers.newParallel(
 						          "poolable test allocator")))
 				.initialSize(2)

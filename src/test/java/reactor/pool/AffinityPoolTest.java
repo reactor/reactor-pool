@@ -31,8 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import org.assertj.core.api.Assumptions;
-import org.assertj.core.data.Offset;
+import org.assertj.core.data.Percentage;
 import org.awaitility.Awaitility;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
@@ -412,11 +411,6 @@ class AffinityPoolTest {
     @CsvSource({"1, true", "1, false", "2, true", "2, false", "3, true", "3, false"})
     @Tag("metrics")
     void fastPathMetrics(int concurrency, boolean lifo) {
-        //FIXME find another way to improve chances of triggering fastpath?
-        Assumptions.assumeThat(Runtime.getRuntime().availableProcessors() * 2)
-                   .as("CPUs * 2>= concurrency")
-                   .isGreaterThanOrEqualTo(concurrency);
-
         final TestUtils.InMemoryPoolMetrics recorder = new TestUtils.InMemoryPoolMetrics();
         ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(concurrency);
         Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
@@ -470,11 +464,9 @@ class AffinityPoolTest {
             assertThat(allocator).hasValue(concurrency);
             long slowPath = recorder.getSlowPathCount();
             long fastPath = recorder.getFastPathCount();
-            Offset<Long> errorMargin = Offset.offset((long) (10 * concurrency * 0.2d));
 
-            assertThat(slowPath).as("slowpath").isCloseTo(0L, errorMargin);
-            assertThat(fastPath).as("fastpath").isCloseTo(10L * concurrency, errorMargin);
             assertThat(slowPath + fastPath).as("fastpath + slowpath").isEqualTo(10L * concurrency);
+            assertThat(fastPath).as("fastpath").isCloseTo(10L * concurrency, Percentage.withPercentage(50d));
         } finally {
             acquireScheduler.dispose();
             acquireExecutor.shutdownNow();

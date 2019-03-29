@@ -272,7 +272,7 @@ class SimpleFifoPoolTest {
             //look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.
             //we expect a subset of the deliveries to happen on the second borrower's thread
             String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
-            assertThat(borrowerWins.get()).as(stats).isPositive();
+            assertThat(releaserWins.get()).as("releaser should win some. " + stats).isPositive();
             assertThat(releaserWins.get() + borrowerWins.get()).as(stats).isEqualTo(100);
         }
 
@@ -635,7 +635,7 @@ class SimpleFifoPoolTest {
             //look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.
             //we expect a subset of the deliveries to happen on the second borrower's thread
             String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
-            assertThat(borrowerWins.get()).as(stats).isPositive();
+            assertThat(releaserWins.get()).as("releaser should win some. " + stats).isPositive();
             assertThat(releaserWins.get() + borrowerWins.get()).as(stats).isEqualTo(100);
         }
 

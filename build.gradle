@@ -46,7 +46,7 @@ ext {
   gradleVersion = '4.10'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  reactorBOM = "Californium-SR3"
+  reactorBOM = "Californium-SR6"
   jcToolsVersion = "2.1.1"
   hdrHistogramVersion = "2.1.11"
 
@@ -157,6 +157,7 @@ configure(rootProject) { project ->
       showExceptions true
       exceptionFormat "full"
       maxGranularity 3
+      showStandardStreams true
     }
   }
 

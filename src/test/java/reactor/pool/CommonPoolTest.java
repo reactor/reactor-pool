@@ -215,7 +215,7 @@ public class CommonPoolTest {
 
 		List<PoolableTest> acquired2 = new ArrayList<>();
 		Mono.when(
-				pool.acquireInScope(mono -> mono.log().doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
+				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
 				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
 				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2))
 		).subscribe();
@@ -1285,7 +1285,6 @@ public class CommonPoolTest {
 
 		assertThat(allocCounter).as("allocations").hasValue(2);
 
-		recorder.getIdleTimeHistogram().outputPercentileDistribution(System.out, 1d);
 		assertThat(recorder.getIdleTimeHistogram().getMinNonZeroValue())
 				.as("min idle time")
 				.isCloseTo(125L, Offset.offset(25L));
@@ -1327,7 +1326,6 @@ public class CommonPoolTest {
 
 		assertThat(allocCounter).as("allocations").hasValue(2);
 
-		recorder.getIdleTimeHistogram().outputPercentileDistribution(System.out, 1d);
 		assertThat(recorder.getIdleTimeHistogram().getMinNonZeroValue())
 				.as("min idle time")
 				.isCloseTo(125L, Offset.offset(20L));

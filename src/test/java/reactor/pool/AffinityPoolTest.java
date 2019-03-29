@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import org.assertj.core.api.Assumptions;
 import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.Matchers;
@@ -411,6 +412,11 @@ class AffinityPoolTest {
     @CsvSource({"1, true", "1, false", "2, true", "2, false", "3, true", "3, false"})
     @Tag("metrics")
     void fastPathMetrics(int concurrency, boolean lifo) {
+        //FIXME find another way to improve chances of triggering fastpath?
+        Assumptions.assumeThat(Runtime.getRuntime().availableProcessors() * 2)
+                   .as("CPUs * 2>= concurrency")
+                   .isGreaterThanOrEqualTo(concurrency);
+
         final TestUtils.InMemoryPoolMetrics recorder = new TestUtils.InMemoryPoolMetrics();
         ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(concurrency);
         Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
@@ -445,9 +451,6 @@ class AffinityPoolTest {
                             String p = ref.poolable();
                             if (!sticky.equals(p)) {
                                 System.out.println(threadName + " unexpected " + p);
-                            }
-                            else {
-                                System.out.println(threadName + " " + p);
                             }
                             acquireScheduler.schedule(() ->
                                             ref.release().doFinally(fin -> released.incrementAndGet()).subscribe(),
@@ -507,15 +510,11 @@ class AffinityPoolTest {
             acquireScheduler.schedule(() -> {
                 try {
                     prepareDataLatch.await(8, TimeUnit.SECONDS);
-                    System.out.println("HEAVY BORROWER WILL NOW QUEUE acquire()");
                     for (int i = 0; i < max; i++) {
                         pool.acquire()
-                            .doOnNext(v -> System.out.println("HEAVY BORROWER's pending received " + v.poolable() +
-                                    " from " + Thread.currentThread().getName()))
                             .doFinally(fin -> finalLatch.countDown())
                             .subscribe(v -> hogged.incrementAndGet());
                     }
-                    System.out.println("HEAVY BORROWER DONE QUEUEING");
                     hoggerLatch.countDown();
                     finalLatch.await(10, TimeUnit.SECONDS);
                 } catch (InterruptedException e) {
@@ -528,12 +527,10 @@ class AffinityPoolTest {
                 acquireScheduler.schedule(() -> {
                     final PooledRef<String> ref = pool.acquire().block();
                     assert ref != null;
-                    System.out.println("Created resource " + ref.poolable());
                     prepareDataLatch.countDown();
                     try {
                         hoggerLatch.await(9, TimeUnit.SECONDS);
                         Thread.sleep(100);
-                        System.out.println(Thread.currentThread().getName() + " releasing its resource");
                         ref.release().block();
                     } catch (InterruptedException e) {
                         e.printStackTrace();

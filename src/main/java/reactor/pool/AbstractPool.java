@@ -25,7 +25,6 @@ import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
-
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Scannable;
@@ -82,7 +81,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     }
 
     /**
-     * Apply the configured destroyHandler to get the destroy {@link Mono} AND return a permit to the {@link AllocationStrategy},
+     * Apply the configured destroyHandler to get the destroy {@link Mono} AND return a permit to the {@link SizeLimitStrategy},
      * which assumes that the {@link Mono} will always be subscribed immediately.
      *
      * @param ref the {@link PooledRef} that is not part of the live set
@@ -90,7 +89,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
      */
     Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
-        poolConfig.allocationStrategy.returnPermits(1);
+        poolConfig.sizeLimitStrategy.returnPermits(1);
         long start = metricsRecorder.now();
         metricsRecorder.recordLifetimeDuration(ref.lifeTime());
         Function<POOLABLE, ? extends Publisher<Void>> factory = poolConfig.destroyHandler;
@@ -282,16 +281,11 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         /**
          * The asynchronous factory that produces new resources, represented as a {@link Mono}.
          */
-        final Mono<POOLABLE>                                allocator;
-        //TODO to be removed
+        final Mono<POOLABLE>                 allocator;
         /**
-         * The minimum number of objects a {@link Pool} should create at initialization.
+         * {@link SizeLimitStrategy} defines a strategy / limit for the number of pooled object to allocate.
          */
-        final int                                           initialSize;
-        /**
-         * {@link AllocationStrategy} defines a strategy / limit for the number of pooled object to allocate.
-         */
-        final AllocationStrategy                            allocationStrategy;
+        final SizeLimitStrategy sizeLimitStrategy;
         /**
          * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediately fail any acquire
          * when no idle resource is available and the pool cannot grow. Use a negative number to deactivate.
@@ -340,7 +334,7 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
 
         DefaultPoolConfig(Mono<POOLABLE> allocator,
                           int initialSize,
-                          AllocationStrategy allocationStrategy,
+		                  SizeLimitStrategy sizeLimitStrategy,
                           int maxPending,
                           Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
                           Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
@@ -350,8 +344,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
                           boolean isLifo) {
             this.allocator = allocator;
             this.initialSize = initialSize;
-            this.allocationStrategy = allocationStrategy;
             this.maxPending = maxPending;
+            this.sizeLimitStrategy = sizeLimitStrategy;
             this.releaseHandler = releaseHandler;
             this.destroyHandler = destroyHandler;
             this.evictionPredicate = evictionPredicate;

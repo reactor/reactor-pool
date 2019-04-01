@@ -1,6 +1,8 @@
 # Reactor-Pool
 
 [![Join the chat at https://gitter.im/reactor/reactor](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/reactor/reactor?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![CircleCI](https://circleci.com/gh/reactor/reactor-pool.svg?style=svg)](https://circleci.com/gh/reactor/reactor-pool)
+[![Code Coverage](https://codecov.io/gh/reactor/reactor-pool/graph/badge.svg)](https://codecov.io/gh/reactor/reactor-pool)
 
 The `reactor-pool` project aims at providing a generic object pool to reactive application that:
  - exposes a reactive API (`Publisher` input types, `Mono` return types)

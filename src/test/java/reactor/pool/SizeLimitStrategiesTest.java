@@ -28,19 +28,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-
-import reactor.pool.AllocationStrategies.SizeBasedAllocationStrategy;
+import reactor.pool.SizeLimitStrategies.BoundedSizeLimitStrategy;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @author Simon Baslé
  */
-class AllocationStrategiesTest {
+class SizeLimitStrategiesTest {
 
-    private static final Logger LOG = Loggers.getLogger(AllocationStrategies.class);
+    private static final Logger LOG = Loggers.getLogger(SizeLimitStrategies.class);
 
     @DisplayName("allocatingMax")
     @Nested
@@ -48,28 +48,28 @@ class AllocationStrategiesTest {
 
         @Test
         void negativeMaxGivesOnePermit() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(-1);
+            SizeLimitStrategy test = new BoundedSizeLimitStrategy(-1);
 
-            assertThat(test.estimatePermitCount()).isOne();
+            assertThat(test.estimatePermitCount()).isZero();
         }
 
         @Test
         void zeroMaxGivesOnePermit() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(0);
+            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(0);
 
-            assertThat(test.estimatePermitCount()).isOne();
+            assertThat(test.estimatePermitCount()).isZero();
         }
 
         @Test
         void onePermitCount() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
 
             assertThat(test.estimatePermitCount()).isOne();
         }
 
         @Test
         void onePermitGet() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
 
             assertThat(test.getPermits(1)).as("first try").isOne();
             assertThat(test.getPermits(1)).as("second try").isZero();
@@ -77,7 +77,7 @@ class AllocationStrategiesTest {
 
         @Test
         void onePermitGetDesired() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
 
             assertThat(test.getPermits(100)).as("desired 100").isOne();
             assertThat(test.getPermits(1)).as("desired 1 more").isZero();
@@ -85,21 +85,21 @@ class AllocationStrategiesTest {
 
         @Test
         void getPermitDesiredZero() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
 
             assertThat(test.getPermits(0)).isZero();
         }
 
         @Test
         void getPermitDesiredNegative() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
 
-            assertThat(test.getPermits(-1)).isZero();
+            assertThatThrownBy(() -> test.getPermits(-1)).hasMessage("desired must be a positive number");
         }
 
         @Test
         void returnPermitCanGoOverMax() {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
 
             test.returnPermits(1);
 
@@ -108,7 +108,7 @@ class AllocationStrategiesTest {
 
         @Test
         void returnPermitsCanGoOverMax() {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(1);
+            final SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
 
             test.returnPermits(100);
 
@@ -119,7 +119,7 @@ class AllocationStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void raceGetPermit(int workerCount) throws InterruptedException {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(10);
+            final SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(10);
 
             LongAdder counter = new LongAdder();
             ExecutorService es = Executors.newFixedThreadPool(workerCount);
@@ -144,7 +144,7 @@ class AllocationStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void racePermitsRandom(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(10);
+            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
 
             LongAdder counter = new LongAdder();
             LongAdder gotZeroCounter = new LongAdder();
@@ -175,7 +175,7 @@ class AllocationStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void raceMixGetPermitWithGetRandomPermits(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(10);
+            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
 
             LongAdder usedGetRandomPermits = new LongAdder();
             LongAdder usedGetPermit = new LongAdder();
@@ -221,7 +221,7 @@ class AllocationStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void racePermitsRandomWithInnerLoop(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final AllocationStrategy test = new SizeBasedAllocationStrategy(10);
+            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
 
             LongAdder counter = new LongAdder();
             LongAdder gotZeroCounter = new LongAdder();
@@ -257,14 +257,14 @@ class AllocationStrategiesTest {
 
         @Test
         void permitCountIsMaxValue() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            SizeLimitStrategy test = SizeLimitStrategies.UNBOUNDED;
 
             assertThat(test.estimatePermitCount()).isEqualTo(Integer.MAX_VALUE);
         }
 
         @Test
         void getPermitsDoesntChangeCount() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            SizeLimitStrategy test = SizeLimitStrategies.UNBOUNDED;
 
             assertThat(test.getPermits(100)).as("first try").isEqualTo(100);
             assertThat(test.getPermits(1000)).as("second try").isEqualTo(1000);
@@ -273,21 +273,21 @@ class AllocationStrategiesTest {
 
         @Test
         void getPermitDesiredZero() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            SizeLimitStrategy test = SizeLimitStrategies.UNBOUNDED;
 
             assertThat(test.getPermits(0)).isZero();
         }
 
         @Test
         void getPermitDesiredNegative() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            SizeLimitStrategy test = SizeLimitStrategies.UNBOUNDED;
 
-            assertThat(test.getPermits(-1)).isZero();
+            assertThatThrownBy(() -> test.getPermits(-1)).hasMessage("desired must be a positive number");
         }
 
         @Test
         void returnPermitsDoesntChangeMax() {
-            final AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            final SizeLimitStrategy test = SizeLimitStrategies.UNBOUNDED;
 
             test.returnPermits(1000);
 

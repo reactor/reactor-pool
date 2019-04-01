@@ -33,6 +33,7 @@ import reactor.core.scheduler.Schedulers;
  * A builder for {@link Pool}.
  *
  * @author Simon Baslé
+ * @author Stephane Maldini
  */
 @SuppressWarnings("WeakerAccess")
 public class PoolBuilder<T> {
@@ -62,7 +63,9 @@ public class PoolBuilder<T> {
     boolean                                isLifo               = false;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
-    AllocationStrategy                     allocationStrategy   = AllocationStrategies.UNBOUNDED;
+    int minSize = 0;
+    int maxSize = Integer.MAX_VALUE;
+	SizeLimitStrategy               sizeLimitStrategy;
     Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
     Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
     BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
@@ -119,6 +122,40 @@ public class PoolBuilder<T> {
     }
 
     /**
+     * Limit the maximum number of poolable resources in the {@link Pool}.
+     *
+     * @param minSize a minimum number of poolable resources to initialize and maintain
+     * after
+     * the first acquisition
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> sizeMin(int minSize) {
+        if (minSize < 0) {
+            throw new IllegalArgumentException("Minimum Pool Size cannot be negative");
+        }
+        this.minSize = minSize;
+        return this;
+    }
+
+    /**
+     * Limit the maximum number of poolable resources in the {@link Pool}.
+     * <p> If {@literal Integer#MAX_VALUE} is used the upper bound limit will be
+     * unbounded, thus allowing the pool to grow indefinitely.
+     *
+     * @param maxSize a maximum number of poolable resources to hold
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> sizeMax(int maxSize) {
+        if (maxSize < 1) {
+            throw new IllegalArgumentException("Maximum Pool Size cannot be null or negative");
+        }
+        this.maxSize = maxSize;
+        return this;
+    }
+
+    /**
      * Change the order in which pending {@link Pool#acquire()} {@link Mono Monos} are served
      * whenever a resource becomes available. The default is FIFO, but passing true to this
      * method changes it to LIFO.
@@ -150,43 +187,19 @@ public class PoolBuilder<T> {
 
     /**
      * Limits in how many resources can be allocated and managed by the {@link Pool} are driven by the
-     * provided {@link AllocationStrategy}.
+     * provided {@link SizeLimitStrategy}.
      * <p>
      * Defaults to an unbounded creation of resources, although it is not a recommended one.
-     * See {@link AllocationStrategies} for readily available strategies based on counters.
      *
-     * @param allocationStrategy the {@link AllocationStrategy} to use
+     * @param sizeLimitStrategy the {@link SizeLimitStrategy} to use
      * @return this {@link Pool} builder
      * @see #sizeMax(int)
-     * @see #sizeUnbounded()
+     * @see #sizeMin(int)
      */
-    public PoolBuilder<T> allocationStrategy(AllocationStrategy allocationStrategy) {
-        this.allocationStrategy = Objects.requireNonNull(allocationStrategy, "allocationStrategy");
+    public PoolBuilder<T> sizeLimitStrategy(SizeLimitStrategy sizeLimitStrategy) {
+        this.sizeLimitStrategy = Objects.requireNonNull(sizeLimitStrategy, "sizeLimitStrategy");
         return this;
     }
-
-	/**
-	 * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-	 * some resources have been {@link PooledRef#release() released}.
-	 *
-	 * @param max the maximum number of live resources to keep in the pool
-     * @return this {@link Pool} builder
-	 */
-	public PoolBuilder<T> sizeMax(int max) {
-		return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(max));
-	}
-
-	/**
-	 * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
-	 * <p>
-	 * Note this is the default, if no previous call to {@link #allocationStrategy(AllocationStrategy)}
-	 * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
-	 *
-     * @return this {@link Pool} builder
-	 */
-	public PoolBuilder<T> sizeUnbounded() {
-		return allocationStrategy(AllocationStrategies.UNBOUNDED);
-	}
 
     /**
      * Provide a {@link Function handler} that will derive a reset {@link Publisher} whenever a resource is released.
@@ -239,8 +252,9 @@ public class PoolBuilder<T> {
     }
 
     /**
-     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that causes eviction (ie returns {@code true})
-     * of resources that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
+     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that matches
+     * {@link PooledRef} of resources
+     * that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
      * {@link Duration} (inclusive).
      * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
      *
@@ -249,7 +263,7 @@ public class PoolBuilder<T> {
      * @see #evictionPredicate(BiPredicate)
      */
     public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
-        return evictionPredicate(idlePredicate(maxIdleTime));
+        return evictionPredicate(EvictionPredicates.idleMoreThan(maxIdleTime));
     }
 
     /**
@@ -285,6 +299,7 @@ public class PoolBuilder<T> {
      */
     public Pool<T> build() {
         AbstractPool.DefaultPoolConfig<T> config = buildConfig();
+
         if (isThreadAffinity) {
             return new AffinityPool<>(config);
         }
@@ -296,11 +311,21 @@ public class PoolBuilder<T> {
 
     //kept package-private for the benefit of tests
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        return new AbstractPool.DefaultPoolConfig<>(allocator,
-                initialSize,
-                allocationStrategy,
+        SizeLimitStrategy sizeLimitStrategy;
+
+        if (this.sizeLimitStrategy != null) {
+            sizeLimitStrategy = this.sizeLimitStrategy;
+        }
+        else if (minSize == 0 && maxSize == Integer.MAX_VALUE) {
+            sizeLimitStrategy = SizeLimitStrategies.UNBOUNDED;
+        }
+        else {
+            sizeLimitStrategy = new SizeLimitStrategies.BoundedSizeLimitStrategy(minSize, maxSize);
+        }
+
+        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, sizeLimitStrategy,
                 maxPending,
-                releaseHandler,
+		        releaseHandler,
                 destroyHandler,
                 evictionPredicate,
                 acquisitionScheduler,

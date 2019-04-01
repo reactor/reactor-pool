@@ -18,11 +18,13 @@ package reactor.pool;
 /**
  * A strategy guiding the {@link Pool} on whether or not it is possible to invoke the resource allocator.
  * <p>
- * See {@link PoolBuilder#sizeMax(int)} and {@link PoolBuilder#sizeUnbounded()} for pre-made strategies.
+ * See {@link PoolBuilder#sizeMin(int)} and {@link PoolBuilder#sizeMax(int)} for
+ * pre-made strategies.
  *
  * @author Simon Baslé
+ * @author Stephane Maldini
  */
-public interface AllocationStrategy {
+public interface SizeLimitStrategy {
 
     /**
      * Try to get the permission to allocate a {@code desired} positive number of new resources. Returns the permissible

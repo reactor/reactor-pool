@@ -51,5 +51,6 @@ jobs:
       - store_test_results:
           path: build/test-results
 
+      # a token must be configured in the CODECOV_TOKEN env variable
       - codecov/upload:
           file: build/reports/jacoco/test/jacocoTestReport.xml

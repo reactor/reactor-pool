@@ -1,7 +1,8 @@
-# Java Gradle CircleCI 2.0 configuration file
+# Java Gradle CircleCI configuration file
 #
 # Check https://circleci.com/docs/2.0/language-java/ for more details
 #
+# Using 2.1 for Pipelines and codecov Orb
 version: 2.1
 
 orbs:

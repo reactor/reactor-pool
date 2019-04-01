@@ -35,14 +35,17 @@ jobs:
             # fallback to using the latest cache if no exact match is found
             - v1-dependencies-
 
-      - run: gradle dependencies
+      - run: ./gradlew dependencies
 
       - save_cache:
           paths:
             - ~/.gradle
           key: v1-dependencies-{{ checksum "build.gradle" }}
 
-      # run tests!
+      #split compilation and tests in UI by executing `testClasses` first
+      - run: ./gradlew testClasses
+
+      # now run tests!
       - run: ./gradlew check
 
       - store_test_results:

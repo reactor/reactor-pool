@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
@@ -94,6 +95,13 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     public Mono<PooledRef<POOLABLE>> acquire() {
         //Note the pool isn't aware of the mono until requested.
         return new AffinityBorrowerMono<>(this);
+    }
+
+    @Override
+    void cancelAcquire(Borrower<POOLABLE> borrower) {
+        for (SubPool<POOLABLE> subPool : pools.values()) {
+            subPool.cancelPending(borrower);
+        }
     }
 
     @Override
@@ -274,6 +282,8 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
         final AffinityPool<POOLABLE> parent;
 
         volatile int directReleaseInProgress;
+
+
         static final AtomicIntegerFieldUpdater<SubPool> DIRECT_RELEASE_WIP = AtomicIntegerFieldUpdater.newUpdater(SubPool.class, "directReleaseInProgress");
 
 
@@ -289,6 +299,8 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
          * @param pending the pending {@link Borrower} to add to the SubPool
          */
         abstract void offerPending(Borrower<POOLABLE> pending);
+
+        abstract void cancelPending(Borrower<POOLABLE> borrower);
 
         /**
          * Remove a pending from the subpool and return it, or {@code null} if it is empty.
@@ -363,15 +375,19 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             return b;
         }
 
+        @Override
+        void cancelPending(Borrower<POOLABLE> borrower) {
+            this.localPendings.remove(borrower);
+        }
     }
 
     static final class LifoSubPool<POOLABLE> extends SubPool<POOLABLE> {
 
-        final TreiberStack<Borrower<POOLABLE>> localPendings;
+        final ConcurrentLinkedDeque<Borrower<POOLABLE>> localPendings;
 
         LifoSubPool(AffinityPool<POOLABLE> parent) {
             super(parent);
-            this.localPendings = new TreiberStack<>();
+            this.localPendings = new ConcurrentLinkedDeque<>();
         }
 
         @Override
@@ -384,7 +400,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                     return;
                 }
                 else if (AbstractPool.PENDING_COUNT.compareAndSet(parent, currentPending, currentPending + 1)) {
-                    this.localPendings.push(pending);
+                    this.localPendings.offerFirst(pending);
                     return;
                 }
             }
@@ -392,11 +408,16 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         public Borrower<POOLABLE> pollPending() {
-            Borrower<POOLABLE> b = this.localPendings.pop();
+            Borrower<POOLABLE> b = this.localPendings.pollFirst();
             if (b != null) {
                 AbstractPool.PENDING_COUNT.decrementAndGet(parent);
             }
             return b;
+        }
+
+        @Override
+        void cancelPending(Borrower<POOLABLE> borrower) {
+            this.localPendings.remove(borrower);
         }
     }
 

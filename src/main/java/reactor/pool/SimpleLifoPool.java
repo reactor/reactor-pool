@@ -16,11 +16,14 @@
 
 package reactor.pool;
 
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * This implementation is based on MPSC queues for idle resources and a {@link TreiberStack}
- * for pending {@link Pool#acquire()} Monos, resulting in serving pending borrowers in LIFO order.
+ * This implementation is based on MPSC queues for idle resources and a {@link ConcurrentLinkedDeque}
+ * for pending {@link Pool#acquire()} Monos, used as a stack ({@link java.util.Deque#offerFirst(Object)},
+ * {@link Deque#pollFirst()}. This results in serving pending borrowers in LIFO order.
  *
  * See {@link SimplePool} for other characteristics of the simple pool.
  *
@@ -28,15 +31,15 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  */
 final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
-    private static final TreiberStack TERMINATED = TreiberStack.empty();
+    private static final ConcurrentLinkedDeque TERMINATED = new ConcurrentLinkedDeque();
 
-    volatile TreiberStack<Borrower<POOLABLE>>                                      pending;
-    private static final AtomicReferenceFieldUpdater<SimpleLifoPool, TreiberStack> PENDING = AtomicReferenceFieldUpdater.newUpdater(
-            SimpleLifoPool.class, TreiberStack.class, "pending");
+    volatile ConcurrentLinkedDeque<Borrower<POOLABLE>>                                      pending;
+    private static final AtomicReferenceFieldUpdater<SimpleLifoPool, ConcurrentLinkedDeque> PENDING = AtomicReferenceFieldUpdater.newUpdater(
+            SimpleLifoPool.class, ConcurrentLinkedDeque.class, "pending");
 
     public SimpleLifoPool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig);
-        this.pending = new TreiberStack<>(); //unbounded
+        this.pending = new ConcurrentLinkedDeque<>(); //unbounded
     }
 
     @Override
@@ -49,7 +52,7 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
                 return false;
             }
             else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
-                this.pending.push(pending); //unbounded
+                this.pending.offerFirst(pending); //unbounded
                 return true;
             }
         }
@@ -57,19 +60,29 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
     @Override
     Borrower<POOLABLE> pendingPoll() {
-        TreiberStack<Borrower<POOLABLE>> q = this.pending;
-        Borrower<POOLABLE> b = q.pop();
+        ConcurrentLinkedDeque<Borrower<POOLABLE>> q = this.pending;
+        Borrower<POOLABLE> b = q.pollFirst();
         if (b != null) PENDING_COUNT.decrementAndGet(this);
         return b;
     }
 
     @Override
+    void cancelAcquire(Borrower<POOLABLE> borrower) {
+        if (!isDisposed()) { //ignore pool disposed
+            ConcurrentLinkedDeque<Borrower<POOLABLE>> q = this.pending;
+            if (q.remove(borrower)) {
+                PENDING_COUNT.decrementAndGet(this);
+            }
+        }
+    }
+
+    @Override
     public void dispose() {
         @SuppressWarnings("unchecked")
-        TreiberStack<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
+        ConcurrentLinkedDeque<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
         if (q != TERMINATED) {
             Borrower<POOLABLE> p;
-            while((p = q.pop()) != null) {
+            while((p = q.pollFirst()) != null) {
                 p.fail(new RuntimeException("Pool has been shut down"));
             }
 

@@ -103,6 +103,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     abstract boolean elementOffer(POOLABLE element);
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);
+    abstract void cancelAcquire(Borrower<POOLABLE> borrower);
 
     private void defaultDestroy(@Nullable POOLABLE poolable) {
         if (poolable instanceof Disposable) {
@@ -273,6 +274,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         @Override
         public void cancel() {
             set(true);
+            pool.cancelAcquire(this);
         }
 
         @Override

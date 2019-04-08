@@ -68,6 +68,16 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     }
 
     @Override
+    void cancelAcquire(Borrower<POOLABLE> borrower) {
+        if (!isDisposed()) { //ignore pool disposed
+            Queue<Borrower<POOLABLE>> q = this.pending;
+            if (q.remove(borrower)) {
+                PENDING_COUNT.decrementAndGet(this);
+            }
+        }
+    }
+
+    @Override
     public void dispose() {
         @SuppressWarnings("unchecked")
         Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);

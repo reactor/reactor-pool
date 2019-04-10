@@ -61,14 +61,28 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             SimplePool.class, "wip");
 
 
-    QueuePool(DefaultPoolConfig<POOLABLE> poolConfig) {
-        super(poolConfig, Loggers.getLogger(QueuePool.class));
-        int maxSize = poolConfig.maxSize;
+    SimplePool(DefaultPoolConfig<POOLABLE> poolConfig) {
+        super(poolConfig, Loggers.getLogger(SimplePool.class));
+        int maxSize = poolConfig.sizeLimitStrategy.estimatePermitCount();
         if (maxSize == Integer.MAX_VALUE) {
             this.elements = new MpscLinkedQueue8<>();
         }
         else {
             this.elements = new MpscArrayQueue<>(Math.max(2, maxSize));
+        }
+
+        int initSize = poolConfig.sizeLimitStrategy.getPermits(poolConfig.initialSize);
+        for (int i = 0; i < initSize; i++) {
+            long start = metricsRecorder.now();
+            try {
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator.block(), "allocator returned null in constructor");
+                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+                elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+            }
+            catch (Throwable e) {
+                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                throw e;
+            }
         }
     }
 
@@ -148,44 +162,16 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-
-                    // TODO: This needs to be updated to handle getting more than one permit
-                    if (borrower.get()) {
+                    if (borrower.get() || poolConfig.sizeLimitStrategy.getPermits(1) != 1) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
-                    int count = poolConfig.sizeLimitStrategy.getPermits(1);
-
-                    if (count == 0) {
-                        ACQUIRED.decrementAndGet(this);
-                        continue;
-                    }
-                    Scheduler s = poolConfig.acquisitionScheduler;
-
-
-                    if (count > 1) {
-                        for (int i = 0; i < count - 1; i++) {
-                            long start = metricsRecorder.now();
-                            poolConfig.allocator
-                                    .subscribe(newInstance ->
-                                                elements.add(new QueuePooledRef<>(this, newInstance)),
-                                            e -> {
-                                                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                                                poolConfig.sizeLimitStrategy.returnPermits(1);
-                                                borrower.fail(e);
-                                            },
-                                            () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
-                        }
-                    }
-
+                    long start = metricsRecorder.now();
                     Mono<POOLABLE> allocator = poolConfig.allocator;
-
+                    Scheduler s = poolConfig.acquisitionScheduler;
                     if (s != Schedulers.immediate())  {
                         allocator = allocator.publishOn(s);
                     }
-
-                    long start = metricsRecorder.now();
-
                     allocator.subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));

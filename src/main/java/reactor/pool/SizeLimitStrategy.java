@@ -18,7 +18,7 @@ package reactor.pool;
 /**
  * A strategy guiding the {@link Pool} on whether or not it is possible to invoke the resource allocator.
  * <p>
- * See {@link PoolBuilder#sizeMin(int)} and {@link PoolBuilder#sizeMax(int)} for
+ * See {@link PoolBuilder#sizeUnbounded()}} and {@link PoolBuilder#sizeMax(int)} for
  * pre-made strategies.
  *
  * @author Simon Baslé

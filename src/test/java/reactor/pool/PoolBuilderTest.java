@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 
 import io.reactivex.Flowable;
 import org.junit.jupiter.api.Test;

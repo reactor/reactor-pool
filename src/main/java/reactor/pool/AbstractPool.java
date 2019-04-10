@@ -279,62 +279,78 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
     static class DefaultPoolConfig<POOLABLE> {
 
         /**
-         * The asynchronous factory that produces new resources, represented as a {@link Mono}.
+         * The asynchronous factory that produces new resources, represented as a {@link
+         * Mono}.
          */
-        final Mono<POOLABLE>                 allocator;
+        final Mono<POOLABLE>                                allocator;
         /**
-         * {@link SizeLimitStrategy} defines a strategy / limit for the number of pooled object to allocate.
+         * The minimum number of objects a {@link Pool} should create at initialization.
          */
-        final SizeLimitStrategy sizeLimitStrategy;
+        final int                                           initialSize;
         /**
-         * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediately fail any acquire
-         * when no idle resource is available and the pool cannot grow. Use a negative number to deactivate.
+         * {@link SizeLimitStrategy} defines a strategy / limit for the number of pooled
+         * object to allocate.
+         */
+        final SizeLimitStrategy                             sizeLimitStrategy;
+        /**
+         * The maximum number of pending borrowers to enqueue before failing fast. 0 will
+         * immediately fail any acquire when no idle resource is available and the pool
+         * cannot grow. Use a negative number to deactivate.
          */
         final int                                           maxPending;
         /**
-         * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
-         * the resource in order for it to become usable again. The {@link #evictionPredicate} is applied AFTER this reset.
+         * When a resource is {@link PooledRef#release() released}, defines a mechanism of
+         * resetting any lingering state of the resource in order for it to become usable
+         * again. The {@link #evictionPredicate} is applied AFTER this reset.
          * <p>
-         * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
+         * For example, a buffer could have a readerIndex and writerIndex that need to be
+         * flipped back to zero.
          */
         final Function<POOLABLE, ? extends Publisher<Void>> releaseHandler;
         /**
-         * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
-         * objects, file handles, socket connections, etc...).
+         * Defines a mechanism of resource destruction, cleaning up state and OS resources
+         * it could maintain (eg. off-heap objects, file handles, socket connections,
+         * etc...).
          * <p>
-         * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
+         * For example, a database connection could need to cleanly sever the connection
+         * link by sending a message to the database.
          */
         final Function<POOLABLE, ? extends Publisher<Void>> destroyHandler;
         /**
-         * A {@link BiPredicate} that checks if a resource should be destroyed ({@code true}) or is still in a valid state
-         * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
-         * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
-         * reaping process. Both the resource and some {@link PooledRefMetadata metrics} about the resource's life within the pool are provided.
+         * A {@link BiPredicate} that checks if a resource should be destroyed ({@code
+         * true}) or is still in a valid state for recycling. This is primarily applied
+         * when a resource is released, to check whether or not it can immediately be
+         * recycled, but could also be applied during an acquire attempt (detecting eg.
+         * idle resources) or by a background reaping process. Both the resource and some
+         * {@link PooledRefMetadata metrics} about the resource's life within the pool are
+         * provided.
          */
         final BiPredicate<POOLABLE, PooledRefMetadata>      evictionPredicate;
         /**
-         * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
-         * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator} produced new
+         * The {@link Scheduler} on which the {@link Pool} should publish resources,
+         * independently of which thread called {@link Pool#acquire()} or {@link
+         * PooledRef#release()} or on which thread the {@link #allocator} produced new
          * resources.
          * <p>
-         * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
+         * Use {@link Schedulers#immediate()} if determinism is less important than
+         * staying on the same threads.
          */
         final Scheduler                                     acquisitionScheduler;
         /**
-         * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
-         * implementations.
+         * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the
+         * {@link Pool} implementations.
          */
         final PoolMetricsRecorder                           metricsRecorder;
 
         /**
-         * The order in which pending borrowers are served ({@code false} for FIFO, {@code true} for LIFO).
-         * Defaults to {@code false} (FIFO).
+         * The order in which pending borrowers are served ({@code false} for FIFO, {@code
+         * true} for LIFO). Defaults to {@code false} (FIFO).
          */
-        final boolean                                       isLifo;
+        final boolean isLifo;
 
         DefaultPoolConfig(Mono<POOLABLE> allocator,
                           int initialSize,
-		                  SizeLimitStrategy sizeLimitStrategy,
+                          SizeLimitStrategy sizeLimitStrategy,
                           int maxPending,
                           Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
                           Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
@@ -344,8 +360,8 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
                           boolean isLifo) {
             this.allocator = allocator;
             this.initialSize = initialSize;
-            this.maxPending = maxPending;
             this.sizeLimitStrategy = sizeLimitStrategy;
+            this.maxPending = maxPending;
             this.releaseHandler = releaseHandler;
             this.destroyHandler = destroyHandler;
             this.evictionPredicate = evictionPredicate;

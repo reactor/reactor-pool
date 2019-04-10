@@ -23,7 +23,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.reactivestreams.Publisher;
-
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -63,9 +62,7 @@ public class PoolBuilder<T> {
     boolean                                isLifo               = false;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
-    int minSize = 0;
-    int maxSize = Integer.MAX_VALUE;
-	SizeLimitStrategy               sizeLimitStrategy;
+    SizeLimitStrategy                      sizeLimitStrategy    = SizeLimitStrategies.UNBOUNDED;
     Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
     Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
     BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
@@ -74,6 +71,137 @@ public class PoolBuilder<T> {
 
     PoolBuilder(Mono<T> allocator) {
         this.allocator = allocator;
+    }
+
+    /**
+     * Provide a {@link Scheduler} that can optionally be used by a {@link Pool} to
+     * deliver its resources in a more deterministic (albeit potentially less efficient)
+     * way, thread-wise. Other implementations MAY completely ignore this parameter.
+     * <p>
+     * Defaults to {@link Schedulers#immediate()}.
+     *
+     * @param acquisitionScheduler the {@link Scheduler} on which to deliver acquired
+     * resources
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> acquisitionScheduler(Scheduler acquisitionScheduler) {
+        this.acquisitionScheduler =
+                Objects.requireNonNull(acquisitionScheduler, "acquisitionScheduler");
+        return this;
+    }
+
+    /**
+     * Build the {@link Pool}.
+     *
+     * @return the {@link Pool}
+     */
+    public Pool<T> build() {
+        AbstractPool.DefaultPoolConfig<T> config = buildConfig();
+        if (isThreadAffinity) {
+            return new AffinityPool<>(config);
+        }
+        if (isLifo) {
+            return new SimpleLifoPool<>(config);
+        }
+        return new SimpleFifoPool<>(config);
+    }
+
+    /**
+     * Provide a {@link Function handler} that will derive a destroy {@link Publisher}
+     * whenever a resource isn't fit for usage anymore (either through eviction, manual
+     * invalidation, or because something went wrong with it). The destroy procedure is
+     * applied asynchronously and errors are swallowed.
+     * <p>
+     * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements
+     * and disposing them.
+     *
+     * @param destroyHandler the {@link Function} supplying the state-resetting {@link
+     * Publisher}
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
+        this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
+        return this;
+    }
+
+    /**
+     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that causes
+     * eviction (ie returns {@code true}) of resources that have been idle (ie released
+     * and available in the {@link Pool}) for more than the {@code ttl} {@link Duration}
+     * (inclusive). Such a predicate could be used to evict too idle objects when next
+     * encountered by an {@link Pool#acquire()}.
+     *
+     * @param maxIdleTime the {@link Duration} after which an object should not be passed
+     * to a borrower, but destroyed (resolution: ms)
+     *
+     * @return this {@link Pool} builder
+     *
+     * @see #evictionPredicate(BiPredicate)
+     */
+    public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
+        return evictionPredicate(idlePredicate(maxIdleTime));
+    }
+
+    /**
+     * Provide an eviction {@link BiPredicate} that allows to decide if a resource is fit
+     * for being placed in the {@link Pool}. This can happen whenever a resource is {@link
+     * PooledRef#release() released} back to the {@link Pool} (after it was processed by
+     * the {@link #releaseHandler(Function)}), but also when being {@link Pool#acquire()
+     * acquired} from the pool (triggering a second pass if the object is found to be
+     * unfit, eg. it has been idle for too long). Finally, some pool implementations MAY
+     * implement a reaper thread mechanism that detect idle resources through this
+     * predicate and destroy them.
+     * <p>
+     * Defaults to never evicting (a {@link BiPredicate} that always returns false).
+     *
+     * @param evictionPredicate a {@link Predicate} that returns {@code true} if the
+     * resource is unfit for the pool and should be destroyed, {@code false} if it should
+     * be put back into the pool.
+     *
+     * @return this {@link Pool} builder
+     *
+     * @see #evictionIdle(Duration)
+     */
+    public PoolBuilder<T> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
+        this.evictionPredicate =
+                Objects.requireNonNull(evictionPredicate, "evictionPredicate");
+        return this;
+    }
+
+    /**
+     * How many resources the {@link Pool} should allocate upon creation. This parameter
+     * MAY be ignored by some implementations (although they should state so in their
+     * documentation).
+     * <p>
+     * Defaults to {@code 0}.
+     *
+     * @param n the initial size of the {@link Pool}.
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> initialSize(int n) {
+        if (n < 0) {
+            throw new IllegalArgumentException("initialSize must be >= 0");
+        }
+        this.initialSize = n;
+        return this;
+    }
+
+    /**
+     * Change the order in which pending {@link Pool#acquire()} {@link Mono Monos} are
+     * served whenever a resource becomes available. The default is FIFO, but passing true
+     * to this method changes it to LIFO.
+     *
+     * @param isLastInFirstOut should the pending order be LIFO ({@code true}) or FIFO
+     * ({@code false})?
+     *
+     * @return a builder of {@link Pool} with the requested pending acquire ordering.
+     */
+    public PoolBuilder<T> lifo(boolean isLastInFirstOut) {
+        this.isLifo = isLastInFirstOut;
+        return this;
     }
 
     /**
@@ -108,96 +236,13 @@ public class PoolBuilder<T> {
     }
 
     /**
-     * If {@code true} the returned {@link Pool} attempts to keep resources on the same thread, by prioritizing
-     * pending {@link Pool#acquire()} {@link Mono Monos} that were subscribed on the same thread on which a resource is
-     * released. In case no such borrower exists, but some are pending from another thread, it will deliver to these
-     * borrowers instead (a slow path with no fairness guarantees).
+     * Set up the optional {@link PoolMetricsRecorder} for {@link Pool} to use for instrumentation purposes.
      *
-     * @param isThreadAffinity {@literal true} to activate thread affinity on the pool.
-     * @return a builder of {@link Pool} with thread affinity.
-     */
-    public PoolBuilder<T> threadAffinity(boolean isThreadAffinity) {
-        this.isThreadAffinity = isThreadAffinity;
-        return this;
-    }
-
-    /**
-     * Limit the maximum number of poolable resources in the {@link Pool}.
-     *
-     * @param minSize a minimum number of poolable resources to initialize and maintain
-     * after
-     * the first acquisition
-     *
+     * @param recorder the {@link PoolMetricsRecorder}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> sizeMin(int minSize) {
-        if (minSize < 0) {
-            throw new IllegalArgumentException("Minimum Pool Size cannot be negative");
-        }
-        this.minSize = minSize;
-        return this;
-    }
-
-    /**
-     * Limit the maximum number of poolable resources in the {@link Pool}.
-     * <p> If {@literal Integer#MAX_VALUE} is used the upper bound limit will be
-     * unbounded, thus allowing the pool to grow indefinitely.
-     *
-     * @param maxSize a maximum number of poolable resources to hold
-     *
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T> sizeMax(int maxSize) {
-        if (maxSize < 1) {
-            throw new IllegalArgumentException("Maximum Pool Size cannot be null or negative");
-        }
-        this.maxSize = maxSize;
-        return this;
-    }
-
-    /**
-     * Change the order in which pending {@link Pool#acquire()} {@link Mono Monos} are served
-     * whenever a resource becomes available. The default is FIFO, but passing true to this
-     * method changes it to LIFO.
-     *
-     * @param isLastInFirstOut should the pending order be LIFO ({@code true}) or FIFO ({@code false})?
-     * @return a builder of {@link Pool} with the requested pending acquire ordering.
-     */
-    public PoolBuilder<T> lifo(boolean isLastInFirstOut) {
-        this.isLifo = isLastInFirstOut;
-        return this;
-    }
-
-    /**
-     * How many resources the {@link Pool} should allocate upon creation.
-     * This parameter MAY be ignored by some implementations (although they should state so in their documentation).
-     * <p>
-     * Defaults to {@code 0}.
-     *
-     * @param n the initial size of the {@link Pool}.
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T> initialSize(int n) {
-        if (n < 0) {
-            throw new IllegalArgumentException("initialSize must be >= 0");
-        }
-        this.initialSize = n;
-        return this;
-    }
-
-    /**
-     * Limits in how many resources can be allocated and managed by the {@link Pool} are driven by the
-     * provided {@link SizeLimitStrategy}.
-     * <p>
-     * Defaults to an unbounded creation of resources, although it is not a recommended one.
-     *
-     * @param sizeLimitStrategy the {@link SizeLimitStrategy} to use
-     * @return this {@link Pool} builder
-     * @see #sizeMax(int)
-     * @see #sizeMin(int)
-     */
-    public PoolBuilder<T> sizeLimitStrategy(SizeLimitStrategy sizeLimitStrategy) {
-        this.sizeLimitStrategy = Objects.requireNonNull(sizeLimitStrategy, "sizeLimitStrategy");
+    public PoolBuilder<T> metricsRecorder(PoolMetricsRecorder recorder) {
+        this.metricsRecorder = Objects.requireNonNull(recorder, "recorder");
         return this;
     }
 
@@ -217,115 +262,71 @@ public class PoolBuilder<T> {
     }
 
     /**
-     * Provide a {@link Function handler} that will derive a destroy {@link Publisher} whenever a resource isn't fit for
-     * usage anymore (either through eviction, manual invalidation, or because something went wrong with it).
-     * The destroy procedure is applied asynchronously and errors are swallowed.
+     * Limits in how many resources can be allocated and managed by the {@link Pool} are driven by the
+     * provided {@link SizeLimitStrategy}.
      * <p>
-     * Defaults to recognizing {@link Disposable} and {@link java.io.Closeable} elements and disposing them.
+     * Defaults to an unbounded creation of resources, although it is not a recommended one.
      *
-     * @param destroyHandler the {@link Function} supplying the state-resetting {@link Publisher}
+     * @param sizeLimitStrategy the {@link SizeLimitStrategy} to use
      * @return this {@link Pool} builder
+     * @see #sizeMax(int)
      */
-    public PoolBuilder<T> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
-        this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
+    public PoolBuilder<T> sizeLimitStrategy(SizeLimitStrategy sizeLimitStrategy) {
+        this.sizeLimitStrategy =
+                Objects.requireNonNull(sizeLimitStrategy, "sizeLimitStrategy");
         return this;
     }
 
     /**
-     * Provide an eviction {@link BiPredicate} that allows to decide if a resource is fit for being placed in the {@link Pool}.
-     * This can happen whenever a resource is {@link PooledRef#release() released} back to the {@link Pool} (after
-     * it was processed by the {@link #releaseHandler(Function)}), but also when being {@link Pool#acquire() acquired}
-     * from the pool (triggering a second pass if the object is found to be unfit, eg. it has been idle for too long).
-     * Finally, some pool implementations MAY implement a reaper thread mechanism that detect idle resources through
-     * this predicate and destroy them.
-     * <p>
-     * Defaults to never evicting (a {@link BiPredicate} that always returns false).
+     * Let the {@link Pool} allocate at most {@code max} resources, rejecting further
+     * allocations until some resources have been {@link PooledRef#release() released}.
      *
-     * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should
-     * be destroyed, {@code false} if it should be put back into the pool.
-     * @return this {@link Pool} builder
-     * @see #evictionIdle(Duration)
-     */
-    public PoolBuilder<T> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
-        this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
-        return this;
-    }
-
-    /**
-     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that matches
-     * {@link PooledRef} of resources
-     * that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
-     * {@link Duration} (inclusive).
-     * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
+     * @param maxSize the maximum number of live resources to keep in the pool
      *
-     * @param maxIdleTime the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
-     * @return this {@link Pool} builder
-     * @see #evictionPredicate(BiPredicate)
-     */
-    public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
-        return evictionPredicate(EvictionPredicates.idleMoreThan(maxIdleTime));
-    }
-
-    /**
-     * Provide a {@link Scheduler} that can optionally be used by a {@link Pool} to deliver its resources in a more
-     * deterministic (albeit potentially less efficient) way, thread-wise. Other implementations MAY completely ignore
-     * this parameter.
-     * <p>
-     * Defaults to {@link Schedulers#immediate()}.
-     *
-     * @param acquisitionScheduler the {@link Scheduler} on which to deliver acquired resources
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> acquisitionScheduler(Scheduler acquisitionScheduler) {
-        this.acquisitionScheduler = Objects.requireNonNull(acquisitionScheduler, "acquisitionScheduler");
-        return this;
-    }
-
-    /**
-     * Set up the optional {@link PoolMetricsRecorder} for {@link Pool} to use for instrumentation purposes.
-     *
-     * @param recorder the {@link PoolMetricsRecorder}
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T> metricsRecorder(PoolMetricsRecorder recorder) {
-        this.metricsRecorder = Objects.requireNonNull(recorder, "recorder");
-        return this;
-    }
-
-    /**
-     * Build the {@link Pool}.
-     *
-     * @return the {@link Pool}
-     */
-    public Pool<T> build() {
-        AbstractPool.DefaultPoolConfig<T> config = buildConfig();
-
-        if (isThreadAffinity) {
-            return new AffinityPool<>(config);
+    public PoolBuilder<T> sizeMax(int maxSize) {
+        if (maxSize < 1) {
+            throw new IllegalArgumentException(
+                    "Maximum Pool Size cannot be null or negative");
         }
-        if (isLifo) {
-            return new SimpleLifoPool<>(config);
-        }
-        return new SimpleFifoPool<>(config);
+        return sizeLimitStrategy(new SizeLimitStrategies.SizeBasedAllocationStrategy(
+                maxSize));
+    }
+
+    /**
+     * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
+     * <p>
+     * Note this is the default, if no previous call to {@link #sizeLimitStrategy(SizeLimitStrategy)}
+     * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T> sizeUnbounded() {
+        return sizeLimitStrategy(SizeLimitStrategies.UNBOUNDED);
+    }
+
+    /**
+     * If {@code true} the returned {@link Pool} attempts to keep resources on the same thread, by prioritizing
+     * pending {@link Pool#acquire()} {@link Mono Monos} that were subscribed on the same thread on which a resource is
+     * released. In case no such borrower exists, but some are pending from another thread, it will deliver to these
+     * borrowers instead (a slow path with no fairness guarantees).
+     *
+     * @param isThreadAffinity {@literal true} to activate thread affinity on the pool.
+     * @return a builder of {@link Pool} with thread affinity.
+     */
+    public PoolBuilder<T> threadAffinity(boolean isThreadAffinity) {
+        this.isThreadAffinity = isThreadAffinity;
+        return this;
     }
 
     //kept package-private for the benefit of tests
     AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        SizeLimitStrategy sizeLimitStrategy;
-
-        if (this.sizeLimitStrategy != null) {
-            sizeLimitStrategy = this.sizeLimitStrategy;
-        }
-        else if (minSize == 0 && maxSize == Integer.MAX_VALUE) {
-            sizeLimitStrategy = SizeLimitStrategies.UNBOUNDED;
-        }
-        else {
-            sizeLimitStrategy = new SizeLimitStrategies.BoundedSizeLimitStrategy(minSize, maxSize);
-        }
-
-        return new AbstractPool.DefaultPoolConfig<>(allocator, initialSize, sizeLimitStrategy,
+        return new AbstractPool.DefaultPoolConfig<>(allocator,
+                initialSize,
+                sizeLimitStrategy,
                 maxPending,
-		        releaseHandler,
+                releaseHandler,
                 destroyHandler,
                 evictionPredicate,
                 acquisitionScheduler,
@@ -333,9 +334,8 @@ public class PoolBuilder<T> {
                 isLifo);
     }
 
-    @SuppressWarnings("unchecked")
-    static <T> Function<T, Mono<Void>> noopHandler() {
-        return (Function<T, Mono<Void>>) NOOP_HANDLER;
+    static <T> BiPredicate<T, PooledRefMetadata> idlePredicate(Duration maxIdleTime) {
+        return (poolable, meta) -> meta.idleTime() >= maxIdleTime.toMillis();
     }
 
     @SuppressWarnings("unchecked")
@@ -343,8 +343,9 @@ public class PoolBuilder<T> {
         return (BiPredicate<T, PooledRefMetadata>) NEVER_PREDICATE;
     }
 
-    static <T> BiPredicate<T, PooledRefMetadata> idlePredicate(Duration maxIdleTime) {
-        return (poolable, meta) -> meta.idleTime() >= maxIdleTime.toMillis();
+    @SuppressWarnings("unchecked")
+    static <T> Function<T, Mono<Void>> noopHandler() {
+        return (Function<T, Mono<Void>>) NOOP_HANDLER;
     }
 
     static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();

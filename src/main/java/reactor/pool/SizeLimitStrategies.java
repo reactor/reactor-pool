@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
+ *       https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,26 +21,20 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  * Various pre-made {@link SizeLimitStrategy} for internal use.
  *
  * @author Simon Baslé
+ * @author Stephane Maldini
  */
 final class SizeLimitStrategies {
 
-    static final class BoundedSizeLimitStrategy implements SizeLimitStrategy {
-
-        static final AtomicIntegerFieldUpdater<BoundedSizeLimitStrategy> CURRENT = AtomicIntegerFieldUpdater.newUpdater(BoundedSizeLimitStrategy.class, "current");
+    static final class SizeBasedAllocationStrategy implements SizeLimitStrategy {
 
         final int max;
 
-        final int min;
+        volatile int permits;
+        static final AtomicIntegerFieldUpdater<SizeBasedAllocationStrategy> PERMITS = AtomicIntegerFieldUpdater.newUpdater(SizeBasedAllocationStrategy.class, "permits");
 
-        volatile int current;
-
-        BoundedSizeLimitStrategy(int max) {
-            this(0, max);
-        }
-
-        BoundedSizeLimitStrategy(int min, int max) {
-            this.min = Math.min(max, min);
-            this.max = Math.max(max, min);
+        SizeBasedAllocationStrategy(int max) {
+            this.max = max;
+            PERMITS.lazySet(this, max);
         }
 
         @Override
@@ -49,39 +43,26 @@ final class SizeLimitStrategies {
                 throw new IllegalArgumentException("desired must be a positive number");
             }
 
-            for(;;) {
-                int current = this.current;
-                int newValue;
-                int delta;
+            //impl note: this should be more efficient compared to the previous approach for desired == 1
+            // (incrementAndGet + decrementAndGet compensation both induce a CAS loop, vs single loop here)
+            for (;;) {
+                int p = permits;
+                int possible = Math.min(desired, p);
 
-
-                if(current < min) {
-                    newValue = min;
-                    delta = min - current;
-                }
-                else if (current + desired > max) {
-                    newValue = max;
-                    delta = max - current;
-                }
-                else {
-                    newValue = current + desired;
-                    delta = desired;
-                }
-
-                if (CURRENT.compareAndSet(this, current, newValue)) {
-                    return delta;
+                if (PERMITS.compareAndSet(this, p, p - possible)) {
+                    return possible;
                 }
             }
         }
 
         @Override
         public int estimatePermitCount() {
-            return max - CURRENT.get(this);
+            return PERMITS.get(this);
         }
 
         @Override
         public void returnPermits(int returned) {
-            CURRENT.addAndGet(this, -returned);
+            PERMITS.addAndGet(this, returned);
         }
     }
 

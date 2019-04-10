@@ -58,28 +58,28 @@ import static org.awaitility.Awaitility.await;
 class AffinityPoolTest {
 
     //==utils for package-private config==
-    static final Pool<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+    static final Pool<PoolableTest> testPool(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return PoolBuilder.from(allocator)
                           .threadAffinity(true)
-                          .sizeMin(minSize)
+                          .initialSize(minSize)
                           .sizeMax(maxSize)
                           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                           .evictionPredicate((value, metadata) -> !value.isHealthy())
-                          .buildConfig();
+                          .build();
     }
 
-    static final Pool<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
+    static final Pool<PoolableTest> testPool(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return PoolBuilder.from(allocator)
                           .threadAffinity(true)
-                          .sizeMin(minSize)
+                          .initialSize(minSize)
                           .sizeMax(maxSize)
                           .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
                               poolableTest.clean();
                               additionalCleaner.accept(poolableTest);
                           }))
                           .evictionPredicate((value, metadata) -> !value.isHealthy())
-                          .buildConfig();
+                          .build();
     }
     //======
 
@@ -195,7 +195,7 @@ class AffinityPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            Pool<PoolableTest> pool = poolableTestConfig(0, 1,
+            Pool<PoolableTest> pool = testPool(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                         .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -233,7 +233,7 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            Pool<PoolableTest> pool = poolableTestConfig(1, 1,
+            Pool<PoolableTest> pool = testPool(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -254,7 +254,7 @@ class AffinityPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            Pool<PoolableTest> pool = poolableTestConfig(0, 1,
+            Pool<PoolableTest> pool = testPool(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -278,7 +278,7 @@ class AffinityPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            Pool<PoolableTest> pool = poolableTestConfig(1, 1,
+            Pool<PoolableTest> pool = testPool(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 
@@ -335,7 +335,7 @@ class AffinityPoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            Pool<PoolableTest> pool = poolableTestConfig(1, 1,
+            Pool<PoolableTest> pool = testPool(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
 

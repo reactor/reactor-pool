@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import reactor.pool.SizeLimitStrategies.BoundedSizeLimitStrategy;
+import reactor.pool.SizeLimitStrategies.SizeBasedAllocationStrategy;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
@@ -47,29 +47,22 @@ class SizeLimitStrategiesTest {
     class AllocatingMaxTest {
 
         @Test
-        void negativeMaxGivesOnePermit() {
-            SizeLimitStrategy test = new BoundedSizeLimitStrategy(-1);
-
-            assertThat(test.estimatePermitCount()).isZero();
-        }
-
-        @Test
         void zeroMaxGivesOnePermit() {
-            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(0);
+            SizeLimitStrategy test = new SizeLimitStrategies.SizeBasedAllocationStrategy(0);
 
             assertThat(test.estimatePermitCount()).isZero();
         }
 
         @Test
         void onePermitCount() {
-            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
+            SizeLimitStrategy test = new SizeBasedAllocationStrategy(1);
 
             assertThat(test.estimatePermitCount()).isOne();
         }
 
         @Test
         void onePermitGet() {
-            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
+            SizeLimitStrategy test = new SizeBasedAllocationStrategy(1);
 
             assertThat(test.getPermits(1)).as("first try").isOne();
             assertThat(test.getPermits(1)).as("second try").isZero();
@@ -77,7 +70,7 @@ class SizeLimitStrategiesTest {
 
         @Test
         void onePermitGetDesired() {
-            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
+            SizeLimitStrategy test = new SizeLimitStrategies.SizeBasedAllocationStrategy(1);
 
             assertThat(test.getPermits(100)).as("desired 100").isOne();
             assertThat(test.getPermits(1)).as("desired 1 more").isZero();
@@ -85,21 +78,21 @@ class SizeLimitStrategiesTest {
 
         @Test
         void getPermitDesiredZero() {
-            SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
+            SizeLimitStrategy test = new SizeLimitStrategies.SizeBasedAllocationStrategy(1);
 
             assertThat(test.getPermits(0)).isZero();
         }
 
         @Test
         void getPermitDesiredNegative() {
-            SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
+            SizeLimitStrategy test = new SizeBasedAllocationStrategy(1);
 
             assertThatThrownBy(() -> test.getPermits(-1)).hasMessage("desired must be a positive number");
         }
 
         @Test
         void returnPermitCanGoOverMax() {
-            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(1);
+            final SizeLimitStrategy test = new SizeBasedAllocationStrategy(1);
 
             test.returnPermits(1);
 
@@ -108,7 +101,7 @@ class SizeLimitStrategiesTest {
 
         @Test
         void returnPermitsCanGoOverMax() {
-            final SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(1);
+            final SizeLimitStrategy test = new SizeLimitStrategies.SizeBasedAllocationStrategy(1);
 
             test.returnPermits(100);
 
@@ -119,7 +112,7 @@ class SizeLimitStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void raceGetPermit(int workerCount) throws InterruptedException {
-            final SizeLimitStrategy test = new SizeLimitStrategies.BoundedSizeLimitStrategy(10);
+            final SizeLimitStrategy test = new SizeLimitStrategies.SizeBasedAllocationStrategy(10);
 
             LongAdder counter = new LongAdder();
             ExecutorService es = Executors.newFixedThreadPool(workerCount);
@@ -144,7 +137,7 @@ class SizeLimitStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void racePermitsRandom(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
+            final SizeLimitStrategy test = new SizeBasedAllocationStrategy(10);
 
             LongAdder counter = new LongAdder();
             LongAdder gotZeroCounter = new LongAdder();
@@ -175,7 +168,7 @@ class SizeLimitStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void raceMixGetPermitWithGetRandomPermits(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
+            final SizeLimitStrategy test = new SizeBasedAllocationStrategy(10);
 
             LongAdder usedGetRandomPermits = new LongAdder();
             LongAdder usedGetPermit = new LongAdder();
@@ -221,7 +214,7 @@ class SizeLimitStrategiesTest {
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
         void racePermitsRandomWithInnerLoop(int workerCount, TestInfo testInfo) throws InterruptedException {
-            final SizeLimitStrategy test = new BoundedSizeLimitStrategy(10);
+            final SizeLimitStrategy test = new SizeBasedAllocationStrategy(10);
 
             LongAdder counter = new LongAdder();
             LongAdder gotZeroCounter = new LongAdder();

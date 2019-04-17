@@ -30,6 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import reactor.pool.AllocationStrategies.SizeBasedAllocationStrategy;
+import reactor.pool.AllocationStrategies.UnboundedAllocationStrategy;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
@@ -257,14 +258,14 @@ class AllocationStrategiesTest {
 
         @Test
         void permitCountIsMaxValue() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            AllocationStrategy test = new UnboundedAllocationStrategy();
 
             assertThat(test.estimatePermitCount()).isEqualTo(Integer.MAX_VALUE);
         }
 
         @Test
         void getPermitsDoesntChangeCount() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            AllocationStrategy test = new UnboundedAllocationStrategy();
 
             assertThat(test.getPermits(100)).as("first try").isEqualTo(100);
             assertThat(test.getPermits(1000)).as("second try").isEqualTo(1000);
@@ -273,21 +274,21 @@ class AllocationStrategiesTest {
 
         @Test
         void getPermitDesiredZero() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            AllocationStrategy test = new UnboundedAllocationStrategy();
 
             assertThat(test.getPermits(0)).isZero();
         }
 
         @Test
         void getPermitDesiredNegative() {
-            AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            AllocationStrategy test = new UnboundedAllocationStrategy();
 
             assertThat(test.getPermits(-1)).isZero();
         }
 
         @Test
         void returnPermitsDoesntChangeMax() {
-            final AllocationStrategy test = AllocationStrategies.UNBOUNDED;
+            final AllocationStrategy test = new UnboundedAllocationStrategy();
 
             test.returnPermits(1000);
 

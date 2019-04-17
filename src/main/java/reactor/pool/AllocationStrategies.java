@@ -15,6 +15,7 @@
  */
 package reactor.pool;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
@@ -24,11 +25,19 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  */
 final class AllocationStrategies {
 
-    static final AllocationStrategy UNBOUNDED = new AllocationStrategy() {
+    //FIXME tests
+    static final class UnboundedAllocationStrategy extends AtomicInteger implements AllocationStrategy {
 
         @Override
         public int getPermits(int desired) {
-            return desired <= 0 ? 0 : desired;
+            if (desired <= 0) {
+                return 0;
+            }
+            int overflowCheck = addAndGet(desired); //+desired currently live
+            if (overflowCheck < 0) {
+                compareAndSet(overflowCheck, Integer.MAX_VALUE);
+            }
+            return desired;
         }
 
         @Override
@@ -38,9 +47,22 @@ final class AllocationStrategies {
 
         @Override
         public void returnPermits(int returned) {
-            //NO-OP
+            int updated = addAndGet(-returned);
+            if (updated < 0) {
+                compareAndSet(updated, 0);
+            }
         }
-    };
+
+        @Override
+        public int permitMaximum() {
+            return Integer.MAX_VALUE;
+        }
+
+        @Override
+        public int permitGranted() {
+            return get();
+        }
+    }
 
     static final class SizeBasedAllocationStrategy implements AllocationStrategy {
 
@@ -73,6 +95,16 @@ final class AllocationStrategies {
         @Override
         public int estimatePermitCount() {
             return PERMITS.get(this);
+        }
+
+        @Override
+        public int permitMaximum() {
+            return max;
+        }
+
+        @Override
+        public int permitGranted() {
+            return max - PERMITS.get(this);
         }
 
         @Override

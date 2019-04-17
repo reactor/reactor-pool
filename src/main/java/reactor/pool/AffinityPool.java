@@ -129,7 +129,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     @Override
-    int idleSize() {
+    public int idleSize() {
         return availableElements.size();
     }
 

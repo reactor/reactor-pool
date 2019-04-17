@@ -43,7 +43,8 @@ import reactor.util.context.Context;
  *
  * @author Simon Baslé
  */
-abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
+abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
+                                                 InstrumentedPool.PoolMetrics {
 
     //A pool should be rare enough that having instance loggers should be ok
     //This helps with testability of some methods that for now mainly log
@@ -62,8 +63,44 @@ abstract class AbstractPool<POOLABLE> implements Pool<POOLABLE> {
         this.metricsRecorder = poolConfig.metricsRecorder;
     }
 
+    // == pool introspection methods ==
+
+    @Override
+    public PoolMetrics metrics() {
+        return this;
+    }
+
+    @Override
+    public int pendingAcquireSize() {
+        return PENDING_COUNT.get(this);
+    }
+
+    @Override
+    public int allocatedSize() {
+        return poolConfig.allocationStrategy.permitGranted();
+    }
+
+    @Override
+    abstract public int idleSize();
+
+    @Override
+    public int acquiredSize() {
+        return allocatedSize() - idleSize();
+    }
+
+    @Override
+    public int getMaxAllocatedSize() {
+        return poolConfig.allocationStrategy.permitMaximum();
+    }
+
+    @Override
+    public int getMaxPendingAcquireSize() {
+        return poolConfig.maxPending < 0 ? Integer.MAX_VALUE : poolConfig.maxPending;
+    }
+
+    // == common methods to interact with idle/pending queues ==
+
     abstract boolean elementOffer(POOLABLE element);
-    abstract int idleSize();
 
     abstract void doAcquire(Borrower<POOLABLE> borrower);
 

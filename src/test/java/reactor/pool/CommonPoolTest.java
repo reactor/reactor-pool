@@ -49,6 +49,7 @@ import reactor.pool.InstrumentedPool.PoolMetrics;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
+import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.test.util.RaceTestUtils;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
@@ -1037,6 +1038,49 @@ public class CommonPoolTest {
 			Loggers.resetLoggerFactory();
 		}
 	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void pendingTimeoutNotImpactedByLongAllocation(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.getOrSet();
+
+		try {
+			PoolBuilder<String> builder = PoolBuilder
+					.from(Mono.just("delayed").delaySubscription(Duration.ofMillis(500)))
+					.sizeMax(1);
+			AbstractPool<String> pool = configAdjuster.apply(builder);
+
+			StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable),
+					() -> vts, 1)
+			            .expectSubscription()
+			            .expectNoEvent(Duration.ofMillis(500))
+			            .expectNext("delayed")
+			            .verifyComplete();
+		}
+		finally {
+			VirtualTimeScheduler.reset();
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void pendingTimeoutImpactedByLongRelease(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		PoolBuilder<String> builder = PoolBuilder
+				.from(Mono.just("instant"))
+				.sizeMax(1);
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
+		PooledRef<String> uniqueRef = pool.acquire().block();
+
+		StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable))
+		            .expectSubscription()
+		            .expectNoEvent(Duration.ofMillis(100))
+		            .thenAwait(Duration.ofMillis(1))
+		            .verifyErrorSatisfies(e -> assertThat(e)
+				            .isInstanceOf(TimeoutException.class)
+				            .hasMessage("Acquire has been pending for more than the configured timeout of 100ms"));
+	}
+
 
 	// === METRICS ===
 

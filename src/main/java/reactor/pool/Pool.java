@@ -20,6 +20,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.function.Function;
 
 /**
@@ -51,6 +52,37 @@ public interface Pool<POOLABLE> extends Disposable {
      * @see #acquireInScope(Function)
      */
     Mono<PooledRef<POOLABLE>> acquire();
+
+    /**
+     * Manually acquire a {@code POOLABLE} from the pool upon subscription and become responsible for its release.
+     * The provided {@link Duration} acts as a timeout that only applies if the acquisition is added to the pending
+     * queue, i.e. there is no idle resource and no new resource can be created currently, so one needs to wait
+     * for a release before a resource can be delivered. For a timeout that covers both this pending case and the
+     * time it would take to allocate a new resource, simply apply the {@link Mono#timeout(Duration)} operator to
+     * the returned Mono. For a timeout that only applies to resource allocation, build the pool with the standard
+     * {@link Mono#timeout(Duration)} operator chained to the {@link PoolBuilder#from(Publisher) allocator}.
+     * <p>
+     * The object is wrapped in a {@link PooledRef} which can be used for manually releasing the object back to the pool
+     * or invalidating it. As a result, you MUST maintain a reference to it throughout the code that makes use of the
+     * underlying resource.
+     * <p>
+     * This is typically the case when one needs to wrap the actual resource into a decorator version, where the reference
+     * to the {@link PooledRef} can be stored. On the other hand, if the resource and its usage directly expose reactive
+     * APIs, you might want to prefer to use {@link #acquireInScope(Function)}.
+     * <p>
+     * The resulting {@link Mono} emits the {@link PooledRef} as the {@code POOLABLE} becomes available. Cancelling the
+     * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
+     * acquisition entirely or will translate to a {@link PooledRef#release() release} of the {@code POOLABLE}.
+     * Once the resource is emitted though, it is the responsibility of the caller to release the poolable object via
+     * the {@link PooledRef} {@link PooledRef#release() release methods} when the resource is not used anymore
+     * (directly OR indirectly, eg. the results from multiple statements derived from a DB connection type of resource
+     * have all been processed).
+     *
+     * @return a {@link Mono}, each subscription to which represents an individual act of acquiring a pooled object and
+     * manually managing its lifecycle from there on
+     * @see #acquireInScope(Function)
+     */
+    Mono<PooledRef<POOLABLE>> acquire(Duration timeout);
 
     /**
      * Acquire a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing

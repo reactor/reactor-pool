@@ -40,6 +40,14 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 	interface PoolMetrics {
 
 		/**
+		 * Measure the current number of resources that have been successfully
+		 * {@link Pool#acquire() acquired} and are in active use.
+		 *
+		 * @return the number of acquired resources
+		 */
+		int acquiredSize();
+
+		/**
 		 * Measure the current number of allocated resources in the {@link Pool}, acquired
 		 * or idle.
 		 *
@@ -57,14 +65,6 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 * @return the number of idle resources
 		 */
 		int idleSize();
-
-		/**
-		 * Measure the current number of resources that have been successfully
-		 * {@link Pool#acquire() acquired} and are in active use.
-		 *
-		 * @return the number of acquired resources
-		 */
-		int acquiredSize();
 
 		/**
 		 * Measure the current number of "pending" {@link Pool#acquire() acquire Monos} in

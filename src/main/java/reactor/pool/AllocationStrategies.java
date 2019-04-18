@@ -80,7 +80,7 @@ final class AllocationStrategies {
         public int getPermits(int desired) {
             if (desired < 1) return 0;
 
-            //impl note: this should be more performant compared to the previous approach for desired == 1
+            //impl note: this should be more efficient compared to the previous approach for desired == 1
             // (incrementAndGet + decrementAndGet compensation both induce a CAS loop, vs single loop here)
             for (;;) {
                 int p = permits;

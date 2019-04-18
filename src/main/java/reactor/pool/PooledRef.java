@@ -31,6 +31,8 @@ import java.util.function.Function;
  */
 public interface PooledRef<POOLABLE> {
 
+    // == Data ==
+
     /**
      * Returns the wrapped {@code POOLABLE}. This method is not thread-safe and the poolable should NEVER be accessed
      * concurrently.
@@ -43,15 +45,14 @@ public interface PooledRef<POOLABLE> {
     POOLABLE poolable();
 
     /**
-     * Return a {@link Mono} that, once subscribed, will release the {@code POOLABLE} back to the pool asynchronously.
-     * <p>
-     * This method is idempotent (subsequent subscriptions to the same Mono, or re-invocations of the method
-     * are NO-OP).
+     * Returns a {@link PooledRefMetadata} object that holds more information about the <strong>reference</strong> (rather
+     * than the {@link #poolable()}), like how many time it was acquired, its age (time since allocation), etc...
      *
-     * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
-     * is always discarded.
+     * @return the {@link PooledRefMetadata} for this {@link PooledRef}
      */
-    Mono<Void> release();
+    PooledRefMetadata metadata();
+
+    // == Actions ==
 
     /**
      * Return a {@link Mono} that triggers the asynchronous invalidation of the {@code POOLABLE} when subscribed.
@@ -63,11 +64,14 @@ public interface PooledRef<POOLABLE> {
     Mono<Void> invalidate();
 
     /**
-     * Returns a {@link PooledRefMetadata} object that holds more information about the <strong>reference</strong> (rather
-     * than the {@link #poolable()}), like how many time it was acquired, its age (time since allocation), etc...
+     * Return a {@link Mono} that, once subscribed, will release the {@code POOLABLE} back to the pool asynchronously.
+     * <p>
+     * This method is idempotent (subsequent subscriptions to the same Mono, or re-invocations of the method
+     * are NO-OP).
      *
-     * @return the {@link PooledRefMetadata} for this {@link PooledRef}
+     * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
+     * is always discarded.
      */
-    PooledRefMetadata metadata();
+    Mono<Void> release();
 
 }

@@ -25,6 +25,14 @@ package reactor.pool;
 public interface AllocationStrategy {
 
     /**
+     * Best-effort peek at the state of the strategy which indicates roughly how many more resources can currently be
+     * allocated. Should be paired with {@link #getPermits(int)} for an atomic permission.
+     *
+     * @return an ESTIMATED count of how many more resources can currently be allocated
+     */
+    int estimatePermitCount();
+
+    /**
      * Try to get the permission to allocate a {@code desired} positive number of new resources. Returns the permissible
      * number of resources which MUST be created (otherwise the internal live counter of the strategy might be off).
      * This permissible number might be zero. Once a resource is discarded from the pool, it must
@@ -36,22 +44,14 @@ public interface AllocationStrategy {
     int getPermits(int desired);
 
     /**
-     * Best-effort peek at the state of the strategy which indicates roughly how many more resources can currently be
-     * allocated. Should be paired with {@link #getPermits(int)} for an atomic permission.
-     *
-     * @return an ESTIMATED count of how many more resources can currently be allocated
+     * @return a best estimate of the number of permits currently granted, between 0 and {@link Integer#MAX_VALUE}
      */
-    int estimatePermitCount();
+    int permitGranted();
 
     /**
      * @return the maximum number of permits this strategy can grant in total, or {@link Integer#MAX_VALUE} for unbounded.
      */
     int permitMaximum();
-
-    /**
-     * @return a best estimate of the number of permits currently granted, between 0 and {@link Integer#MAX_VALUE}
-     */
-    int permitGranted();
 
     /**
      * Update the strategy to indicate that N resources were discarded from the {@link Pool}, potentially leaving space

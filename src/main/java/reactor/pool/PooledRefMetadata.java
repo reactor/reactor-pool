@@ -38,14 +38,6 @@ public interface PooledRefMetadata {
 	int acquireCount();
 
 	/**
-	 * Returns the age of the {@link PooledRef}: the wall-clock time (in milliseconds) since which the underlying object
-	 * has been allocated.
-	 *
-	 * @return the wall-clock age (time since allocation) of the underlying object in milliseconds
-	 */
-	long lifeTime();
-
-	/**
 	 * Returns the wall-clock number of milliseconds since the reference was last released (or allocated, if it was
 	 * never released). Can be used on resources that are not currently acquired to detect idle resources.
 	 * A {@link PooledRef} that is currently acquired is required to return {@literal 0L}.
@@ -68,4 +60,12 @@ public interface PooledRefMetadata {
 	 * Another possibility is to use a reaper thread that actively removes idle resources from the available set (but that would need some more synchronization).s
 	 */
 	long idleTime();
+
+	/**
+	 * Returns the age of the {@link PooledRef}: the wall-clock time (in milliseconds) since which the underlying object
+	 * has been allocated.
+	 *
+	 * @return the wall-clock age (time since allocation) of the underlying object in milliseconds
+	 */
+	long lifeTime();
 }

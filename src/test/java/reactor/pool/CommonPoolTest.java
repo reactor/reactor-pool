@@ -24,8 +24,10 @@ import java.util.Arrays;
 import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -554,7 +556,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void returnedReleasedIfBorrowerCancelled(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) {
+	void returnedNotReleasedIfBorrowerCancelledEarly(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) {
 		AtomicInteger releasedCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
@@ -569,7 +571,7 @@ public class CommonPoolTest {
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
-		//acquire the only element
+		//acquire the only element and hold on to it
 		PooledRef<PoolableTest> slot = pool.acquire().block();
 		assertThat(slot).isNotNull();
 
@@ -577,16 +579,16 @@ public class CommonPoolTest {
 
 		assertThat(releasedCount).as("before returning").hasValue(0);
 
-		//release the element, which should forward to the cancelled second acquire, itself also cleaning
+		//release the element, which should only mark it once, as the pending acquire should not be visible anymore
 		slot.release().block();
 
-		assertThat(releasedCount).as("after returning").hasValue(2);
+		assertThat(releasedCount).as("after returning").hasValue(1);
 	}
 
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void returnedReleasedIfBorrowerInScopeCancelled(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) {
+	void returnedNotReleasedIfBorrowerInScopeCancelledEarly(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) {
 		AtomicInteger releasedCount = new AtomicInteger();
 		PoolBuilder<PoolableTest> builder =
 				PoolBuilder.from(Mono.fromCallable(PoolableTest::new))
@@ -599,7 +601,7 @@ public class CommonPoolTest {
 				           .evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
-		//acquire the only element
+		//acquire the only element and hold on to it
 		PooledRef<PoolableTest> slot = pool.acquire().block();
 		assertThat(slot).isNotNull();
 
@@ -607,10 +609,10 @@ public class CommonPoolTest {
 
 		assertThat(releasedCount).as("before returning").hasValue(0);
 
-		//release the element, which should forward to the cancelled second acquire, itself also cleaning
+		//release the element after the second acquire has been cancelled, so it should never "see" it
 		slot.release().block();
 
-		assertThat(releasedCount).as("after returning").hasValue(2);
+		assertThat(releasedCount).as("after returning").hasValue(1);
 	}
 
 
@@ -1340,6 +1342,37 @@ public class CommonPoolTest {
 		assertThat(recorder.getIdleTimeHistogram().getMaxValue())
 				.as("max idle time")
 				.isCloseTo(300L, Offset.offset(40L));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void acquireTimeout(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger allocCounter = new AtomicInteger();
+		AtomicInteger didReset = new AtomicInteger();
+		//note the starter method here is irrelevant, only the config is created and passed to createPool
+		PoolBuilder<Integer> builder = PoolBuilder
+				.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				.releaseHandler(i -> Mono.fromRunnable(didReset::incrementAndGet))
+				.sizeMax(1);
+		Pool<Integer> pool = configAdjuster.apply(builder);
+
+		PooledRef<Integer> uniqueElement = Objects.requireNonNull(pool.acquire().block());
+
+		assertThat(uniqueElement.metadata().acquireCount()).isOne();
+
+		assertThatExceptionOfType(RuntimeException.class)
+				.isThrownBy(() -> pool.acquire().timeout(Duration.ofMillis(50)).block())
+				.withCauseExactlyInstanceOf(TimeoutException.class);
+
+		assertThat(didReset).hasValue(0);
+
+		uniqueElement.release().block();
+		assertThat(uniqueElement.metadata().acquireCount()).as("acquireCount post timeout-then-release").isOne();
+
+		assertThat(pool.acquire().block()).isNotNull();
+		assertThat(allocCounter).as("final allocation count").hasValue(1);
+		assertThat(didReset).hasValue(1);
 	}
 
 	@ParameterizedTest

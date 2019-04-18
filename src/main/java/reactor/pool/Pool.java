@@ -70,9 +70,12 @@ public interface Pool<POOLABLE> extends Disposable {
      * processing it as declared in {@code scopeFunction} and automatically releasing it.
      * @see #acquire()
      */
-    default <V> Flux<V> withPoolable(Function<Mono<POOLABLE>, Publisher<V>> scopeFunction) {
+    default <V> Flux<V> withPoolable(Function<POOLABLE, Publisher<V>> scopeFunction) {
         return Flux.usingWhen(acquire(),
-                slot -> scopeFunction.apply(Mono.justOrEmpty(slot.poolable())),
+                slot -> { POOLABLE poolable = slot.poolable();
+                if (poolable == null) return Mono.empty();
+                return scopeFunction.apply(poolable);
+                },
                 PooledRef::release,
                 PooledRef::release);
     }

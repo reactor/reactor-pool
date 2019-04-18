@@ -56,28 +56,32 @@ class SimpleLifoPoolTest {
     //==utils for package-private config==
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
+                .lifo(true)
+                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
-                .lifo(true)
                 .buildConfig();
     }
 
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
+                .lifo(true)
+                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .acquisitionScheduler(deliveryScheduler)
-                .lifo(true)
                 .buildConfig();
     }
 
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
+                .lifo(true)
+                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
@@ -85,7 +89,6 @@ class SimpleLifoPoolTest {
                     additionalCleaner.accept(poolableTest);
                 }))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
-                .lifo(true)
                 .buildConfig();
     }
     //======
@@ -97,6 +100,8 @@ class SimpleLifoPoolTest {
 
         SimpleLifoPool<String> pool = new SimpleLifoPool<>(
                 from(Mono.just("Hello Reactive World"))
+                        .lifo(true)
+                        .threadAffinity(false)
                         .sizeMax(1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
@@ -730,6 +735,8 @@ class SimpleLifoPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
+                        .lifo(true)
+                        .threadAffinity(false)
                         .initialSize(3)
                         .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))

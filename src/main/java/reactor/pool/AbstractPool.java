@@ -288,8 +288,9 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
                 //start the countdown
                 if (acquireTimeout != Duration.ZERO) {
                     timeoutTask = Schedulers.parallel().schedule(() -> {
+                        //emulate a cancel but also propagate an error
                         if (Borrower.this.compareAndSet(false, true)) {
-                            //TODO remove Borrower from pending when #29 is fixed
+                            pool.cancelAcquire(Borrower.this);
                             actual.onError(new TimeoutException("Acquire has been pending for more than the " +
                                     "configured timeout of " + acquireTimeout.toMillis() + "ms"));
                         }

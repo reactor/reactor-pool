@@ -1081,6 +1081,32 @@ public class CommonPoolTest {
 				            .hasMessage("Acquire has been pending for more than the configured timeout of 100ms"));
 	}
 
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void pendingTimeoutDoesntCauseExtraReleasePostTimeout(Function<PoolBuilder<AtomicInteger>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger resource = new AtomicInteger();
+		PoolBuilder<AtomicInteger> builder = PoolBuilder
+				.from(Mono.just(resource))
+				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
+				.sizeMax(1);
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> uniqueRef = pool.acquire().block();
+		assert uniqueRef != null;
+
+		StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable))
+		            .expectSubscription()
+		            .expectNoEvent(Duration.ofMillis(100))
+		            .thenAwait(Duration.ofMillis(1))
+		            .verifyErrorSatisfies(e -> assertThat(e)
+				            .isInstanceOf(TimeoutException.class)
+				            .hasMessage("Acquire has been pending for more than the configured timeout of 100ms"));
+
+		assertThat(resource).as("post timeout but before resource available").hasValue(0);
+
+		uniqueRef.release().block();
+		assertThat(resource).as("post timeout and after resource available").hasValue(1);
+	}
 
 	// === METRICS ===
 

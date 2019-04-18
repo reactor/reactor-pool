@@ -25,7 +25,7 @@ import java.util.function.Function;
  * the {@link PooledRef} provides a few additional information about its lifecycle, like its age and the number of times
  * it has been acquired, so the {@link Pool} may optionally use that information to automatically invalidate
  * the object, and provide a simplified acquire mechanism where the {@link PooledRef} is not directly exposed (see
- * {@link Pool#acquireInScope(Function)} vs {@link Pool#acquire()}).
+ * {@link Pool#withPoolable(Function)} vs {@link Pool#acquire()}).
  *
  * @author Simon Baslé
  */

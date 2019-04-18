@@ -30,7 +30,7 @@ public interface PooledRefMetadata {
 
 	/**
 	 * Return the number of times the underlying pooled object has been used by consumers of the {@link Pool}, via
-	 * either of {@link Pool#acquire()} or {@link Pool#acquireInScope(Function)}. The first time an object is allocated, this
+	 * either of {@link Pool#acquire()} or {@link Pool#withPoolable(Function)}. The first time an object is allocated, this
 	 * method returns {@literal 1}, so the number of times it has been "recycled" can be deduced as {@code acquireCount() - 1}.
 	 *
 	 * @return the number of times this object has been used by consumers of the pool

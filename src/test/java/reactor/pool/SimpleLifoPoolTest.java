@@ -106,7 +106,7 @@ class SimpleLifoPoolTest {
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
 
-        Flux<String> words = pool.acquireInScope(m -> m
+        Flux<String> words = pool.withPoolable(m -> m
                 //simulate deriving a value from the resource (ie. query from DB connection)
                 .map(resource -> resource.split(" "))
                 //then further process the derived value to produce multiple values (ie. rows from a query)
@@ -417,7 +417,7 @@ class SimpleLifoPoolTest {
     }
 
     @Nested
-    @DisplayName("Tests around the acquireInScope(Function) mode of acquiring")
+    @DisplayName("Tests around the withPoolable(Function) mode of acquiring")
     @SuppressWarnings("ClassCanBeStatic")
     class AcquireInScopeTest {
 
@@ -428,11 +428,11 @@ class SimpleLifoPoolTest {
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(poolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
 
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
 
-            final Tuple2<Long, PoolableTest> tuple2 = pool.acquireInScope(mono -> mono).elapsed().blockLast();
+            final Tuple2<Long, PoolableTest> tuple2 = pool.withPoolable(mono -> mono).elapsed().blockLast();
 
             assertThat(tuple2).isNotNull();
 
@@ -477,7 +477,7 @@ class SimpleLifoPoolTest {
                     latch.countDown();
                 }
             };
-            pool.acquireInScope(mono -> mono).subscribe(baseSubscriber);
+            pool.withPoolable(mono -> mono).subscribe(baseSubscriber);
             latch.await();
 
             final ExecutorService executorService = Executors.newFixedThreadPool(2);
@@ -508,7 +508,7 @@ class SimpleLifoPoolTest {
 
             //the pool is started with one available element
             //we prepare to acquire it
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread and see from which thread the element was delivered
@@ -530,7 +530,7 @@ class SimpleLifoPoolTest {
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread, but the allocation also happens in a dedicated thread
@@ -559,7 +559,7 @@ class SimpleLifoPoolTest {
             assertThat(uniqueSlot).isNotNull();
 
             //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
@@ -588,7 +588,7 @@ class SimpleLifoPoolTest {
 
             //the pool is started with one available element
             //we prepare to acquire it
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread and see from which thread the element was delivered
@@ -612,7 +612,7 @@ class SimpleLifoPoolTest {
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread, but the allocation also happens in a dedicated thread
@@ -643,7 +643,7 @@ class SimpleLifoPoolTest {
             assertThat(uniqueSlot).isNotNull();
 
             //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
@@ -694,8 +694,8 @@ class SimpleLifoPoolTest {
                 assertThat(uniqueSlot).isNotNull();
 
                 //we prepare next acquire
-                Mono<PoolableTest> firstBorrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
-                Mono<PoolableTest> otherBorrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+                Mono<PoolableTest> firstBorrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
+                Mono<PoolableTest> otherBorrower = Mono.fromDirect(pool.withPoolable(mono -> mono));
 
                 CountDownLatch latch = new CountDownLatch(3);
 

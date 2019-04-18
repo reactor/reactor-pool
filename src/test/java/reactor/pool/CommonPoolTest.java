@@ -213,23 +213,23 @@ public class CommonPoolTest {
 		List<PoolableTest> acquired1 = new ArrayList<>();
 
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1))
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1))
 		).subscribe();
 
 		List<PoolableTest> acquired2 = new ArrayList<>();
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2))
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> trigger2))
 		).subscribe();
 
 		List<PoolableTest> acquired3 = new ArrayList<>();
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3))
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger3))
 		).subscribe();
 
 		assertThat(acquired1).as("first batch not pending").hasSize(3);
@@ -439,23 +439,23 @@ public class CommonPoolTest {
 		List<PoolableTest> acquired1 = new ArrayList<>();
 
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1))
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired1::add).delayUntil(__ -> trigger1))
 		).subscribe();
 
 		List<PoolableTest> acquired2 = new ArrayList<>();
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger))
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger))
 		).subscribe();
 
 		List<PoolableTest> acquired3 = new ArrayList<>();
 		Mono.when(
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
-				pool.acquireInScope(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2))
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
+				pool.withPoolable(mono -> mono.doOnNext(acquired3::add).delayUntil(__ -> trigger2))
 		).subscribe();
 
 		assertThat(acquired1).as("first batch not pending").hasSize(3);
@@ -605,7 +605,7 @@ public class CommonPoolTest {
 		PooledRef<PoolableTest> slot = pool.acquire().block();
 		assertThat(slot).isNotNull();
 
-		pool.acquireInScope(mono -> mono).subscribe().dispose();
+		pool.withPoolable(mono -> mono).subscribe().dispose();
 
 		assertThat(releasedCount).as("before returning").hasValue(0);
 
@@ -669,7 +669,7 @@ public class CommonPoolTest {
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		//acquire the only element and immediately dispose
-		pool.acquireInScope(mono -> mono).subscribe().dispose();
+		pool.withPoolable(mono -> mono).subscribe().dispose();
 
 		//release due to cancel is async, give it a bit of time
 		await()

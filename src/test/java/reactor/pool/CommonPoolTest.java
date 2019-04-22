@@ -1416,6 +1416,56 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("metrics")
+	void instrumentAllocatedIdleAcquired_1(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster)
+			throws Exception {
+		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
+				.sizeMax(1);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		PoolMetrics poolMetrics = pool.metrics();
+
+		AtomicInteger allocated = new AtomicInteger(poolMetrics.allocatedSize());
+		AtomicInteger idle = new AtomicInteger(poolMetrics.idleSize());
+		AtomicInteger acquired = new AtomicInteger(poolMetrics.acquiredSize());
+		AtomicReference<PooledRef<Integer>> ref = new AtomicReference<>();
+
+		assertThat(allocated.get()).as("allocated at start").isZero();
+
+		CountDownLatch latch1 = new CountDownLatch(1);
+		pool.acquire()
+				.subscribe(pooledRef -> {
+					allocated.set(poolMetrics.allocatedSize());
+					idle.set(poolMetrics.idleSize());
+					acquired.set(poolMetrics.acquiredSize());
+					ref.set(pooledRef);
+					latch1.countDown();
+				});
+
+		assertThat(latch1.await(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(allocated.get()).as("allocated at first acquire").isOne();
+		assertThat(idle.get()).as("idle at first acquire").isZero();
+		assertThat(acquired.get()).as("acquired size at first acquire").isOne();
+
+		CountDownLatch latch2 = new CountDownLatch(1);
+		ref.get()
+				.release()
+				.subscribe(null,
+						null,
+						() -> {
+							allocated.set(poolMetrics.allocatedSize());
+							idle.set(poolMetrics.idleSize());
+							acquired.set(poolMetrics.acquiredSize());
+							latch2.countDown();
+						});
+
+		assertThat(latch2.await(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(allocated.get()).as("allocated after release").isOne();
+		assertThat(idle.get()).as("idle after release").isOne();
+		assertThat(acquired.get()).as("acquired after release").isZero();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
 	void instrumentPendingAcquire(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
 		PoolBuilder<Integer> builder = PoolBuilder.from(Mono.just(1))
 				.sizeMax(1);

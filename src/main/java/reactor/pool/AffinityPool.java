@@ -524,8 +524,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            actual.onComplete();
-
             if (!pool.poolConfig.evictionPredicate.test(slot.poolable, slot)) {
                 pool.recycle(slot);
             }
@@ -535,6 +533,8 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 //simplified version of what we do in doAcquire, with the caveat that we don't try to create a SubPool
                 pool.bestEffortAllocateOrPend();
             }
+
+            actual.onComplete();
         }
 
         @Override

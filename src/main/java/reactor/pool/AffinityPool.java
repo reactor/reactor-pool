@@ -15,6 +15,7 @@
  */
 package reactor.pool;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.Map;
@@ -94,7 +95,13 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
         //Note the pool isn't aware of the mono until requested.
-        return new AffinityBorrowerMono<>(this);
+        return new AffinityBorrowerMono<>(this, Duration.ZERO);
+    }
+
+    @Override
+    public Mono<PooledRef<POOLABLE>> acquire(Duration acquireTimeout) {
+        //Note the pool isn't aware of the mono until requested.
+        return new AffinityBorrowerMono<>(this, acquireTimeout);
     }
 
     @Override
@@ -122,6 +129,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 allocateOrPend(subPool, borrower);
             }
             else {
+                borrower.stopPendingCountdown();
                 metricsRecorder.recordFastPath();
                 borrower.deliver(element);
             }
@@ -143,6 +151,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     void allocateOrPend(SubPool<POOLABLE> subPool, Borrower<POOLABLE> borrower) {
         if (poolConfig.allocationStrategy.getPermits(1) == 1) {
+            borrower.stopPendingCountdown();
             long start = metricsRecorder.now();
             poolConfig.allocator
                     //we expect the allocator will publish in the same thread or a "compatible" one
@@ -459,14 +468,16 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final class AffinityBorrowerMono<T> extends Mono<PooledRef<T>> {
 
         final AffinityPool<T> parent;
+        final Duration acquireTimeout;
 
-        AffinityBorrowerMono(AffinityPool<T> pool) {
+        AffinityBorrowerMono(AffinityPool<T> pool, Duration acquireTimeout) {
             this.parent = pool;
+            this.acquireTimeout = acquireTimeout;
         }
 
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
-            Borrower<T> borrower = new Borrower<>(actual, parent);
+            Borrower<T> borrower = new Borrower<>(actual, parent, acquireTimeout);
             actual.onSubscribe(borrower);
         }
     }

@@ -15,6 +15,7 @@
  */
 package reactor.pool;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -100,7 +101,12 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public Mono<PooledRef<POOLABLE>> acquire() {
-        return new QueueBorrowerMono<>(this); //the mono is unknown to the pool until requested
+        return new QueueBorrowerMono<>(this, Duration.ZERO); //the mono is unknown to the pool until requested
+    }
+
+    @Override
+    public Mono<PooledRef<POOLABLE>> acquire(Duration timeout) {
+        return new QueueBorrowerMono<>(this, timeout); //the mono is unknown to the pool until requested
     }
 
     @Override
@@ -166,6 +172,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
+                    borrower.stopPendingCountdown();
                     long start = metricsRecorder.now();
                     Mono<POOLABLE> allocator = poolConfig.allocator;
                     Scheduler s = poolConfig.acquisitionScheduler;
@@ -199,6 +206,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                     elements.offer(slot);
                     continue;
                 }
+                inner.stopPendingCountdown();
                 ACQUIRED.incrementAndGet(this);
                 poolConfig.acquisitionScheduler.schedule(() -> inner.deliver(slot));
             }
@@ -253,15 +261,17 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     static final class QueueBorrowerMono<T> extends Mono<PooledRef<T>> {
 
         final SimplePool<T> parent;
+        final Duration      acquireTimeout;
 
-        QueueBorrowerMono(SimplePool<T> pool) {
+        QueueBorrowerMono(SimplePool<T> pool, Duration acquireTimeout) {
             this.parent = pool;
+            this.acquireTimeout = acquireTimeout;
         }
 
         @Override
         public void subscribe(CoreSubscriber<? super PooledRef<T>> actual) {
             Objects.requireNonNull(actual, "subscribing with null");
-            Borrower<T> borrower = new Borrower<>(actual, parent);
+            Borrower<T> borrower = new Borrower<>(actual, parent, acquireTimeout);
             actual.onSubscribe(borrower);
         }
     }

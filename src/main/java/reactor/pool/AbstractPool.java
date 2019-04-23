@@ -17,6 +17,9 @@ package reactor.pool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
@@ -28,6 +31,7 @@ import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
@@ -102,6 +106,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
     abstract boolean elementOffer(POOLABLE element);
 
+    /**
+     * Note to implementors: stop the {@link Borrower} countdown by calling
+     * {@link Borrower#stopPendingCountdown()} as soon as it is known that a resource is
+     * available or is in the process of being allocated.
+     */
     abstract void doAcquire(Borrower<POOLABLE> borrower);
     abstract void cancelAcquire(Borrower<POOLABLE> borrower);
 
@@ -256,25 +265,55 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
      */
     static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription  {
 
+        static final Disposable TIMEOUT_DISPOSED = Disposables.disposed();
+
         final CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual;
         final AbstractPool<POOLABLE> pool;
+        final Duration acquireTimeout;
 
-        Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual, AbstractPool<POOLABLE> pool) {
+        Disposable timeoutTask;
+
+        Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual,
+                AbstractPool<POOLABLE> pool,
+                Duration acquireTimeout) {
             this.actual = actual;
             this.pool = pool;
+            this.acquireTimeout = acquireTimeout;
+            this.timeoutTask = TIMEOUT_DISPOSED;
         }
 
         @Override
         public void request(long n) {
             if (Operators.validate(n)) {
+                //start the countdown
+                if (acquireTimeout != Duration.ZERO) {
+                    timeoutTask = Schedulers.parallel().schedule(() -> {
+                        //emulate a cancel but also propagate an error
+                        if (Borrower.this.compareAndSet(false, true)) {
+                            pool.cancelAcquire(Borrower.this);
+                            actual.onError(new TimeoutException("Acquire has been pending for more than the " +
+                                    "configured timeout of " + acquireTimeout.toMillis() + "ms"));
+                        }
+                    }, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                }
+                //doAcquire should interrupt the countdown if there is either an available
+                //resource or the pool can allocate one
                 pool.doAcquire(this);
             }
+        }
+
+        /**
+         * Stop the countdown started when calling {@link AbstractPool#doAcquire(Borrower)}.
+         */
+        void stopPendingCountdown() {
+            timeoutTask.dispose();
         }
 
         @Override
         public void cancel() {
             set(true);
             pool.cancelAcquire(this);
+            stopPendingCountdown();
         }
 
         @Override
@@ -288,6 +327,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         }
 
         void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
+            stopPendingCountdown();
             if (get()) {
                 //CANCELLED
                 poolSlot.release().subscribe(aVoid -> {}, e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
@@ -300,6 +340,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         }
 
         void fail(Throwable error) {
+            stopPendingCountdown();
             if (!get()) {
                 actual.onError(error);
             }

@@ -16,9 +16,7 @@
 package reactor.pool;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,8 +39,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.TestUtils.PoolableTest;
-import reactor.test.StepVerifier;
-import reactor.test.publisher.TestPublisher;
 import reactor.util.function.Tuple2;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,7 +103,7 @@ class SimpleFifoPoolTest {
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
 
-        Flux<String> words = pool.acquireInScope(m -> m
+        Flux<String> words = pool.withPoolable(poolable -> Mono.just(poolable)
                 //simulate deriving a value from the resource (ie. query from DB connection)
                 .map(resource -> resource.split(" "))
                 //then further process the derived value to produce multiple values (ie. rows from a query)
@@ -475,7 +471,7 @@ class SimpleFifoPoolTest {
     }
 
     @Nested
-    @DisplayName("Tests around the acquireInScope(Function) mode of acquiring")
+    @DisplayName("Tests around the withPoolable(Function) mode of acquiring")
     @SuppressWarnings("ClassCanBeStatic")
     class AcquireInScopeTest {
 
@@ -486,11 +482,11 @@ class SimpleFifoPoolTest {
             SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(poolableTestConfig(2, 3,
                     Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
 
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
-            pool.acquireInScope(mono -> mono.delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(poolable -> Mono.just(poolable).delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(poolable -> Mono.just(poolable).delayElement(Duration.ofMillis(500))).subscribe();
+            pool.withPoolable(poolable -> Mono.just(poolable).delayElement(Duration.ofMillis(500))).subscribe();
 
-            final Tuple2<Long, PoolableTest> tuple2 = pool.acquireInScope(mono -> mono).elapsed().blockLast();
+            final Tuple2<Long, PoolableTest> tuple2 = pool.withPoolable(Mono::just).elapsed().blockLast();
 
             assertThat(tuple2).isNotNull();
 
@@ -535,7 +531,7 @@ class SimpleFifoPoolTest {
                     latch.countDown();
                 }
             };
-            pool.acquireInScope(mono -> mono).subscribe(baseSubscriber);
+            pool.withPoolable(Mono::just).subscribe(baseSubscriber);
             latch.await();
 
             final ExecutorService executorService = Executors.newFixedThreadPool(2);
@@ -566,7 +562,7 @@ class SimpleFifoPoolTest {
 
             //the pool is started with one available element
             //we prepare to acquire it
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread and see from which thread the element was delivered
@@ -588,7 +584,7 @@ class SimpleFifoPoolTest {
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread, but the allocation also happens in a dedicated thread
@@ -617,7 +613,7 @@ class SimpleFifoPoolTest {
             assertThat(uniqueSlot).isNotNull();
 
             //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
@@ -680,7 +676,7 @@ class SimpleFifoPoolTest {
                 assertThat(uniqueSlot).isNotNull();
 
                 //we prepare next acquire
-                Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+                Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
                 CountDownLatch latch = new CountDownLatch(3);
 
                 //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
@@ -728,7 +724,7 @@ class SimpleFifoPoolTest {
 
             //the pool is started with one available element
             //we prepare to acquire it
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread and see from which thread the element was delivered
@@ -752,7 +748,7 @@ class SimpleFifoPoolTest {
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually request the acquire from a separate thread, but the allocation also happens in a dedicated thread
@@ -783,7 +779,7 @@ class SimpleFifoPoolTest {
             assertThat(uniqueSlot).isNotNull();
 
             //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
@@ -832,7 +828,7 @@ class SimpleFifoPoolTest {
             assertThat(uniqueSlot).isNotNull();
 
             //we prepare next acquire
-            Mono<PoolableTest> borrower = Mono.fromDirect(pool.acquireInScope(mono -> mono));
+            Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);
 
             //we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered

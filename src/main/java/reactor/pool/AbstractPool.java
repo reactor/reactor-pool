@@ -162,8 +162,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
         final long            creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;
-
-        volatile T poolable;
+        final T poolable;
 
         volatile int acquireCount;
         static final AtomicIntegerFieldUpdater<AbstractPooledRef> ACQUIRE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "acquireCount");

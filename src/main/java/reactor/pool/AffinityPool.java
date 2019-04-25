@@ -461,7 +461,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         public Mono<Void> invalidate() {
-            return pool.destroyPoolable(this);
+            return pool.destroyPoolable(this).then(Mono.fromRunnable(pool::bestEffortAllocateOrPend));
         }
     }
 

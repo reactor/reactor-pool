@@ -87,7 +87,7 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
             }
 
             while (!elements.isEmpty()) {
-                destroyPoolable(elements.poll()).block();
+                destroyPoolable(elements.poll()).subscribe();
             }
         }
     }

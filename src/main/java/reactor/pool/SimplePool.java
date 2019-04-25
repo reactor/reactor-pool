@@ -136,14 +136,14 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             if (!poolConfig.evictionPredicate.test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
+                drain();
             }
             else {
-                destroyPoolable(poolSlot).subscribe(); //TODO manage errors?
+                destroyPoolable(poolSlot).subscribe(null, e -> drain(), this::drain); //TODO manage errors?
             }
-            drain();
         }
         else {
-            destroyPoolable(poolSlot).subscribe(); //TODO manage errors?
+            destroyPoolable(poolSlot).subscribe(null, e -> drain(), this::drain); //TODO manage errors?
         }
     }
 
@@ -196,7 +196,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
                 //TODO test the idle eviction scenario
                 if (poolConfig.evictionPredicate.test(slot.poolable, slot)) {
-                    destroyPoolable(slot).subscribe();
+                    destroyPoolable(slot).subscribe(null, e -> drain(), this::drain);
                     continue;
                 }
 
@@ -328,8 +328,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             //TODO should we separate reset errors?
             pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
 
-            pool.destroyPoolable(slot).subscribe(); //TODO manage errors?
-            pool.drain();
+            pool.destroyPoolable(slot).subscribe(null, null, pool::drain); //TODO manage errors?
 
             actual.onError(throwable);
         }

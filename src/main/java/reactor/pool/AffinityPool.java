@@ -125,8 +125,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             //TODO test this scenario
             if (poolConfig.evictionPredicate.test(element.poolable, element)) {
-                destroyPoolable(element).subscribe(); //this returns a permit
-                allocateOrPend(subPool, borrower);
+                destroyPoolable(element).subscribe(null, t -> allocateOrPend(subPool, borrower), () -> allocateOrPend(subPool, borrower)); //this returns a permit
             }
             else {
                 borrower.stopPendingCountdown();
@@ -275,7 +274,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             toClose.clear();
 
             while(!availableElements.isEmpty()) {
-                destroyPoolable(availableElements.poll()).block();
+                destroyPoolable(availableElements.poll()).subscribe();
             }
         }
     }
@@ -522,7 +521,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 return;
             }
 
-            pool.destroyPoolable(slot).subscribe(); //TODO manage further errors?
+            pool.destroyPoolable(slot).subscribe(null, t -> pool.bestEffortAllocateOrPend(), pool::bestEffortAllocateOrPend); //TODO manage further errors?
             actual.onError(throwable);
         }
 
@@ -539,10 +538,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 pool.recycle(slot);
             }
             else {
-                pool.destroyPoolable(slot).subscribe(); //TODO manage errors?
-
-                //simplified version of what we do in doAcquire, with the caveat that we don't try to create a SubPool
-                pool.bestEffortAllocateOrPend();
+                pool.destroyPoolable(slot).subscribe(null, t -> pool.bestEffortAllocateOrPend(), pool::bestEffortAllocateOrPend); //TODO manage errors?
             }
 
             actual.onComplete();

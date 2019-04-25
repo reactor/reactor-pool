@@ -518,7 +518,7 @@ public class CommonPoolTest {
 		pool.acquire().subscribe(acquired3::add);
 		pool.acquire().subscribe(acquired3::add);
 
-		if (!latch1.await(1, TimeUnit.SECONDS)) { //wait for creation of max elements
+		if (!latch1.await(15, TimeUnit.SECONDS)) { //wait for creation of max elements
 			fail("not enough elements created initially, missing " + latch1.getCount());
 		}
 		assertThat(acquired1).hasSize(3);
@@ -537,7 +537,7 @@ public class CommonPoolTest {
 			slot.release().block();
 		}
 
-		if (latch2.await(2, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
+		if (latch2.await(15, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
 
 			assertThat(acquired2).hasSize(3);
 

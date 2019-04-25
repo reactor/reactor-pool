@@ -253,7 +253,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             return Mono.defer(() -> {
                 //immediately clean up state
                 ACQUIRED.decrementAndGet(pool);
-                return pool.destroyPoolable(this);
+                return pool.destroyPoolable(this).then(Mono.fromRunnable(pool::drain));
             });
         }
     }

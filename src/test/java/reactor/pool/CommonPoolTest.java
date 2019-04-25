@@ -586,6 +586,53 @@ public class CommonPoolTest {
 		assertThat(releasedCount).as("after returning").hasValue(1);
 	}
 
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void fixedPoolReplenishOnDestroy(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) throws Exception{
+		AtomicInteger releasedCount = new AtomicInteger();
+		AtomicInteger destroyedCount = new AtomicInteger();
+
+		PoolBuilder<PoolableTest> builder = PoolBuilder
+				.from(Mono.fromCallable(PoolableTest::new))
+				.initialSize(1)
+				.sizeMax(1)
+				.destroyHandler(poolableTest -> Mono.fromRunnable(() -> {
+					poolableTest.clean();
+					releasedCount.incrementAndGet();
+				}))
+				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
+					poolableTest.clean();
+					destroyedCount.incrementAndGet();
+				}))
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
+
+		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		//acquire the only element
+		PooledRef<PoolableTest> slot = pool.acquire().block();
+		AtomicReference<PooledRef<PoolableTest>> acquired = new AtomicReference<>();
+		CountDownLatch latch = new CountDownLatch(1);
+		pool.acquire().subscribe(p -> {
+			acquired.set(p);
+			latch.countDown();
+		});
+		assertThat(slot).isNotNull();
+
+		slot.invalidate().block();
+
+		assertThat(releasedCount).as("before returning").hasValue(1);
+		assertThat(destroyedCount).as("before returning").hasValue(0);
+
+		//release the element, which should forward to the cancelled second acquire, itself also cleaning
+		latch.await(5, TimeUnit.SECONDS);
+		assertThat(acquired.get()).isNotNull();
+
+		acquired.get().release().block();
+
+		assertThat(destroyedCount).as("after returning").hasValue(1);
+		assertThat(releasedCount).as("after returning").hasValue(1);
+	}
+
 
 	@ParameterizedTest
 	@MethodSource("allPools")

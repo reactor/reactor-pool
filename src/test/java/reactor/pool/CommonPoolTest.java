@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+import org.assertj.core.api.Assert;
+import org.assertj.core.api.Assertions;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -1089,7 +1091,7 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	void pendingTimeoutNotImpactedByLongAllocation(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
-		VirtualTimeScheduler vts = VirtualTimeScheduler.getOrSet();
+		VirtualTimeScheduler vts1 = VirtualTimeScheduler.getOrSet();
 
 		try {
 			PoolBuilder<String> builder = PoolBuilder
@@ -1097,10 +1099,27 @@ public class CommonPoolTest {
 					.sizeMax(1);
 			AbstractPool<String> pool = configAdjuster.apply(builder);
 
-			StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable),
-					() -> vts, 1)
+			StepVerifier.withVirtualTime(
+					() -> pool.acquire(Duration.ofMillis(100)),
+					() -> vts1,
+					1)
 			            .expectSubscription()
 			            .expectNoEvent(Duration.ofMillis(500))
+			            .assertNext(n -> {
+			            	Assertions.assertThat(n.poolable()).isEqualTo("delayed");
+			            	n.release()
+				             .subscribe();
+			            })
+			            .verifyComplete();
+
+
+			VirtualTimeScheduler vts2 = VirtualTimeScheduler.getOrSet();
+
+			StepVerifier.withVirtualTime(
+					() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable),
+					() -> vts2,
+					1)
+			            .expectSubscription()
 			            .expectNext("delayed")
 			            .verifyComplete();
 		}

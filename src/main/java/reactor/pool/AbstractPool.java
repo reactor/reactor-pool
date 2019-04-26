@@ -262,7 +262,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
      *
      * @author Simon Baslé
      */
-    static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription  {
+    static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription, Runnable  {
 
         static final Disposable TIMEOUT_DISPOSED = Disposables.disposed();
 
@@ -282,18 +282,20 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         }
 
         @Override
+        public void run() {
+            if (Borrower.this.compareAndSet(false, true)) {
+                pool.cancelAcquire(Borrower.this);
+                actual.onError(new TimeoutException("Acquire has been pending for more than the " +
+                        "configured timeout of " + acquireTimeout.toMillis() + "ms"));
+            }
+        }
+
+        @Override
         public void request(long n) {
             if (Operators.validate(n)) {
                 //start the countdown
-                if (acquireTimeout != Duration.ZERO) {
-                    timeoutTask = Schedulers.parallel().schedule(() -> {
-                        //emulate a cancel but also propagate an error
-                        if (Borrower.this.compareAndSet(false, true)) {
-                            pool.cancelAcquire(Borrower.this);
-                            actual.onError(new TimeoutException("Acquire has been pending for more than the " +
-                                    "configured timeout of " + acquireTimeout.toMillis() + "ms"));
-                        }
-                    }, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                if (acquireTimeout != Duration.ZERO && pool.acquiredSize() >= pool.getMaxAllocatedSize()) {
+                    timeoutTask = Schedulers.parallel().schedule(this, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
                 }
                 //doAcquire should interrupt the countdown if there is either an available
                 //resource or the pool can allocate one

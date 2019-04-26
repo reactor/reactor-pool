@@ -1215,7 +1215,7 @@ public class CommonPoolTest {
 				.isEqualTo(recorder.getAllocationErrorHistogram().getTotalCount());
 
 		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
-		assertThat(minSuccess).isBetween(100L, 150L);
+		assertThat(minSuccess).isGreaterThanOrEqualTo(100L);
 	}
 
 	@ParameterizedTest

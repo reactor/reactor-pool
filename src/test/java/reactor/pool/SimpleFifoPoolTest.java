@@ -152,40 +152,47 @@ class SimpleFifoPoolTest {
 
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
-
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
-                    Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
-                        .subscribeOn(scheduler),
-                    pt -> releasedCount.incrementAndGet());
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
-
-            //acquire the only element and capture the subscription, don't request just yet
-            CountDownLatch latch = new CountDownLatch(1);
-            final BaseSubscriber<PooledRef<PoolableTest>> baseSubscriber = new BaseSubscriber<PooledRef<PoolableTest>>() {
-                @Override
-                protected void hookOnSubscribe(Subscription subscription) {
-                    //don't request
-                    latch.countDown();
-                }
-            };
-            pool.acquire().subscribe(baseSubscriber);
-            latch.await();
-
             final ExecutorService executorService = Executors.newFixedThreadPool(2);
-            if (cancelFirst) {
-                executorService.submit(baseSubscriber::cancel);
-                executorService.submit(baseSubscriber::requestUnbounded);
-            }
-            else {
-                executorService.submit(baseSubscriber::requestUnbounded);
-                executorService.submit(baseSubscriber::cancel);
-            }
 
-            //release due to cancel is async, give it a bit of time
-            await().atMost(100, TimeUnit.MILLISECONDS).with().pollInterval(10, TimeUnit.MILLISECONDS)
-                   .untilAsserted(() -> assertThat(releasedCount)
-                           .as("released vs created in round " + round + (cancelFirst? " (cancel first)" : " (request first)"))
-                           .hasValue(newCount.get()));
+            try {
+
+                DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+                        Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
+                            .subscribeOn(scheduler),
+                        pt -> releasedCount.incrementAndGet());
+                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+
+                //acquire the only element and capture the subscription, don't request just yet
+                CountDownLatch latch = new CountDownLatch(1);
+                final BaseSubscriber<PooledRef<PoolableTest>> baseSubscriber = new BaseSubscriber<PooledRef<PoolableTest>>() {
+                    @Override
+                    protected void hookOnSubscribe(Subscription subscription) {
+                        //don't request
+                        latch.countDown();
+                    }
+                };
+                pool.acquire().subscribe(baseSubscriber);
+                latch.await();
+
+                if (cancelFirst) {
+                    executorService.submit(baseSubscriber::cancel);
+                    executorService.submit(baseSubscriber::requestUnbounded);
+                }
+                else {
+                    executorService.submit(baseSubscriber::requestUnbounded);
+                    executorService.submit(baseSubscriber::cancel);
+                }
+
+                //release due to cancel is async, give it ample time
+                await().atMost(200, TimeUnit.MILLISECONDS).with().pollInterval(10, TimeUnit.MILLISECONDS)
+                       .untilAsserted(() -> assertThat(releasedCount)
+                               .as("released vs created in round " + round + (cancelFirst? " (cancel first)" : " (request first)"))
+                               .hasValue(newCount.get()));
+            }
+            finally {
+                scheduler.dispose();
+                executorService.shutdownNow();
+            }
         }
 
         @Test

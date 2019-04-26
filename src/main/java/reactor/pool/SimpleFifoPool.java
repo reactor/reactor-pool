@@ -16,14 +16,13 @@
 package reactor.pool;
 
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-
-import org.jctools.queues.MpscLinkedQueue8;
 
 import reactor.util.concurrent.Queues;
 
 /**
- * This implementation is based on MPSC queues for both idle resources and pending {@link Pool#acquire()} Monos,
+ * This implementation is based on MPMC queues for both idle resources and pending {@link Pool#acquire()} Monos,
  * resulting in serving pending borrowers in FIFO order.
  *
  * See {@link SimplePool} for other characteristics of the simple pool.
@@ -40,7 +39,7 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
     public SimpleFifoPool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig);
-        this.pending = new MpscLinkedQueue8<>(); //unbounded MPSC
+        this.pending = new ConcurrentLinkedQueue<>(); //unbounded MPMC
     }
 
     @Override

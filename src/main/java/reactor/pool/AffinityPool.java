@@ -351,11 +351,13 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     static final class FifoSubPool<POOLABLE> extends SubPool<POOLABLE> {
 
-        final Queue<Borrower<POOLABLE>> localPendings; //needs to be MPSC. Producer: any thread that doAcquire. Consumer: whomever has the LOCKED.
+        //needs to be MPMC. Producer: any thread that doAcquire. Consumer: whomever has the LOCKED + remove.
+        final Queue<Borrower<POOLABLE>> localPendings;
 
         FifoSubPool(AffinityPool<POOLABLE> parent) {
             super(parent);
-            this.localPendings = new MpscLinkedQueue8<>();
+            //unbounded MPMC with remove capacity
+            this.localPendings = new ConcurrentLinkedQueue<>();
         }
 
         @Override

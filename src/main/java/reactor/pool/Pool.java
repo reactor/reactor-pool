@@ -68,7 +68,7 @@ public interface Pool<POOLABLE> extends Disposable {
      * <p>
      * This is typically the case when one needs to wrap the actual resource into a decorator version, where the reference
      * to the {@link PooledRef} can be stored. On the other hand, if the resource and its usage directly expose reactive
-     * APIs, you might want to prefer to use {@link #acquireInScope(Function)}.
+     * APIs, you might want to prefer to use {@link #withPoolable(Function)}.
      * <p>
      * The resulting {@link Mono} emits the {@link PooledRef} as the {@code POOLABLE} becomes available. Cancelling the
      * {@link org.reactivestreams.Subscription} before the {@code POOLABLE} has been emitted will either avoid object
@@ -80,7 +80,7 @@ public interface Pool<POOLABLE> extends Disposable {
      *
      * @return a {@link Mono}, each subscription to which represents an individual act of acquiring a pooled object and
      * manually managing its lifecycle from there on
-     * @see #acquireInScope(Function)
+     * @see #withPoolable(Function)
      */
     Mono<PooledRef<POOLABLE>> acquire(Duration timeout);
 

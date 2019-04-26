@@ -24,16 +24,16 @@ PooledRef<T> ref = grabResource.block(); //second subscription requests a second
 ref.release().block(); //release() is also asynchronous and lazy
 ```
 
-For use-cases where the resource itself can be consumed reactively (exposes a reactive API), a scoped mode of acquisition is offered. `acquireInScope`:
+For use-cases where the resource itself can be consumed reactively (exposes a reactive API), a scoped mode of acquisition is offered. `withPoolable`:
  - let the consumer declaratively use the resource
  - provides a scope / closure in which the resource is acquired, used as instructed and released automatically
  - avoids dealing with an indirection (the resource is directly exposed)
 
 ```java
 //given at DbConnection type and a Pool<DbConnection> pool
-pool.acquireInScope(resourceMono -> resourceMono
+pool.withPoolable(resource -> resource
     //we declare using the connection to create a Statement...
-    .flatMap(DbConnection::createStatement)
+    .createStatement()
     //...then performing a SELECT query...
     .flatMapMany(st -> st.query("SELECT * FROM foo"))
     //...then marshalling the rows to JSON

@@ -47,7 +47,6 @@ ext {
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   reactorBOM = "Californium-SR6"
-  jcToolsVersion = "2.1.1"
   hdrHistogramVersion = "2.1.11"
 
   // Languages
@@ -176,8 +175,6 @@ configure(rootProject) { project ->
 
   dependencies {
     compile "io.projectreactor:reactor-core"
-
-    compile "org.jctools:jctools-core:$jcToolsVersion"
 
     // JSR-305 annotations
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"

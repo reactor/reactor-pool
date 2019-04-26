@@ -21,8 +21,6 @@ import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.jctools.queues.MpscArrayQueue;
-import org.jctools.queues.MpscLinkedQueue8;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
@@ -34,9 +32,10 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
+import reactor.util.concurrent.Queues;
 
 /**
- * The {@link SimplePool} is based on MPSC queues for idle resources and FIFO or LIFO data structures for
+ * The {@link SimplePool} is based on queues for idle resources and FIFO or LIFO data structures for
  * pending {@link Pool#acquire()} Monos.
  * It uses non-blocking drain loops to deliver resources to borrowers, which means that a resource could
  * be handed off on any of the following {@link Thread threads}:
@@ -64,13 +63,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     SimplePool(DefaultPoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
-        int maxSize = poolConfig.allocationStrategy.estimatePermitCount();
-        if (maxSize == Integer.MAX_VALUE) {
-            this.elements = new MpscLinkedQueue8<>();
-        }
-        else {
-            this.elements = new MpscArrayQueue<>(Math.max(2, maxSize));
-        }
+        this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
         int initSize = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
         for (int i = 0; i < initSize; i++) {

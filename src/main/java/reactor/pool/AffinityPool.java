@@ -29,8 +29,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 
-import org.jctools.queues.MpmcArrayQueue;
-import org.jctools.queues.MpscLinkedQueue8;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
@@ -40,6 +38,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
+import reactor.util.concurrent.Queues;
 
 /**
  * @author Simon Baslé
@@ -51,7 +50,9 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     @SuppressWarnings("RawTypeCanBeGeneric")
     static final Map TERMINATED = Collections.emptyMap();
 
-    final Queue<AffinityPooledRef<POOLABLE>> availableElements; //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
+    //needs to be at least MPSC. producers include fastpath threads, only consumer is slowpath winner thread
+    //we go with Reactor-Core unbounded MPSC queue.
+    final Queue<AffinityPooledRef<POOLABLE>> availableElements;
     final Function<? super Long, ? extends SubPool<POOLABLE>>     subPoolFactory;
 
     volatile Map<Long, SubPool<POOLABLE>> pools;
@@ -68,13 +69,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 it -> new LifoSubPool<>(this) :
                 it -> new FifoSubPool<>(this);
 
-        int maxSize = poolConfig.allocationStrategy.estimatePermitCount();
-        if (maxSize == Integer.MAX_VALUE) {
-            this.availableElements = new ConcurrentLinkedQueue<>();
-        }
-        else {
-            this.availableElements = new MpmcArrayQueue<>(Math.max(maxSize, 2));
-        }
+        this.availableElements = Queues.<AffinityPooledRef<POOLABLE>>unboundedMultiproducer().get();
 
         int toBuild = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
 

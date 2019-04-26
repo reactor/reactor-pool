@@ -1319,8 +1319,7 @@ public class CommonPoolTest {
 				.destroyHandler(s -> {
 					if (flip.compareAndSet(false,
 							true)) {
-						return Mono.delay(Duration.ofMillis(
-								500))
+						return Mono.delay(Duration.ofMillis(500))
 						           .then();
 					}
 					else {
@@ -1338,7 +1337,7 @@ public class CommonPoolTest {
 		//destroy is fire-and-forget so the 500ms one will not have finished
 		assertThat(recorder.getDestroyCount()).as("destroy before 500ms").isEqualTo(1);
 
-		await().atLeast(500, TimeUnit.MILLISECONDS)
+		await().pollDelay(500, TimeUnit.MILLISECONDS)
 		       .atMost(600, TimeUnit.MILLISECONDS)
 		       .untilAsserted(() -> assertThat(recorder.getDestroyCount()).as("destroy after 500ms").isEqualTo(2));
 

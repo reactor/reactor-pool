@@ -294,7 +294,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         public void request(long n) {
             if (Operators.validate(n)) {
                 //start the countdown
-                if (acquireTimeout != Duration.ZERO && pool.acquiredSize() >= pool.getMaxAllocatedSize()) {
+                if (!acquireTimeout.isZero() && pool.acquiredSize() >= pool.getMaxAllocatedSize()) {
                     timeoutTask = Schedulers.parallel().schedule(this, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
                 }
                 //doAcquire should interrupt the countdown if there is either an available

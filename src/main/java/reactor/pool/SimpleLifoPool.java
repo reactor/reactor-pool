@@ -21,8 +21,9 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * This implementation is based on MPSC queues for idle resources and a {@link ConcurrentLinkedDeque}
- * for pending {@link Pool#acquire()} Monos, used as a stack ({@link java.util.Deque#offerFirst(Object)},
+ * This implementation is based on {@link java.util.concurrent.ConcurrentLinkedQueue} MPMC queue
+ * for idle resources and a {@link ConcurrentLinkedDeque} for pending {@link Pool#acquire()}
+ * Monos, used as a stack ({@link java.util.Deque#offerFirst(Object)},
  * {@link Deque#pollFirst()}. This results in serving pending borrowers in LIFO order.
  *
  * See {@link SimplePool} for other characteristics of the simple pool.

@@ -1186,14 +1186,13 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationInConstructor(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationCountInConstructor(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.defer(() -> {
 					if (flip.compareAndSet(false, true)) {
-						return Mono.just("foo")
-						           .delayElement(Duration.ofMillis(100));
+						return Mono.just("foo");
 					}
 					else {
 						flip.compareAndSet(true, false);
@@ -1213,22 +1212,18 @@ public class CommonPoolTest {
 		assertThat(recorder.getAllocationErrorCount())
 				.isOne()
 				.isEqualTo(recorder.getAllocationErrorHistogram().getTotalCount());
-
-		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
-		assertThat(minSuccess).isGreaterThanOrEqualTo(100L);
 	}
 
 	@ParameterizedTest
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationInBorrow(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationCountInBorrow(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String> builder = PoolBuilder
 				.from(Mono.defer(() -> {
 					if (flip.compareAndSet(false, true)) {
-						return Mono.just("foo")
-						           .delayElement(Duration.ofMillis(100));
+						return Mono.just("foo");
 					}
 					else {
 						flip.compareAndSet(true, false);
@@ -1259,16 +1254,71 @@ public class CommonPoolTest {
 				.as("allocation errors")
 				.isEqualTo(3)
 				.isEqualTo(recorder.getAllocationErrorHistogram().getTotalCount());
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void recordsAllocationLatenciesInConstructor(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		AtomicBoolean flip = new AtomicBoolean();
+		//note the starter method here is irrelevant, only the config is created and passed to createPool
+		PoolBuilder<String> builder = PoolBuilder
+				.from(Mono.defer(() -> {
+					if (flip.compareAndSet(false, true)) {
+						return Mono.just("foo").delayElement(Duration.ofMillis(100));
+					}
+					else {
+						flip.compareAndSet(true, false);
+						return Mono.delay(Duration.ofMillis(200)).then(Mono.error(new IllegalStateException("boom")));
+					}
+				}))
+				.initialSize(10)
+				.metricsRecorder(recorder);
+
+		assertThatIllegalStateException()
+				.isThrownBy(() -> configAdjuster.apply(builder));
+
+		assertThat(recorder.getAllocationTotalCount()).isEqualTo(2);
+
+		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
+		long minError = recorder.getAllocationErrorHistogram().getMinValue();
+
+		assertThat(minSuccess).as("allocation success latency").isGreaterThanOrEqualTo(100L);
+		assertThat(minError).as("allocation error latency").isGreaterThanOrEqualTo(200L);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void recordsAllocationLatenciesInBorrow(Function<PoolBuilder<String>, AbstractPool<String>> configAdjuster) {
+		AtomicBoolean flip = new AtomicBoolean();
+		//note the starter method here is irrelevant, only the config is created and passed to createPool
+		PoolBuilder<String> builder = PoolBuilder
+				.from(Mono.defer(() -> {
+					if (flip.compareAndSet(false, true)) {
+						return Mono.just("foo").delayElement(Duration.ofMillis(100));
+					}
+					else {
+						flip.compareAndSet(true, false);
+						return Mono.delay(Duration.ofMillis(200)).then(Mono.error(new IllegalStateException("boom")));
+					}
+				}))
+				.metricsRecorder(recorder);
+		Pool<String> pool = configAdjuster.apply(builder);
+
+		pool.acquire().block(); //success
+		pool.acquire().map(PooledRef::poolable)
+		    .onErrorReturn("error").block(); //error
 
 		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
 		assertThat(minSuccess)
 				.as("allocation success latency")
-				.isBetween(100L, 150L);
+				.isGreaterThanOrEqualTo(100L);
 
 		long minError = recorder.getAllocationErrorHistogram().getMinValue();
 		assertThat(minError)
 				.as("allocation error latency")
-				.isBetween(0L, 15L);
+				.isGreaterThanOrEqualTo(200L);
 	}
 
 	@ParameterizedTest

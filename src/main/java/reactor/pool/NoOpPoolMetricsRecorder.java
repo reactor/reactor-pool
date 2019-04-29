@@ -72,14 +72,4 @@ final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
     public void recordLifetimeDuration(long millisecondsSinceAllocation) {
 
     }
-
-    @Override
-    public void recordSlowPath() {
-
-    }
-
-    @Override
-    public void recordFastPath() {
-
-    }
 }

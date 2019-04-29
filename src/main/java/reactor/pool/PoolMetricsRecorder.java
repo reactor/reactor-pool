@@ -79,14 +79,4 @@ public interface PoolMetricsRecorder {
 	 * @param millisecondsIdle the number of milliseconds an object that was just acquired had previously been idle.
 	 */
 	void recordIdleTime(long millisecondsIdle);
-
-	/**
-	 * Record the fact that a {@link Pool} has a slow path of recycling and just used it.
-	 */
-	void recordSlowPath();
-
-	/**
-	 * Record the fact that a {@link Pool} has a fast path of recycling and just used it.
-	 */
-	void recordFastPath();
 }

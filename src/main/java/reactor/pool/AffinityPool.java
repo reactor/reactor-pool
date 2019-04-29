@@ -129,7 +129,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
             else {
                 borrower.stopPendingCountdown();
-                metricsRecorder.recordFastPath();
                 borrower.deliver(element);
             }
         }
@@ -198,7 +197,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                         AffinityPooledRef<POOLABLE> ref = availableElements.poll();
                         if (ref != null) {
                             lookAtSubPools = false;
-                            metricsRecorder.recordSlowPath();
                             pending.deliver(ref);
                         }
                         else {
@@ -221,7 +219,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     //continue
                                 }
                                 else {
-                                    metricsRecorder.recordSlowPath();
                                     pending.deliver(ref);
                                     break; //break out of the subpool iteration
                                 }
@@ -341,7 +338,6 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             DIRECT_RELEASE_WIP.decrementAndGet(this);
 
             if (m != null) {
-                parent.metricsRecorder.recordFastPath();
                 m.deliver(ref);
                 return true;
             }

@@ -1,0 +1,463 @@
+/*
+ * Copyright (c) 2018-Present Pivotal Software Inc, All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package reactor.pool;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+
+import org.assertj.core.data.Percentage;
+import org.awaitility.Awaitility;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.reactivestreams.Subscription;
+import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.pool.TestUtils.PoolableTest;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+import static org.awaitility.Awaitility.await;
+
+/**
+ * @author Stephane Maldini
+ */
+class ParitionedPoolTest {
+
+	//==utils for package-private config==
+	static final Pool<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+		return PoolBuilder.from(allocator)
+		                  .partitionedByThread(true)
+		                  .initialSize(minSize)
+		                  .sizeMax(maxSize)
+		                  .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+		                  .evictionPredicate((value, metadata) -> !value.isHealthy())
+		                  .build();
+	}
+
+	static final Pool<PoolableTest> poolableTestConfig(int minSize,
+			int maxSize,
+			Mono<PoolableTest> allocator,
+			Consumer<? super PoolableTest> additionalCleaner) {
+		return PoolBuilder.from(allocator)
+		                  .partitionedByThread(true)
+		                  .initialSize(minSize)
+		                  .sizeMax(maxSize)
+		                  .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
+			                  poolableTest.clean();
+			                  additionalCleaner.accept(poolableTest);
+		                  }))
+		                  .evictionPredicate((value, metadata) -> !value.isHealthy())
+		                  .build();
+	}
+
+
+	//======
+
+	@ParameterizedTest
+	@ValueSource(strings = {"true", "false"})
+	void threadAffinity(boolean lifo) throws InterruptedException, ExecutionException {
+		ScheduledExecutorService thread1 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "thread1"));
+		ScheduledExecutorService thread2 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "thread2"));
+		ScheduledExecutorService thread3 = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "thread3"));
+
+		try {
+			Pool<String> pool = PoolBuilder.from(Mono.fromCallable(() -> Thread.currentThread()
+			                                                                   .getName()
+			                                                                   .substring(0, 7)))
+			                               .partitionedByThread(true)
+			                               .lifo(lifo)
+			                               .sizeMax(3)
+			                               .build();
+
+			Map<String, Integer> acquired1 = new HashMap<>(3);
+			Map<String, Integer> acquired2 = new HashMap<>(3);
+			Map<String, Integer> acquired3 = new HashMap<>(3);
+
+			//create the resources and get them for the first triggering release
+			PooledRef<String> ref1 = thread1.submit(() -> pool.acquire()
+			                                                  .block())
+			                                .get();
+			PooledRef<String> ref2 = thread2.submit(() -> pool.acquire()
+			                                                  .block())
+			                                .get();
+			PooledRef<String> ref3 = thread3.submit(() -> pool.acquire()
+			                                                  .block())
+			                                .get();
+
+			final CountDownLatch releaseLatch = new CountDownLatch(10 * 3);
+			for (int i = 0; i < 10; i++) {
+				thread1.submit(() -> pool.acquire()
+				                         .subscribe(slot -> {
+					                         acquired1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+					                         if (!slot.poolable()
+					                                  .equals("thread1")) {
+						                         System.out.println("unexpected in thread1: " + slot);
+					                         }
+					                         thread1.schedule(() -> slot.release()
+					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
+				                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+
+				thread2.submit(() -> pool.acquire()
+				                         .subscribe(slot -> {
+					                         acquired2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+					                         if (!slot.poolable()
+					                                  .equals("thread2")) {
+						                         System.out.println("unexpected in thread2: " + slot);
+					                         }
+					                         thread2.schedule(() -> slot.release()
+					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
+				                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+
+				thread3.submit(() -> pool.acquire()
+				                         .subscribe(slot -> {
+					                         acquired3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
+					                         if (!slot.poolable()
+					                                  .equals("thread3")) {
+						                         System.out.println("unexpected in thread3: " + slot);
+					                         }
+					                         thread3.schedule(() -> slot.release()
+					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
+				                         }, e -> releaseLatch.countDown(), releaseLatch::countDown));
+
+			}
+			thread1.submit((Runnable) ref1.release()::block);
+			thread2.submit((Runnable) ref2.release()::block);
+			thread3.submit((Runnable) ref3.release()::block);
+
+			if (releaseLatch.await(35, TimeUnit.SECONDS)) {
+				assertThat(acquired1).as("thread1 acquired")
+				                     .containsEntry("thread1", 10)
+				                     .hasSize(1);
+				assertThat(acquired2).as("thread2 acquired")
+				                     .containsEntry("thread2", 10)
+				                     .hasSize(1);
+				assertThat(acquired3).as("thread3 acquired")
+				                     .containsEntry("thread3", 10)
+				                     .hasSize(1);
+			}
+			else {
+				System.out.println("acquired1: " + acquired1);
+				System.out.println("acquired2: " + acquired2);
+				System.out.println("acquired3: " + acquired3);
+				fail("didn't release all, but " + releaseLatch.getCount());
+			}
+		}
+		finally {
+			thread1.shutdown();
+			thread2.shutdown();
+			thread3.shutdown();
+		}
+	}
+
+	@Nested
+	@DisplayName("Tests around the acquire() manual mode of acquiring")
+	@SuppressWarnings("ClassCanBeStatic")
+	class AcquireTest {
+
+		@Test
+		void allocatedReleasedOrAbortedIfCancelRequestRace() throws InterruptedException {
+			allocatedReleasedOrAbortedIfCancelRequestRace(0, new AtomicInteger(), new AtomicInteger(), true);
+			allocatedReleasedOrAbortedIfCancelRequestRace(1, new AtomicInteger(), new AtomicInteger(), false);
+
+		}
+
+		void allocatedReleasedOrAbortedIfCancelRequestRace(int round,
+				AtomicInteger newCount,
+				AtomicInteger releasedCount,
+				boolean cancelFirst) throws InterruptedException {
+			Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
+
+			Pool<PoolableTest> pool = poolableTestConfig(0,
+					1,
+					Mono.defer(() -> Mono.delay(Duration.ofMillis(50))
+					                     .thenReturn(new PoolableTest(newCount.incrementAndGet())))
+					    .subscribeOn(scheduler),
+					pt -> releasedCount.incrementAndGet());
+
+			//acquire the only element and capture the subscription, don't request just yet
+			CountDownLatch latch = new CountDownLatch(1);
+			final BaseSubscriber<PooledRef<PoolableTest>> baseSubscriber =
+					new BaseSubscriber<PooledRef<PoolableTest>>() {
+						@Override
+						protected void hookOnSubscribe(Subscription subscription) {
+							//don't request
+							latch.countDown();
+						}
+					};
+			pool.acquire()
+			    .subscribe(baseSubscriber);
+			latch.await();
+
+			final ExecutorService executorService = Executors.newFixedThreadPool(2);
+			if (cancelFirst) {
+				executorService.submit(baseSubscriber::cancel);
+				executorService.submit(baseSubscriber::requestUnbounded);
+			}
+			else {
+				executorService.submit(baseSubscriber::requestUnbounded);
+				executorService.submit(baseSubscriber::cancel);
+			}
+
+			//release due to cancel is async, give it a bit of time
+			await().atMost(100, TimeUnit.MILLISECONDS)
+			       .with()
+			       .pollInterval(10, TimeUnit.MILLISECONDS)
+			       .untilAsserted(() -> assertThat(releasedCount).as("released vs created in round " + round + (
+					       cancelFirst ? " (cancel first)" : " (request first)"))
+			                                                     .hasValue(newCount.get()));
+		}
+
+		@Test
+		@Tag("loops")
+		void allocatedReleasedOrAbortedIfCancelRequestRace_loop() throws InterruptedException {
+			AtomicInteger newCount = new AtomicInteger();
+			AtomicInteger releasedCount = new AtomicInteger();
+			for (int i = 0; i < 100; i++) {
+				allocatedReleasedOrAbortedIfCancelRequestRace(i, newCount, releasedCount, i % 2 == 0);
+			}
+			System.out.println("Total release of " + releasedCount.get() + " for " + newCount.get() + " created over 100 rounds");
+		}
+
+		@Test
+		void bestEffortAllocateOrPend() throws InterruptedException {
+			AtomicInteger allocCounter = new AtomicInteger();
+			AtomicInteger destroyCounter = new AtomicInteger();
+			Pool<Integer> pool = PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+			                                .partitionedByThread(true)
+			                                .sizeMax(3)
+			                                .evictionPredicate((value, metadata) -> metadata.acquireCount() >= 3)
+			                                .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+			                                .build();
+
+			CountDownLatch latch = new CountDownLatch(10);
+			for (int i = 0; i < 10; i++) {
+				pool.acquire()
+				    .delayElement(Duration.ofMillis(300))
+				    .flatMap(PooledRef::release)
+				    .doFinally(fin -> latch.countDown())
+				    .subscribe();
+			}
+
+			if (!latch.await(5, TimeUnit.SECONDS)) {
+				fail("Timed out after 5s, allocated " + allocCounter.get() + " and destroyed " + destroyCounter.get());
+			}
+
+			assertThat(allocCounter).as("allocations")
+			                        .hasValue(4);
+			assertThat(destroyCounter).as("destruction")
+			                          .hasValue(3);
+		}
+
+		@Test
+		void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
+			AtomicReference<String> threadName = new AtomicReference<>();
+			Scheduler acquireScheduler = Schedulers.newSingle("acquire");
+			Pool<PoolableTest> pool = poolableTestConfig(1,
+					1,
+					Mono.fromCallable(PoolableTest::new)
+					    .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+
+			//the pool is started with one available element
+			//we prepare to acquire it
+			Mono<PooledRef<PoolableTest>> borrower = pool.acquire();
+			CountDownLatch latch = new CountDownLatch(1);
+
+			//we actually request the acquire from a separate thread and see from which thread the element was delivered
+			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread()
+			                                                                             .getName()),
+					e -> latch.countDown(),
+					latch::countDown));
+			latch.await(1, TimeUnit.SECONDS);
+
+			assertThat(threadName.get()).startsWith("acquire-");
+		}
+
+		@Test
+		void defaultThreadDeliveringWhenNoElementsAndFull() throws InterruptedException {
+			AtomicReference<String> threadName = new AtomicReference<>();
+			Scheduler acquireScheduler = Schedulers.newSingle("acquire");
+			Scheduler releaseScheduler =
+					Schedulers.fromExecutorService(Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,
+							"release"))));
+			Pool<PoolableTest> pool = poolableTestConfig(1,
+					1,
+					Mono.fromCallable(PoolableTest::new)
+					    .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+
+			//the pool is started with one elements, and has capacity for 1.
+			//we actually first acquire that element so that next acquire will wait for a release
+			PooledRef<PoolableTest> uniqueSlot = pool.acquire()
+			                                         .block();
+			assertThat(uniqueSlot).isNotNull();
+
+			//we prepare next acquire
+			Mono<PooledRef<PoolableTest>> borrower = pool.acquire();
+			CountDownLatch latch = new CountDownLatch(1);
+
+			//we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
+			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread()
+			                                                                             .getName()),
+					e -> latch.countDown(),
+					latch::countDown));
+			//after a short while, we release the acquired unique element from a third thread
+			releaseScheduler.schedule(uniqueSlot.release()::block, 500, TimeUnit.MILLISECONDS);
+			latch.await(1, TimeUnit.SECONDS);
+
+			assertThat(threadName.get()).isEqualTo("release");
+		}
+
+		@Test
+		void defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain() throws InterruptedException {
+			AtomicInteger releaserWins = new AtomicInteger();
+			AtomicInteger borrowerWins = new AtomicInteger();
+
+			defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(0, releaserWins, borrowerWins);
+
+			assertThat(releaserWins.get()).isEqualTo(1);
+		}
+
+		void defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(int round,
+				AtomicInteger releaserWins,
+				AtomicInteger borrowerWins) throws InterruptedException {
+
+			AtomicReference<String> threadName = new AtomicReference<>();
+			AtomicInteger newCount = new AtomicInteger();
+			Scheduler acquireScheduler =
+					Schedulers.fromExecutorService(Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,
+							"acquire"))));
+			Scheduler racerAcquireScheduler =
+					Schedulers.fromExecutorService(Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,
+							"racerAcquire"))));
+
+			Pool<PoolableTest> pool =
+					PoolBuilder.from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
+					                     .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+					           .partitionedByThread(true)
+					           .initialSize(1)
+					           .sizeMax(1)
+					           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+					           .evictionPredicate((value, metadata) -> !value.isHealthy())
+					           .build();
+
+			//the pool is started with one elements, and has capacity for 1.
+			//we actually first acquire that element so that next acquire will wait for a release
+			PooledRef<PoolableTest> uniqueSlot = pool.acquire()
+			                                         .block();
+			assertThat(uniqueSlot).isNotNull();
+
+			//we prepare next acquire
+			Mono<PooledRef<PoolableTest>> borrower = pool.acquire();
+			CountDownLatch latch = new CountDownLatch(1);
+
+			//we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
+			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread()
+			                                                                             .getName()),
+					e -> latch.countDown(),
+					latch::countDown));
+
+			//in parallel, we'll both attempt concurrent acquire AND release the unique element (each on their dedicated threads)
+			acquireScheduler.schedule(uniqueSlot.release()::block, 100, TimeUnit.MILLISECONDS);
+			racerAcquireScheduler.schedule(pool.acquire()::block, 100, TimeUnit.MILLISECONDS);
+
+			Flux.interval(Duration.ofMillis(300)).doOnNext(c -> System.out.println("Lol ")).take(20).blockLast();
+
+			assertThat(latch.await(5, TimeUnit.SECONDS)).as("first acquire delivered within 5s in round " + round)
+			                                            .isTrue();
+
+			assertThat(newCount).as("created 1 poolable in round " + round)
+			                    .hasValue(1);
+
+			//we expect that sometimes the race will let the second borrower thread drain, which would mean first borrower
+			//will get the element delivered from racerAcquire thread. Yet the rest of the time it would get drained by racerRelease.
+			if (threadName.get()
+			              .startsWith("acquire")) {
+				releaserWins.incrementAndGet();
+			}
+			else if (threadName.get()
+			                   .startsWith("racerAcquire")) {
+				borrowerWins.incrementAndGet();
+			}
+			else {
+				System.out.println(threadName.get());
+			}
+		}
+
+		@Test
+		@Tag("loops")
+		void defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain_loop() throws InterruptedException {
+			AtomicInteger releaserWins = new AtomicInteger();
+			AtomicInteger borrowerWins = new AtomicInteger();
+
+			for (int i = 0; i < 100; i++) {
+				defaultThreadDeliveringWhenNoElementsAndFullAndRaceDrain(i, releaserWins, borrowerWins);
+			}
+			//look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.
+			String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
+			assertThat(releaserWins).as(stats)
+			                        .hasValue(100);
+			assertThat(borrowerWins).as(stats)
+			                        .hasValue(0);
+		}
+
+		@Test
+		void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
+			AtomicReference<String> threadName = new AtomicReference<>();
+			Scheduler acquireScheduler = Schedulers.newSingle("acquire");
+			Pool<PoolableTest> pool = poolableTestConfig(0,
+					1,
+					Mono.fromCallable(PoolableTest::new)
+					    .subscribeOn(Schedulers.newParallel("poolable test allocator")));
+
+			//the pool is started with no elements, and has capacity for 1
+			//we prepare to acquire, which would allocate the element
+			Mono<PooledRef<PoolableTest>> borrower = pool.acquire();
+			CountDownLatch latch = new CountDownLatch(1);
+
+			//we actually request the acquire from a separate thread, but the allocation also happens in a dedicated thread
+			//we look at which thread the element was delivered from
+			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread()
+			                                                                             .getName()),
+					e -> latch.countDown(),
+					latch::countDown));
+			latch.await(1, TimeUnit.SECONDS);
+
+			assertThat(threadName.get()).startsWith("poolable test allocator-");
+		}
+	}
+}

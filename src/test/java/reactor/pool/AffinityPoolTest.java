@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -408,14 +409,18 @@ class AffinityPoolTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"1, true", "1, false", "2, true", "2, false", "3, true", "3, false"})
+    @CsvSource({"1, true", "1, false", "3, true", "3, false", "10, true", "10, false", "100, true", "100, false"})
     @Tag("metrics")
     void fastPathMetrics(int concurrency, boolean lifo) {
         final TestUtils.InMemoryPoolMetrics recorder = new TestUtils.InMemoryPoolMetrics();
-        ScheduledExecutorService acquireExecutor = Executors.newScheduledThreadPool(concurrency);
-        Scheduler acquireScheduler = Schedulers.fromExecutorService(acquireExecutor);
+        ScheduledExecutorService[] executors = new ScheduledExecutorService[concurrency];
+        for (int i = 0; i < concurrency; i++) {
+            executors[i] = Executors.newSingleThreadScheduledExecutor();
+        }
+
         AtomicInteger allocator = new AtomicInteger();
         AtomicInteger released = new AtomicInteger();
+        AtomicInteger unexpected = new AtomicInteger();
         CyclicBarrier firstRefLatch = new CyclicBarrier(concurrency);
 
         try {
@@ -429,7 +434,9 @@ class AffinityPoolTest {
 
             for (int threadIndex = 1; threadIndex <= concurrency; threadIndex++) {
                 final String threadName = "thread" + threadIndex;
-                acquireExecutor.submit(() -> {
+                final ScheduledExecutorService threadExecutor = executors[threadIndex - 1];
+
+                threadExecutor.submit(() -> {
                     final PooledRef<String> firstRef = pool.acquire().block();
                     assert firstRef != null;
                     final String sticky = firstRef.poolable();
@@ -440,13 +447,14 @@ class AffinityPoolTest {
                         e.printStackTrace();
                     }
 
+
                     for (int i = 0; i < 10; i++) {
                         pool.acquire().subscribe(ref -> {
                             String p = ref.poolable();
                             if (!sticky.equals(p)) {
-                                System.out.println(threadName + " unexpected " + p);
+                                unexpected.incrementAndGet();
                             }
-                            acquireScheduler.schedule(() ->
+                            threadExecutor.schedule(() ->
                                             ref.release().doFinally(fin -> released.incrementAndGet()).subscribe(),
                                     100, TimeUnit.MILLISECONDS);
                         });
@@ -459,17 +467,18 @@ class AffinityPoolTest {
                       .atMost(10, TimeUnit.SECONDS)
                       .untilAtomic(released, Matchers.equalTo(10 * concurrency));
 
-            System.out.println("slowPath = " + recorder.getSlowPathCount() + ", fastPath = " + recorder.getFastPathCount());
+            System.out.println("slowPath = " + recorder.getSlowPathCount() + ", fastPath = " + recorder.getFastPathCount() + ", unexpected threads = " + unexpected.get());
 
             assertThat(allocator).hasValue(concurrency);
             long slowPath = recorder.getSlowPathCount();
             long fastPath = recorder.getFastPathCount();
 
-            assertThat(slowPath + fastPath).as("fastpath + slowpath").isEqualTo(10L * concurrency);
-            assertThat(fastPath).as("fastpath").isCloseTo(10L * concurrency, Percentage.withPercentage(50d));
+            assertThat(fastPath).as("fastpath").isEqualTo(10L * concurrency);
+            assertThat(slowPath).as("slowpath").isZero();
         } finally {
-            acquireScheduler.dispose();
-            acquireExecutor.shutdownNow();
+            for (ScheduledExecutorService executor : executors) {
+                executor.shutdownNow();
+            }
         }
     }
 

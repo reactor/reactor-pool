@@ -25,6 +25,7 @@ import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -33,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
-import org.assertj.core.api.Assert;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
@@ -274,18 +274,18 @@ public class CommonPoolTest {
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
-		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired1 = new CopyOnWriteArrayList<>();
 		CountDownLatch latch1 = new CountDownLatch(3);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 
-		List<PooledRef<PoolableTest>> acquired2 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired2 = new CopyOnWriteArrayList<>();
 		pool.acquire().subscribe(acquired2::add);
 		pool.acquire().subscribe(acquired2::add);
 		pool.acquire().subscribe(acquired2::add);
 
-		List<PooledRef<PoolableTest>> acquired3 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired3 = new CopyOnWriteArrayList<>();
 		CountDownLatch latch3 = new CountDownLatch(3);
 		pool.acquire().subscribe(acquired3::add, Throwable::printStackTrace, latch3::countDown);
 		pool.acquire().subscribe(acquired3::add, Throwable::printStackTrace, latch3::countDown);
@@ -321,7 +321,11 @@ public class CommonPoolTest {
 
 			assertThat(acquired3)
 					.as("acquired3 all new")
-					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isZero());
+					.allSatisfy(slot -> {
+						assertThat(slot).as("acquire3 slot").isNotNull();
+						assertThat(slot.poolable()).as("acquire3 poolable").isNotNull();
+						assertThat(slot.poolable().usedUp).as("acquire3 usedUp").isZero();
+					});
 		}
 		else {
 			fail("not enough new elements generated, missing " + latch3.getCount());
@@ -503,19 +507,19 @@ public class CommonPoolTest {
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 
-		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired1 = new CopyOnWriteArrayList<>();
 		CountDownLatch latch1 = new CountDownLatch(3);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
 
-		List<PooledRef<PoolableTest>> acquired2 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired2 = new CopyOnWriteArrayList<>();
 		CountDownLatch latch2 = new CountDownLatch(3);
 		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
 		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
 		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
 
-		List<PooledRef<PoolableTest>> acquired3 = new ArrayList<>();
+		List<PooledRef<PoolableTest>> acquired3 = new CopyOnWriteArrayList<>();
 		pool.acquire().subscribe(acquired3::add);
 		pool.acquire().subscribe(acquired3::add);
 		pool.acquire().subscribe(acquired3::add);
@@ -541,7 +545,7 @@ public class CommonPoolTest {
 
 		if (latch2.await(15, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
 
-			assertThat(acquired2).hasSize(3);
+			assertThat(acquired2).as("acquired2 size").hasSize(3);
 
 			assertThat(acquired1)
 					.as("acquired1/3 all used up")
@@ -550,7 +554,11 @@ public class CommonPoolTest {
 
 			assertThat(acquired2)
 					.as("acquired2 all new")
-					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isZero());
+					.allSatisfy(slot -> {
+						assertThat(slot).as("acquire2 slot").isNotNull();
+						assertThat(slot.poolable()).as("acquire2 poolable").isNotNull();
+						assertThat(slot.poolable().usedUp).as("acquire2 usedUp").isZero();
+					});
 		}
 		else {
 			fail("not enough new elements generated, missing " + latch2.getCount());

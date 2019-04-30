@@ -19,36 +19,30 @@ package reactor.pool;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import org.assertj.core.data.Percentage;
-import org.awaitility.Awaitility;
-import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.reactivestreams.Subscription;
+import reactor.core.Exceptions;
 import reactor.core.publisher.BaseSubscriber;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.TestUtils.PoolableTest;
+import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -126,8 +120,8 @@ class ParitionedPoolTest {
 				                         .subscribe(slot -> {
 					                         acquired1.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
 					                         if (!slot.poolable()
-					                                  .equals("thread1")) {
-						                         System.out.println("unexpected in thread1: " + slot);
+					                                  .startsWith("thread1")) {
+						                         System.out.println("unexpected in thread1: " + slot + "("+Thread.currentThread().getId()+")");
 					                         }
 					                         thread1.schedule(() -> slot.release()
 					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
@@ -137,8 +131,8 @@ class ParitionedPoolTest {
 				                         .subscribe(slot -> {
 					                         acquired2.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
 					                         if (!slot.poolable()
-					                                  .equals("thread2")) {
-						                         System.out.println("unexpected in thread2: " + slot);
+					                                  .startsWith("thread2")) {
+						                         System.out.println("unexpected in thread2: " + slot + "("+Thread.currentThread().getId()+")");
 					                         }
 					                         thread2.schedule(() -> slot.release()
 					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
@@ -148,8 +142,8 @@ class ParitionedPoolTest {
 				                         .subscribe(slot -> {
 					                         acquired3.compute(slot.poolable(), (k, old) -> old == null ? 1 : old + 1);
 					                         if (!slot.poolable()
-					                                  .equals("thread3")) {
-						                         System.out.println("unexpected in thread3: " + slot);
+					                                  .startsWith("thread3")) {
+						                         System.out.println("unexpected in thread3: " + slot + "("+Thread.currentThread().getId()+")");
 					                         }
 					                         thread3.schedule(() -> slot.release()
 					                                                    .subscribe(), 25, TimeUnit.MILLISECONDS);
@@ -386,16 +380,11 @@ class ParitionedPoolTest {
 			CountDownLatch latch = new CountDownLatch(1);
 
 			//we actually perform the acquire from its dedicated thread, capturing the thread on which the element will actually get delivered
-			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread()
-			                                                                             .getName()),
-					e -> latch.countDown(),
-					latch::countDown));
+			acquireScheduler.schedule(() -> borrower.subscribe(v -> threadName.set(Thread.currentThread().getName()), e -> latch.countDown(), latch::countDown));
 
 			//in parallel, we'll both attempt concurrent acquire AND release the unique element (each on their dedicated threads)
 			acquireScheduler.schedule(uniqueSlot.release()::block, 100, TimeUnit.MILLISECONDS);
 			racerAcquireScheduler.schedule(pool.acquire()::block, 100, TimeUnit.MILLISECONDS);
-
-			Flux.interval(Duration.ofMillis(300)).doOnNext(c -> System.out.println("Lol ")).take(20).blockLast();
 
 			assertThat(latch.await(5, TimeUnit.SECONDS)).as("first acquire delivered within 5s in round " + round)
 			                                            .isTrue();
@@ -429,10 +418,8 @@ class ParitionedPoolTest {
 			}
 			//look at the stats and show them in case of assertion error. We expect all deliveries to be on either of the racer threads.
 			String stats = "releaser won " + releaserWins.get() + ", borrower won " + borrowerWins.get();
-			assertThat(releaserWins).as(stats)
-			                        .hasValue(100);
-			assertThat(borrowerWins).as(stats)
-			                        .hasValue(0);
+			assertThat(releaserWins.get() + borrowerWins.get()).as(stats)
+			                        .isEqualTo(100);
 		}
 
 		@Test

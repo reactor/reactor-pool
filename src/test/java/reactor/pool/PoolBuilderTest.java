@@ -107,4 +107,10 @@ class PoolBuilderTest {
                     .assertNext(n -> assertThat(n).matches(numberPredicate))
                     .verifyComplete();
     }
+
+    @Test
+    void threadAffinityDefaultToFalse() {
+        PoolBuilder<Integer> poolBuilder = PoolBuilder.from(Mono.just(1));
+        assertThat(poolBuilder.isThreadAffinity).as("threadAffinity").isFalse();
+    }
 }

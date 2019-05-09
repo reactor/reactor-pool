@@ -57,7 +57,7 @@ public class PoolBuilder<T> {
     }
 
     final Mono<T> allocator;
-    boolean                                isThreadAffinity     = true;
+    boolean                                isThreadAffinity     = false;
     boolean                                isLifo               = false;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
@@ -269,6 +269,8 @@ public class PoolBuilder<T> {
      * pending {@link Pool#acquire()} {@link Mono Monos} that were subscribed on the same thread on which a resource is
      * released. In case no such borrower exists, but some are pending from another thread, it will deliver to these
      * borrowers instead (a slow path with no fairness guarantees).
+     * <p>
+     * Defaults to {@code false}.
      *
      * @param isThreadAffinity {@literal true} to activate thread affinity on the pool.
      * @return a builder of {@link Pool} with thread affinity.

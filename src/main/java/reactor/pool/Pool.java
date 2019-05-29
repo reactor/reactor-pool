@@ -21,6 +21,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -112,4 +113,33 @@ public interface Pool<POOLABLE> extends Disposable {
                 PooledRef::release);
     }
 
+    /**
+     * Shutdown the pool by:
+     * <ul>
+     *     <li>
+     *         notifying every acquire still pending that the pool has been shut down,
+     *         via a {@link RuntimeException}This method <strong>blocks</strong> until all
+     *     </li>
+     *     <li>
+     *         releasing each pooled resource, according to the release handler defined in
+     *         the {@link PoolBuilder}
+     *     </li>
+     * </ul>
+     * This method <strong>blocks</strong> until all these steps have executed. For a
+     * "fire-and-forget" alternative, use {@link #disposeLater()} and {@link Mono#subscribe()}.
+     */
+    @Override
+    void dispose();
+
+    /**
+     * Returns a {@link Mono} that represents a lazy shutdown of this {@link Pool}.
+     * Shutdown doesn't happen until the {@link Mono} is {@link Mono#subscribe() subscribed}.
+     * Otherwise, it performs the same steps as in the blocking counterpart, {@link #dispose()}.
+     * <p>
+     * If the pool has been already shut down, returns {@link Mono#empty()}. Completion of
+     * the {@link Mono} indicate completion of the shutdown process.
+     *
+     * @return a Mono triggering the shutdown of the pool once subscribed.
+     */
+    Mono<Void> disposeLater();
 }

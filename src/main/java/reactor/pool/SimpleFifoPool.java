@@ -19,6 +19,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import reactor.core.publisher.Mono;
 import reactor.util.concurrent.Queues;
 
 /**
@@ -77,18 +78,23 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     }
 
     @Override
-    public void dispose() {
-        @SuppressWarnings("unchecked")
-        Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
-        if (q != TERMINATED) {
-            while(!q.isEmpty()) {
-                q.poll().fail(new RuntimeException("Pool has been shut down"));
-            }
+    public Mono<Void> disposeLater() {
+        return Mono.defer(() -> {
+            @SuppressWarnings("unchecked")
+            Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
+            if (q != TERMINATED) {
+                while(!q.isEmpty()) {
+                    q.poll().fail(new RuntimeException("Pool has been shut down"));
+                }
 
-            while (!elements.isEmpty()) {
-                destroyPoolable(elements.poll()).subscribe();
+                Mono<Void> destroyMonos = Mono.when();
+                while (!elements.isEmpty()) {
+                    destroyMonos = destroyMonos.and(destroyPoolable(elements.poll()));
+                }
+                return destroyMonos;
             }
-        }
+            return Mono.empty();
+        });
     }
 
     @Override

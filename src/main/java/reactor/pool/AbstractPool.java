@@ -153,11 +153,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         }
     }
 
-    @Override
-    public final void dispose() {
-        disposeLater().block();
-    }
-
     /**
      * An abstract base for most common statistics operator of {@link PooledRef}.
      *

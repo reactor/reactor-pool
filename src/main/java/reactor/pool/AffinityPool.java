@@ -256,22 +256,27 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 
     @Override
-    public void dispose() {
-        @SuppressWarnings("unchecked")
-        Map<Long, SubPool<POOLABLE>> toClose = POOLS.getAndSet(this, TERMINATED);
-        if (toClose != TERMINATED) {
-            for (SubPool<POOLABLE> subPool : toClose.values()) {
-                Borrower<POOLABLE> pending;
-                while((pending = subPool.pollPending()) != null) {
-                    pending.fail(new RuntimeException("Pool has been shut down"));
+    public Mono<Void> disposeLater() {
+        return Mono.defer(() -> {
+            @SuppressWarnings("unchecked")
+            Map<Long, SubPool<POOLABLE>> toClose = POOLS.getAndSet(this, TERMINATED);
+            if (toClose != TERMINATED) {
+                for (SubPool<POOLABLE> subPool : toClose.values()) {
+                    Borrower<POOLABLE> pending;
+                    while((pending = subPool.pollPending()) != null) {
+                        pending.fail(new RuntimeException("Pool has been shut down"));
+                    }
                 }
-            }
-            toClose.clear();
+                toClose.clear();
 
-            while(!availableElements.isEmpty()) {
-                destroyPoolable(availableElements.poll()).subscribe();
+                Mono<Void> destroyMonos = Mono.when();
+                while(!availableElements.isEmpty()) {
+                    destroyMonos = destroyMonos.and(destroyPoolable(availableElements.poll()));
+                }
+                return destroyMonos;
             }
-        }
+            return Mono.empty();
+        });
     }
 
     @Override

@@ -36,6 +36,8 @@ import java.util.function.Function;
 
 import org.assertj.core.api.Assertions;
 import org.assertj.core.data.Offset;
+import org.awaitility.Awaitility;
+import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -1038,6 +1040,76 @@ public class CommonPoolTest {
 
 		assertThatExceptionOfType(FormatterClosedException.class)
 				.isThrownBy(uniqueElement::flush);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void disposeLaterIsLazy(Function<PoolBuilder<Formatter>, AbstractPool<Formatter>> configAdjuster) {
+		Formatter uniqueElement = new Formatter();
+
+		PoolBuilder<Formatter> builder = PoolBuilder
+				.from(Mono.just(uniqueElement))
+				.sizeMax(1)
+				.initialSize(1)
+				.evictionPredicate((poolable, metadata) -> true);
+		AbstractPool<Formatter> pool = configAdjuster.apply(builder);
+
+		Mono<Void> disposeMono = pool.disposeLater();
+		Mono<Void> disposeMono2 = pool.disposeLater();
+
+		assertThat(disposeMono)
+				.isNotSameAs(disposeMono2);
+
+		assertThatCode(uniqueElement::flush)
+				.doesNotThrowAnyException();
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void disposeLaterCompletesWhenAllReleased(Function<PoolBuilder<AtomicBoolean>, AbstractPool<AtomicBoolean>> configAdjuster) {
+		List<AtomicBoolean> elements = Arrays.asList(new AtomicBoolean(), new AtomicBoolean(), new AtomicBoolean());
+		AtomicInteger index = new AtomicInteger(0);
+
+		PoolBuilder<AtomicBoolean> builder = PoolBuilder
+				.from(Mono.fromCallable(() -> elements.get(index.getAndIncrement())))
+				.sizeMax(3)
+				.initialSize(3)
+				.evictionPredicate((poolable, metadata) -> true)
+				.destroyHandler(ab -> Mono.fromRunnable(() -> ab.set(true)));
+		AbstractPool<AtomicBoolean> pool = configAdjuster.apply(builder);
+
+		Mono<Void> disposeMono = pool.disposeLater();
+
+		assertThat(elements).as("before disposeLater subscription").noneMatch(AtomicBoolean::get);
+
+		disposeMono.block();
+
+		assertThat(elements).as("after disposeLater done").allMatch(AtomicBoolean::get);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void disposeLaterReleasedConcurrently(Function<PoolBuilder<Integer>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger live = new AtomicInteger(0);
+
+		PoolBuilder<Integer> builder = PoolBuilder
+				.from(Mono.fromCallable(live::getAndIncrement))
+				.sizeMax(3)
+				.initialSize(3)
+				.evictionPredicate((poolable, metadata) -> true)
+				.destroyHandler(ab -> Mono.delay(Duration.ofMillis(500))
+				                          .doOnNext(v -> live.decrementAndGet())
+				                          .then());
+		AbstractPool<Integer> pool = configAdjuster.apply(builder);
+
+		Mono<Void> disposeMono = pool.disposeLater();
+
+		assertThat(live).as("before disposeLater subscription").hasValue(3);
+
+		disposeMono.subscribe();
+
+		Awaitility.await().atMost(600, TimeUnit.MILLISECONDS) //serially would add up to 1500ms
+		          .untilAtomic(live, CoreMatchers.is(0));
 	}
 
 	@ParameterizedTest

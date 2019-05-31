@@ -20,6 +20,8 @@ import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import reactor.core.publisher.Mono;
+
 /**
  * This implementation is based on {@link java.util.concurrent.ConcurrentLinkedQueue} MPMC queue
  * for idle resources and a {@link ConcurrentLinkedDeque} for pending {@link Pool#acquire()}
@@ -78,19 +80,26 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     }
 
     @Override
-    public void dispose() {
-        @SuppressWarnings("unchecked")
-        ConcurrentLinkedDeque<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
-        if (q != TERMINATED) {
-            Borrower<POOLABLE> p;
-            while((p = q.pollFirst()) != null) {
-                p.fail(new RuntimeException("Pool has been shut down"));
-            }
+    public Mono<Void> disposeLater() {
+        return Mono.defer(() -> {
+            @SuppressWarnings("unchecked")
+            ConcurrentLinkedDeque<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
+            if (q != TERMINATED) {
+                Borrower<POOLABLE> p;
+                while((p = q.pollFirst()) != null) {
+                    p.fail(new RuntimeException("Pool has been shut down"));
+                }
 
-            while (!elements.isEmpty()) {
-                destroyPoolable(elements.poll()).subscribe();
+                Mono<Void> destroyMonos = Mono.when();
+
+                while (!elements.isEmpty()) {
+                    destroyMonos = destroyMonos.and(destroyPoolable(elements.poll()));
+                }
+
+                return destroyMonos;
             }
-        }
+            return Mono.empty();
+        });
     }
 
     @Override

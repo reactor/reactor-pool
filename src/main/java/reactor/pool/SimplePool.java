@@ -105,7 +105,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     @Override
     void doAcquire(Borrower<POOLABLE> borrower) {
         if (isDisposed()) {
-            borrower.fail(new RuntimeException("Pool has been shut down"));
+            borrower.fail(new PoolShutdownException());
             return;
         }
 

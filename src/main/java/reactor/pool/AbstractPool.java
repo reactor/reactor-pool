@@ -285,8 +285,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         public void run() {
             if (Borrower.this.compareAndSet(false, true)) {
                 pool.cancelAcquire(Borrower.this);
-                actual.onError(new TimeoutException("Acquire has been pending for more than the " +
-                        "configured timeout of " + acquireTimeout.toMillis() + "ms"));
+                actual.onError(new PoolAcquireTimeoutException(acquireTimeout));
             }
         }
 

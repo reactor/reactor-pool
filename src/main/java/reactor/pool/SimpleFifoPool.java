@@ -49,7 +49,7 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
         for (;;) {
             int currentPending = PENDING_COUNT.get(this);
             if (maxPending >= 0 && currentPending == maxPending) {
-                pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                pending.fail(new PoolAcquirePendingLimitException(maxPending));
                 return false;
             }
             else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
@@ -84,7 +84,7 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
             Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
             if (q != TERMINATED) {
                 while(!q.isEmpty()) {
-                    q.poll().fail(new RuntimeException("Pool has been shut down"));
+                    q.poll().fail(new PoolShutdownException());
                 }
 
                 Mono<Void> destroyMonos = Mono.when();

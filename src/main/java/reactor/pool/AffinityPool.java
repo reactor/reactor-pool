@@ -109,7 +109,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
     @Override
     void doAcquire(Borrower<POOLABLE> borrower) {
         if (pools == TERMINATED) {
-            borrower.fail(new RuntimeException("Pool has been shut down"));
+            borrower.fail(new PoolShutdownException());
             return;
         }
 
@@ -264,7 +264,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
                 for (SubPool<POOLABLE> subPool : toClose.values()) {
                     Borrower<POOLABLE> pending;
                     while((pending = subPool.pollPending()) != null) {
-                        pending.fail(new RuntimeException("Pool has been shut down"));
+                        pending.fail(new PoolShutdownException());
                     }
                 }
                 toClose.clear();
@@ -366,7 +366,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             for (;;) {
                 int currentPending = AbstractPool.PENDING_COUNT.get(parent);
                 if (maxPending >= 0 && currentPending == maxPending) {
-                    pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                    pending.fail(new PoolAcquirePendingLimitException(maxPending));
                     return;
                 }
                 else if (AbstractPool.PENDING_COUNT.compareAndSet(parent, currentPending, currentPending + 1)) {
@@ -406,7 +406,7 @@ final class AffinityPool<POOLABLE> extends AbstractPool<POOLABLE> {
             for (;;) {
                 int currentPending = AbstractPool.PENDING_COUNT.get(parent);
                 if (maxPending >= 0 && currentPending == maxPending) {
-                    pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                    pending.fail(new PoolAcquirePendingLimitException(maxPending));
                     return;
                 }
                 else if (AbstractPool.PENDING_COUNT.compareAndSet(parent, currentPending, currentPending + 1)) {

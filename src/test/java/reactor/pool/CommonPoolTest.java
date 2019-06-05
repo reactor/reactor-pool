@@ -776,7 +776,7 @@ public class CommonPoolTest {
 			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
 			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);
 			assertThat(error.get()).as("extraneous pending error")
-			                       .isInstanceOf(IllegalStateException.class)
+			                       .isInstanceOf(PoolAcquirePendingLimitException.class)
 			                       .hasMessage("Pending acquire queue has reached its maximum size of 1");
 
 			hold.release().block();
@@ -823,7 +823,7 @@ public class CommonPoolTest {
 			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
 			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);
 			assertThat(error.get()).as("extraneous pending error")
-			                       .isInstanceOf(IllegalStateException.class)
+			                       .isInstanceOf(PoolAcquirePendingLimitException.class)
 			                       .hasMessage("Pending acquire queue has reached its maximum size of 1");
 
 			hold.release().block();
@@ -1224,7 +1224,8 @@ public class CommonPoolTest {
 		            .thenAwait(Duration.ofMillis(1))
 		            .verifyErrorSatisfies(e -> assertThat(e)
 				            .isInstanceOf(TimeoutException.class)
-				            .hasMessage("Acquire has been pending for more than the configured timeout of 100ms"));
+				            .isExactlyInstanceOf(PoolAcquireTimeoutException.class)
+				            .hasMessage("Pool#acquire(Duration) has been pending for more than the configured timeout of 100ms"));
 	}
 
 	@ParameterizedTest
@@ -1246,7 +1247,8 @@ public class CommonPoolTest {
 		            .thenAwait(Duration.ofMillis(1))
 		            .verifyErrorSatisfies(e -> assertThat(e)
 				            .isInstanceOf(TimeoutException.class)
-				            .hasMessage("Acquire has been pending for more than the configured timeout of 100ms"));
+				            .isExactlyInstanceOf(PoolAcquireTimeoutException.class)
+				            .hasMessage("Pool#acquire(Duration) has been pending for more than the configured timeout of 100ms"));
 
 		assertThat(resource).as("post timeout but before resource available").hasValue(0);
 

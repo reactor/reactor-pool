@@ -51,7 +51,7 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
         for (;;) {
             int currentPending = PENDING_COUNT.get(this);
             if (maxPending >= 0 && currentPending == maxPending) {
-                pending.fail(new IllegalStateException("Pending acquire queue has reached its maximum size of " + maxPending));
+                pending.fail(new PoolAcquirePendingLimitException(maxPending));
                 return false;
             }
             else if (PENDING_COUNT.compareAndSet(this, currentPending, currentPending + 1)) {
@@ -87,7 +87,7 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
             if (q != TERMINATED) {
                 Borrower<POOLABLE> p;
                 while((p = q.pollFirst()) != null) {
-                    p.fail(new RuntimeException("Pool has been shut down"));
+                    p.fail(new PoolShutdownException());
                 }
 
                 Mono<Void> destroyMonos = Mono.when();

@@ -54,7 +54,6 @@ class SimpleFifoPoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
                 .lifo(false)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -65,7 +64,6 @@ class SimpleFifoPoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
                 .lifo(false)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -78,7 +76,6 @@ class SimpleFifoPoolTest {
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
                 .lifo(false)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
@@ -98,7 +95,6 @@ class SimpleFifoPoolTest {
         SimpleFifoPool<String> pool = new SimpleFifoPool<>(
                 from(Mono.just("Hello Reactive World"))
                         .lifo(false)
-                        .threadAffinity(false)
                         .sizeMax(1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
@@ -862,7 +858,6 @@ class SimpleFifoPoolTest {
         SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
                         .lifo(false)
-                        .threadAffinity(false)
                         .initialSize(3)
                         .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))

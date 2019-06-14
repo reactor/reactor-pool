@@ -57,7 +57,6 @@ class SimpleLifoPoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
                 .lifo(true)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -68,7 +67,6 @@ class SimpleLifoPoolTest {
     static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
                 .lifo(true)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -81,7 +79,6 @@ class SimpleLifoPoolTest {
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
                 .lifo(true)
-                .threadAffinity(false)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
@@ -101,7 +98,6 @@ class SimpleLifoPoolTest {
         SimpleLifoPool<String> pool = new SimpleLifoPool<>(
                 from(Mono.just("Hello Reactive World"))
                         .lifo(true)
-                        .threadAffinity(false)
                         .sizeMax(1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
@@ -736,7 +732,6 @@ class SimpleLifoPoolTest {
         SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
                         .lifo(true)
-                        .threadAffinity(false)
                         .initialSize(3)
                         .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))

@@ -38,7 +38,7 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     private static final AtomicReferenceFieldUpdater<SimpleFifoPool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(
             SimpleFifoPool.class, Queue.class, "pending");
 
-    public SimpleFifoPool(DefaultPoolConfig<POOLABLE> poolConfig) {
+    public SimpleFifoPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig);
         this.pending = new ConcurrentLinkedQueue<>(); //unbounded MPMC
     }

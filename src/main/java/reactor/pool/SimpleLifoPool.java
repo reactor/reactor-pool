@@ -40,7 +40,7 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     private static final AtomicReferenceFieldUpdater<SimpleLifoPool, ConcurrentLinkedDeque> PENDING = AtomicReferenceFieldUpdater.newUpdater(
             SimpleLifoPool.class, ConcurrentLinkedDeque.class, "pending");
 
-    public SimpleLifoPool(DefaultPoolConfig<POOLABLE> poolConfig) {
+    public SimpleLifoPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig);
         this.pending = new ConcurrentLinkedDeque<>(); //unbounded
     }

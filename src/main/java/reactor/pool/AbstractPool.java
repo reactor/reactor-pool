@@ -19,11 +19,9 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
-import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -35,7 +33,6 @@ import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Logger;
 import reactor.util.annotation.Nullable;
@@ -54,14 +51,14 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     //This helps with testability of some methods that for now mainly log
     final Logger logger;
 
-    final DefaultPoolConfig<POOLABLE> poolConfig;
+    final PoolConfig<POOLABLE> poolConfig;
 
     final PoolMetricsRecorder metricsRecorder;
 
     volatile     int                                     pendingCount;
     static final AtomicIntegerFieldUpdater<AbstractPool> PENDING_COUNT = AtomicIntegerFieldUpdater.newUpdater(AbstractPool.class, "pendingCount");
 
-    AbstractPool(DefaultPoolConfig<POOLABLE> poolConfig, Logger logger) {
+    AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
         this.logger = logger;
         this.metricsRecorder = poolConfig.metricsRecorder;
@@ -356,92 +353,4 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         }
     }
 
-    /**
-     * A inner representation of a {@link AbstractPool} configuration.
-     *
-     * @author Simon Baslé
-     */
-    static class DefaultPoolConfig<POOLABLE> {
-
-        /**
-         * The asynchronous factory that produces new resources, represented as a {@link Mono}.
-         */
-        final Mono<POOLABLE>                                allocator;
-        //TODO to be removed
-        /**
-         * The minimum number of objects a {@link Pool} should create at initialization.
-         */
-        final int                                           initialSize;
-        /**
-         * {@link AllocationStrategy} defines a strategy / limit for the number of pooled object to allocate.
-         */
-        final AllocationStrategy                            allocationStrategy;
-        /**
-         * The maximum number of pending borrowers to enqueue before failing fast. 0 will immediately fail any acquire
-         * when no idle resource is available and the pool cannot grow. Use a negative number to deactivate.
-         */
-        final int                                           maxPending;
-        /**
-         * When a resource is {@link PooledRef#release() released}, defines a mechanism of resetting any lingering state of
-         * the resource in order for it to become usable again. The {@link #evictionPredicate} is applied AFTER this reset.
-         * <p>
-         * For example, a buffer could have a readerIndex and writerIndex that need to be flipped back to zero.
-         */
-        final Function<POOLABLE, ? extends Publisher<Void>> releaseHandler;
-        /**
-         * Defines a mechanism of resource destruction, cleaning up state and OS resources it could maintain (eg. off-heap
-         * objects, file handles, socket connections, etc...).
-         * <p>
-         * For example, a database connection could need to cleanly sever the connection link by sending a message to the database.
-         */
-        final Function<POOLABLE, ? extends Publisher<Void>> destroyHandler;
-        /**
-         * A {@link BiPredicate} that checks if a resource should be destroyed ({@code true}) or is still in a valid state
-         * for recycling. This is primarily applied when a resource is released, to check whether or not it can immediately
-         * be recycled, but could also be applied during an acquire attempt (detecting eg. idle resources) or by a background
-         * reaping process. Both the resource and some {@link PooledRefMetadata metrics} about the resource's life within the pool are provided.
-         */
-        final BiPredicate<POOLABLE, PooledRefMetadata>      evictionPredicate;
-        /**
-         * The {@link Scheduler} on which the {@link Pool} should publish resources, independently of which thread called
-         * {@link Pool#acquire()} or {@link PooledRef#release()} or on which thread the {@link #allocator} produced new
-         * resources.
-         * <p>
-         * Use {@link Schedulers#immediate()} if determinism is less important than staying on the same threads.
-         */
-        final Scheduler                                     acquisitionScheduler;
-        /**
-         * The {@link PoolMetricsRecorder} to use to collect instrumentation data of the {@link Pool}
-         * implementations.
-         */
-        final PoolMetricsRecorder                           metricsRecorder;
-
-        /**
-         * The order in which pending borrowers are served ({@code false} for FIFO, {@code true} for LIFO).
-         * Defaults to {@code false} (FIFO).
-         */
-        final boolean                                       isLifo;
-
-        DefaultPoolConfig(Mono<POOLABLE> allocator,
-                          int initialSize,
-                          AllocationStrategy allocationStrategy,
-                          int maxPending,
-                          Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
-                          Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
-                          BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
-                          Scheduler acquisitionScheduler,
-                          PoolMetricsRecorder metricsRecorder,
-                          boolean isLifo) {
-            this.allocator = allocator;
-            this.initialSize = initialSize;
-            this.allocationStrategy = allocationStrategy;
-            this.maxPending = maxPending;
-            this.releaseHandler = releaseHandler;
-            this.destroyHandler = destroyHandler;
-            this.evictionPredicate = evictionPredicate;
-            this.acquisitionScheduler = acquisitionScheduler;
-            this.metricsRecorder = metricsRecorder;
-            this.isLifo = isLifo;
-        }
-    }
 }

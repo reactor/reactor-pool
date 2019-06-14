@@ -61,7 +61,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             SimplePool.class, "wip");
 
 
-    SimplePool(DefaultPoolConfig<POOLABLE> poolConfig) {
+    SimplePool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 

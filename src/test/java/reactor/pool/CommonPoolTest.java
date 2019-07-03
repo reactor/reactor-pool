@@ -66,28 +66,11 @@ import static org.awaitility.Awaitility.await;
  */
 public class CommonPoolTest {
 
-	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> affinityPoolFifo() {
-		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T> builder) {
-				return (AbstractPool<T>) builder.threadAffinity(true)
-				                                .lifo(false)
-				                                .build();
-			}
-
-			@Override
-			public String toString() {
-				return "affinityPool FIFO";
-			}
-		};
-	}
-
 	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> simplePoolFifo() {
 		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T> builder) {
-				return (AbstractPool<T>) builder.threadAffinity(false)
-				                                .lifo(false)
+				return (AbstractPool<T>) builder.lifo(false)
 				                                .build();
 			}
 
@@ -98,28 +81,11 @@ public class CommonPoolTest {
 		};
 	}
 
-	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> affinityPoolLifo() {
-		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T> builder) {
-				return (AbstractPool<T>) builder.threadAffinity(true)
-				                                .lifo(true)
-				                                .build();
-			}
-
-			@Override
-			public String toString() {
-				return "affinityPool LIFO";
-			}
-		};
-	}
-
 	static final <T> Function<PoolBuilder<T>, AbstractPool<T>> simplePoolLifo() {
 		return new Function<PoolBuilder<T>, AbstractPool<T>>() {
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T> builder) {
-				return (AbstractPool<T>) builder.threadAffinity(false)
-				                                .lifo(true)
+				return (AbstractPool<T>) builder.lifo(true)
 				                                .build();
 			}
 
@@ -131,15 +97,15 @@ public class CommonPoolTest {
 	}
 
 	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> allPools() {
-		return Arrays.asList(simplePoolFifo(), simplePoolLifo(), affinityPoolFifo(), affinityPoolLifo());
+		return Arrays.asList(simplePoolFifo(), simplePoolLifo());
 	}
 
 	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> fifoPools() {
-		return Arrays.asList(simplePoolFifo(), affinityPoolFifo());
+		return Arrays.asList(simplePoolFifo());
 	}
 
 	static <T> List<Function<PoolBuilder<T>, AbstractPool<T>>> lifoPools() {
-		return Arrays.asList(simplePoolLifo(), affinityPoolLifo());
+		return Arrays.asList(simplePoolLifo());
 	}
 
 	@ParameterizedTest
@@ -199,7 +165,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("fifoPools")
-	void smokeTestInScopeFifo(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) throws InterruptedException {
+	void smokeTestInScopeFifo(Function<PoolBuilder<PoolableTest>, Pool<PoolableTest>> configAdjuster) {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder

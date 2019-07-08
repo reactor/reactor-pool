@@ -289,7 +289,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      *
      * @return a builder of {@link Pool} with LIFO pending acquire ordering.
      */
-    public Pool<T> lifo() {
+    public InstrumentedPool<T> lifo() {
         return build(SimpleLifoPool::new);
     }
 
@@ -300,7 +300,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      *
      * @return a builder of {@link Pool} with FIFO pending acquire ordering.
      */
-    public Pool<T> fifo() {
+    public InstrumentedPool<T> fifo() {
         return build(SimpleFifoPool::new);
     }
 

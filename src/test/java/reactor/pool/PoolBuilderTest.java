@@ -52,10 +52,10 @@ class PoolBuilderTest {
         AtomicInteger source = new AtomicInteger();
         final PublisherProbe<Integer> probe = PublisherProbe.of(Mono.fromCallable(source::incrementAndGet));
 
-        PoolBuilder<Integer> builder = PoolBuilder.from(probe.mono());
-        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+        PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(probe.mono());
+        final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -68,10 +68,10 @@ class PoolBuilderTest {
         AtomicInteger source = new AtomicInteger();
         final PublisherProbe<Integer> probe = PublisherProbe.of(Mono.fromCallable(source::incrementAndGet).repeat(3));
 
-        PoolBuilder<Integer> builder = PoolBuilder.from(probe.flux());
-        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+        PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(probe.flux());
+        final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -85,10 +85,10 @@ class PoolBuilderTest {
         Flowable<Integer> source = Flowable.range(1, 4)
                                   .doOnCancel(() -> cancelled.set(true));
 
-        PoolBuilder<Integer> builder = PoolBuilder.from(source);
-        final AbstractPool.DefaultPoolConfig<Integer> config = builder.buildConfig();
+        PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(source);
+        final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -100,11 +100,85 @@ class PoolBuilderTest {
         Mono<Long> source = Flux.range(1, 10).count();
         Predicate<Number> numberPredicate = n -> n.intValue() == 10;
 
-        PoolBuilder<Number> poolBuilder = PoolBuilder.from(source);
-        AbstractPool.DefaultPoolConfig<Number> config = poolBuilder.buildConfig();
+        PoolBuilder<Number, PoolConfig<Number>> poolBuilder = PoolBuilder.from(source);
+        PoolConfig<Number> config = poolBuilder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .assertNext(n -> assertThat(n).matches(numberPredicate))
                     .verifyComplete();
+    }
+
+    @Test
+    void customizedConfig() {
+        FooBarOnlyPool<String> customPool =
+                PoolBuilder.from(Mono.just("hello"))
+                           .extraConfiguration(it -> new FooExtraConfig<>(it).foo(true))
+                           .extraConfiguration(fc -> new FooBarExtraConfig<>(fc).bar(true))
+                           .build(FooBarOnlyPool::new);
+
+        assertThat(customPool.config.isBar()).as("bar").isTrue();
+        assertThat(customPool.config.isFoo()).as("foo").isTrue();
+    }
+
+    static class FooBarOnlyPool<T> implements Pool<T> {
+
+        private final FooBarExtraConfig<T> config;
+
+        public FooBarOnlyPool(FooBarExtraConfig<T> config) {
+            this.config = config;
+        }
+
+        @Override
+        public Mono<PooledRef<T>> acquire() {
+            return null;
+        }
+
+        @Override
+        public Mono<PooledRef<T>> acquire(Duration timeout) {
+            return null;
+        }
+
+        @Override
+        public Mono<Void> disposeLater() {
+            return null;
+        }
+    }
+
+    static class FooExtraConfig<T> extends DefaultPoolConfig<T> {
+
+        private boolean isFoo = false;
+
+        FooExtraConfig(PoolConfig<T> toCopy) {
+            super(toCopy);
+        }
+
+        public FooExtraConfig<T> foo(boolean isFoo) {
+            this.isFoo = isFoo;
+            return this;
+        }
+
+        public boolean isFoo() {
+            return isFoo;
+        }
+    }
+
+    static class FooBarExtraConfig<T> extends FooExtraConfig<T> {
+
+        private boolean isBar;
+
+        public FooBarExtraConfig(FooExtraConfig<T> toCopy) {
+            super(toCopy);
+            foo(toCopy.isFoo);
+            this.isBar = false;
+        }
+
+        public FooBarExtraConfig<T> bar(boolean isBar) {
+            this.isBar = isBar;
+            return this;
+        }
+
+        public boolean isBar() {
+            return isBar;
+        }
     }
 }

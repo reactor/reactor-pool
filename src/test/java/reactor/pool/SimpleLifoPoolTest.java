@@ -37,7 +37,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.AbstractPool.DefaultPoolConfig;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.util.RaceTestUtils;
 import reactor.util.function.Tuple2;
@@ -54,9 +53,8 @@ class SimpleLifoPoolTest {
     //FIXME extract lifo-specific tests into CommonPoolTest
 
     //==utils for package-private config==
-    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
-                .lifo(true)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -64,9 +62,8 @@ class SimpleLifoPoolTest {
                 .buildConfig();
     }
 
-    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
+    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
-                .lifo(true)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
@@ -75,10 +72,9 @@ class SimpleLifoPoolTest {
                 .buildConfig();
     }
 
-    static final DefaultPoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
+    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
-                .lifo(true)
                 .initialSize(minSize)
                 .sizeMax(maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
@@ -97,7 +93,6 @@ class SimpleLifoPoolTest {
 
         SimpleLifoPool<String> pool = new SimpleLifoPool<>(
                 from(Mono.just("Hello Reactive World"))
-                        .lifo(true)
                         .sizeMax(1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
@@ -121,7 +116,7 @@ class SimpleLifoPoolTest {
         Thread.sleep(500);
         //we've finished processing, let's check resource has been automatically released
         assertThat(counter).as("after all emitted").hasValue(3);
-        assertThat(pool.poolConfig.allocationStrategy.estimatePermitCount()).as("allocation permits").isZero();
+        assertThat(pool.poolConfig.allocationStrategy().estimatePermitCount()).as("allocation permits").isZero();
         assertThat(pool.elements).as("available").hasSize(1);
         assertThat(releaseRef).as("released").hasValue("Hello Reactive World");
     }
@@ -152,7 +147,7 @@ class SimpleLifoPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                         .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -191,7 +186,7 @@ class SimpleLifoPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -213,7 +208,7 @@ class SimpleLifoPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -238,7 +233,7 @@ class SimpleLifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -270,7 +265,7 @@ class SimpleLifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -294,7 +289,7 @@ class SimpleLifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -321,7 +316,7 @@ class SimpleLifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -369,7 +364,7 @@ class SimpleLifoPoolTest {
                 AtomicReference<String> threadName = new AtomicReference<>();
                 AtomicInteger newCount = new AtomicInteger();
 
-                DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+                PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                         Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(allocatorScheduler),
                         deliveryScheduler);
@@ -458,7 +453,7 @@ class SimpleLifoPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                         .subscribeOn(scheduler),
                     pt -> releasedCount.incrementAndGet());
@@ -497,7 +492,7 @@ class SimpleLifoPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -519,7 +514,7 @@ class SimpleLifoPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -544,7 +539,7 @@ class SimpleLifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(testConfig);
@@ -576,7 +571,7 @@ class SimpleLifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -600,7 +595,7 @@ class SimpleLifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -627,7 +622,7 @@ class SimpleLifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
                     deliveryScheduler);
@@ -678,7 +673,7 @@ class SimpleLifoPoolTest {
                 AtomicInteger newCount = new AtomicInteger();
 
 
-                DefaultPoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+                PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
                         Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                             .subscribeOn(allocatorScheduler),
                         deliveryScheduler);
@@ -731,7 +726,6 @@ class SimpleLifoPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .lifo(true)
                         .initialSize(3)
                         .sizeMax(3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))

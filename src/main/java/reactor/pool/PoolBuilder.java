@@ -30,12 +30,15 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * A builder for {@link Pool}.
+ * A builder for {@link Pool} implementations, which tuning methods map
+ * to a {@link PoolConfig} subclass, {@code CONF}.
+ *
+ * @param <T> the type of elements in the produced {@link Pool}
+ * @param <CONF> the {@link PoolConfig} flavor this builder will provide to the created {@link Pool}
  *
  * @author Simon Baslé
  */
-@SuppressWarnings("WeakerAccess")
-public class PoolBuilder<T> {
+public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     /**
      * Start building a {@link Pool} by describing how new objects are to be asynchronously allocated.
@@ -51,13 +54,13 @@ public class PoolBuilder<T> {
      * @param <T> the type of resource created and recycled by the {@link Pool}
      * @return a builder of {@link Pool}
      */
-    public static <T> PoolBuilder<T> from(Publisher<? extends T> allocator) {
+    public static <T> PoolBuilder<T, PoolConfig<T>> from(Publisher<? extends T> allocator) {
         Mono<T> source = Mono.from(allocator);
-        return new PoolBuilder<>(source);
+        return new PoolBuilder<>(source, Function.identity());
     }
 
-    final Mono<T> allocator;
-    boolean                                isLifo               = false;
+    final Mono<T>                          allocator;
+    final Function<PoolConfig<T>, CONF>    configModifier;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
     AllocationStrategy                     allocationStrategy   = null;
@@ -67,8 +70,23 @@ public class PoolBuilder<T> {
     Scheduler                              acquisitionScheduler = Schedulers.immediate();
     PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
-    PoolBuilder(Mono<T> allocator) {
+    PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
         this.allocator = allocator;
+        this.configModifier = configModifier;
+    }
+
+    PoolBuilder(PoolBuilder<T, ?> source, Function<PoolConfig<T>, CONF> configModifier) {
+        this.configModifier = configModifier;
+
+        this.allocator = source.allocator;
+        this.initialSize = source.initialSize;
+        this.maxPending = source.maxPending;
+        this.allocationStrategy = source.allocationStrategy;
+        this.releaseHandler = source.releaseHandler;
+        this.destroyHandler = source.destroyHandler;
+        this.evictionPredicate = source.evictionPredicate;
+        this.acquisitionScheduler = source.acquisitionScheduler;
+        this.metricsRecorder = source.metricsRecorder;
     }
 
     /**
@@ -81,7 +99,7 @@ public class PoolBuilder<T> {
      * @param acquisitionScheduler the {@link Scheduler} on which to deliver acquired resources
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> acquisitionScheduler(Scheduler acquisitionScheduler) {
+    public PoolBuilder<T, CONF> acquisitionScheduler(Scheduler acquisitionScheduler) {
         this.acquisitionScheduler = Objects.requireNonNull(acquisitionScheduler, "acquisitionScheduler");
         return this;
     }
@@ -98,7 +116,7 @@ public class PoolBuilder<T> {
      * @see #sizeMax(int)
      * @see #sizeUnbounded()
      */
-    public PoolBuilder<T> allocationStrategy(AllocationStrategy allocationStrategy) {
+    public PoolBuilder<T, CONF> allocationStrategy(AllocationStrategy allocationStrategy) {
         this.allocationStrategy = Objects.requireNonNull(allocationStrategy, "allocationStrategy");
         return this;
     }
@@ -114,7 +132,7 @@ public class PoolBuilder<T> {
      * @param destroyHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
+    public PoolBuilder<T, CONF> destroyHandler(Function<T, ? extends Publisher<Void>> destroyHandler) {
         this.destroyHandler = Objects.requireNonNull(destroyHandler, "destroyHandler");
         return this;
     }
@@ -129,7 +147,7 @@ public class PoolBuilder<T> {
      * @return this {@link Pool} builder
      * @see #evictionPredicate(BiPredicate)
      */
-    public PoolBuilder<T> evictionIdle(Duration maxIdleTime) {
+    public PoolBuilder<T, CONF> evictionIdle(Duration maxIdleTime) {
         return evictionPredicate(idlePredicate(maxIdleTime));
     }
 
@@ -148,7 +166,7 @@ public class PoolBuilder<T> {
      * @return this {@link Pool} builder
      * @see #evictionIdle(Duration)
      */
-    public PoolBuilder<T> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
+    public PoolBuilder<T, CONF> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
         this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
         return this;
     }
@@ -162,24 +180,11 @@ public class PoolBuilder<T> {
      * @param n the initial size of the {@link Pool}.
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> initialSize(int n) {
+    public PoolBuilder<T, CONF> initialSize(int n) {
         if (n < 0) {
             throw new IllegalArgumentException("initialSize must be >= 0");
         }
         this.initialSize = n;
-        return this;
-    }
-
-    /**
-     * Change the order in which pending {@link Pool#acquire()} {@link Mono Monos} are served
-     * whenever a resource becomes available. The default is FIFO, but passing true to this
-     * method changes it to LIFO.
-     *
-     * @param isLastInFirstOut should the pending order be LIFO ({@code true}) or FIFO ({@code false})?
-     * @return a builder of {@link Pool} with the requested pending acquire ordering.
-     */
-    public PoolBuilder<T> lifo(boolean isLastInFirstOut) {
-        this.isLifo = isLastInFirstOut;
         return this;
     }
 
@@ -195,7 +200,7 @@ public class PoolBuilder<T> {
      * @param maxPending the maximum number of registered acquire monos to keep in a pending queue
      * @return a builder of {@link Pool} with a maximum pending queue size.
      */
-    public PoolBuilder<T> maxPendingAcquire(int maxPending) {
+    public PoolBuilder<T, CONF> maxPendingAcquire(int maxPending) {
         this.maxPending = maxPending;
         return this;
     }
@@ -209,7 +214,7 @@ public class PoolBuilder<T> {
      *
      * @return a builder of {@link Pool} with no maximum pending queue size.
      */
-    public PoolBuilder<T> maxPendingAcquireUnbounded() {
+    public PoolBuilder<T, CONF> maxPendingAcquireUnbounded() {
         this.maxPending = -1;
         return this;
     }
@@ -220,7 +225,7 @@ public class PoolBuilder<T> {
      * @param recorder the {@link PoolMetricsRecorder}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> metricsRecorder(PoolMetricsRecorder recorder) {
+    public PoolBuilder<T, CONF> metricsRecorder(PoolMetricsRecorder recorder) {
         this.metricsRecorder = Objects.requireNonNull(recorder, "recorder");
         return this;
     }
@@ -235,59 +240,97 @@ public class PoolBuilder<T> {
      * @param releaseHandler the {@link Function} supplying the state-resetting {@link Publisher}
      * @return this {@link Pool} builder
      */
-    public PoolBuilder<T> releaseHandler(Function<T, ? extends Publisher<Void>> releaseHandler) {
+    public PoolBuilder<T, CONF> releaseHandler(Function<T, ? extends Publisher<Void>> releaseHandler) {
         this.releaseHandler = Objects.requireNonNull(releaseHandler, "releaseHandler");
         return this;
     }
 
     /**
-	 * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-	 * some resources have been {@link PooledRef#release() released}.
-	 *
-	 * @param max the maximum number of live resources to keep in the pool
+     * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
+     * some resources have been {@link PooledRef#release() released}.
+     *
+     * @param max the maximum number of live resources to keep in the pool
      * @return this {@link Pool} builder
-	 */
-	public PoolBuilder<T> sizeMax(int max) {
-		return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(max));
-	}
-
-	/**
-	 * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
-	 * <p>
-	 * Note this is the default, if no previous call to {@link #allocationStrategy(AllocationStrategy)}
-	 * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
-	 *
-     * @return this {@link Pool} builder
-	 */
-	public PoolBuilder<T> sizeUnbounded() {
-		return allocationStrategy(new AllocationStrategies.UnboundedAllocationStrategy());
-	}
+     */
+    public PoolBuilder<T, CONF> sizeMax(int max) {
+        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(max));
+    }
 
     /**
-     * Build the {@link Pool}.
+     * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
+     * <p>
+     * Note this is the default, if no previous call to {@link #allocationStrategy(AllocationStrategy)}
+     * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
      *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> sizeUnbounded() {
+        return allocationStrategy(new AllocationStrategies.UnboundedAllocationStrategy());
+    }
+
+    /**
+     * Add implementation-specific configuration, changing the type of {@link PoolConfig}
+     * passed to the {@link Pool} factory in {@link #build(Function)}.
+     *
+     * @param configModifier {@link Function} to transform the type of {@link PoolConfig}
+     * create by this builder for the benefit of the pool factory, allowing for custom
+     * implementations with custom configurations
+     * @param <CONF2> new type for the configuration
+     * @return a new PoolBuilder that now produces a different type of {@link PoolConfig}
+     */
+    public <CONF2 extends PoolConfig<T>> PoolBuilder<T, CONF2> extraConfiguration(Function<? super CONF, CONF2> configModifier) {
+        return new PoolBuilder<>(this, this.configModifier.andThen(configModifier));
+    }
+
+    /**
+     * Build a LIFO flavor of {@link Pool}, that is to say a flavor where the last
+     * {@link Pool#acquire()} {@link Mono Mono} that was pending is served first
+     * whenever a resource becomes available.
+     *
+     * @return a builder of {@link Pool} with LIFO pending acquire ordering.
+     */
+    public InstrumentedPool<T> lifo() {
+        return build(SimpleLifoPool::new);
+    }
+
+    /**
+     * Build the default flavor of {@link Pool}, which has FIFO semantics on pending
+     * {@link Pool#acquire()} {@link Mono Mono}, serving the oldest pending acquire first
+     * whenever a resource becomes available.
+     *
+     * @return a builder of {@link Pool} with FIFO pending acquire ordering.
+     */
+    public InstrumentedPool<T> fifo() {
+        return build(SimpleFifoPool::new);
+    }
+
+    /**
+     * Build a custom flavor of {@link Pool}, given a Pool factory {@link Function} that
+     * is provided with a {@link PoolConfig} copy of this builder's configuration.
+     *
+     * @param poolFactory the factory of pool implementation
      * @return the {@link Pool}
      */
-    public Pool<T> build() {
-        AbstractPool.DefaultPoolConfig<T> config = buildConfig();
-        if (isLifo) {
-            return new SimpleLifoPool<>(config);
-        }
-        return new SimpleFifoPool<>(config);
+    public <POOL extends Pool<T>> POOL build(Function<? super CONF, POOL> poolFactory) {
+        CONF config = buildConfig();
+        return poolFactory.apply(config);
     }
 
     //kept package-private for the benefit of tests
-    AbstractPool.DefaultPoolConfig<T> buildConfig() {
-        return new AbstractPool.DefaultPoolConfig<>(allocator,
+    CONF buildConfig() {
+        PoolConfig<T> baseConfig = new DefaultPoolConfig<>(allocator,
                 initialSize,
-                allocationStrategy == null ? new AllocationStrategies.UnboundedAllocationStrategy() : allocationStrategy,
+                allocationStrategy == null ?
+                        new AllocationStrategies.UnboundedAllocationStrategy() :
+                        allocationStrategy,
                 maxPending,
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,
                 acquisitionScheduler,
-                metricsRecorder,
-                isLifo);
+                metricsRecorder);
+
+        return this.configModifier.apply(baseConfig);
     }
 
     @SuppressWarnings("unchecked")

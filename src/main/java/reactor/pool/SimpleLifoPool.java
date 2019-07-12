@@ -40,14 +40,14 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
     private static final AtomicReferenceFieldUpdater<SimpleLifoPool, ConcurrentLinkedDeque> PENDING = AtomicReferenceFieldUpdater.newUpdater(
             SimpleLifoPool.class, ConcurrentLinkedDeque.class, "pending");
 
-    public SimpleLifoPool(DefaultPoolConfig<POOLABLE> poolConfig) {
+    public SimpleLifoPool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig);
         this.pending = new ConcurrentLinkedDeque<>(); //unbounded
     }
 
     @Override
     boolean pendingOffer(Borrower<POOLABLE> pending) {
-        int maxPending = poolConfig.maxPending;
+        int maxPending = poolConfig.maxPending();
         for (;;) {
             int currentPending = PENDING_COUNT.get(this);
             if (maxPending >= 0 && currentPending == maxPending) {

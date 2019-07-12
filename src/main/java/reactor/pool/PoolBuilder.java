@@ -34,7 +34,7 @@ import reactor.core.scheduler.Schedulers;
  * to a {@link PoolConfig} subclass, {@code CONF}.
  *
  * @param <T> the type of elements in the produced {@link Pool}
- * @param <CONF> the {@link PoolConfig} flavor this builder will provide to the create {@link Pool}
+ * @param <CONF> the {@link PoolConfig} flavor this builder will provide to the created {@link Pool}
  *
  * @author Simon Baslé
  */

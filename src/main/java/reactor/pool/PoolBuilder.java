@@ -59,7 +59,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         return new PoolBuilder<>(source, Function.identity());
     }
 
-    final Mono<T> allocator;
+    final Mono<T>                          allocator;
     final Function<PoolConfig<T>, CONF>    configModifier;
     int                                    initialSize          = 0;
     int                                    maxPending           = -1;
@@ -318,7 +318,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     //kept package-private for the benefit of tests
     CONF buildConfig() {
-        PoolConfig<T> baseConfig = new PoolConfig<>(allocator,
+        PoolConfig<T> baseConfig = new DefaultPoolConfig<>(allocator,
                 initialSize,
                 allocationStrategy == null ?
                         new AllocationStrategies.UnboundedAllocationStrategy() :

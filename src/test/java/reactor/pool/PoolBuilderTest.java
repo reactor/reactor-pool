@@ -55,7 +55,7 @@ class PoolBuilderTest {
         PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(probe.mono());
         final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -71,7 +71,7 @@ class PoolBuilderTest {
         PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(probe.flux());
         final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -88,7 +88,7 @@ class PoolBuilderTest {
         PoolBuilder<Integer, PoolConfig<Integer>> builder = PoolBuilder.from(source);
         final PoolConfig<Integer> config = builder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .expectNext(1)
                     .verifyComplete();
 
@@ -103,7 +103,7 @@ class PoolBuilderTest {
         PoolBuilder<Number, PoolConfig<Number>> poolBuilder = PoolBuilder.from(source);
         PoolConfig<Number> config = poolBuilder.buildConfig();
 
-        StepVerifier.create(config.allocator)
+        StepVerifier.create(config.allocator())
                     .assertNext(n -> assertThat(n).matches(numberPredicate))
                     .verifyComplete();
     }
@@ -144,7 +144,7 @@ class PoolBuilderTest {
         }
     }
 
-    static class FooExtraConfig<T> extends PoolConfig<T> {
+    static class FooExtraConfig<T> extends DefaultPoolConfig<T> {
 
         private boolean isFoo = false;
 

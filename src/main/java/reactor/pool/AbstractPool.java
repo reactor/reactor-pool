@@ -61,7 +61,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
         this.poolConfig = poolConfig;
         this.logger = logger;
-        this.metricsRecorder = poolConfig.metricsRecorder;
+        this.metricsRecorder = poolConfig.metricsRecorder();
     }
 
     // == pool introspection methods ==
@@ -78,7 +78,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
     @Override
     public int allocatedSize() {
-        return poolConfig.allocationStrategy.permitGranted();
+        return poolConfig.allocationStrategy().permitGranted();
     }
 
     @Override
@@ -91,12 +91,12 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
     @Override
     public int getMaxAllocatedSize() {
-        return poolConfig.allocationStrategy.permitMaximum();
+        return poolConfig.allocationStrategy().permitMaximum();
     }
 
     @Override
     public int getMaxPendingAcquireSize() {
-        return poolConfig.maxPending < 0 ? Integer.MAX_VALUE : poolConfig.maxPending;
+        return poolConfig.maxPending() < 0 ? Integer.MAX_VALUE : poolConfig.maxPending();
     }
 
     // == common methods to interact with idle/pending queues ==
@@ -134,10 +134,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
      */
     Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
-        poolConfig.allocationStrategy.returnPermits(1);
+        poolConfig.allocationStrategy().returnPermits(1);
         long start = metricsRecorder.now();
         metricsRecorder.recordLifetimeDuration(ref.lifeTime());
-        Function<POOLABLE, ? extends Publisher<Void>> factory = poolConfig.destroyHandler;
+        Function<POOLABLE, ? extends Publisher<Void>> factory = poolConfig.destroyHandler();
         if (factory == PoolBuilder.NOOP_HANDLER) {
             return Mono.fromRunnable(() -> {
                 defaultDestroy(poolable);
@@ -292,7 +292,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
                 //start the countdown
 
                 boolean noIdle = pool.idleSize() == 0;
-                boolean noPermits = pool.poolConfig.allocationStrategy.estimatePermitCount() == 0;
+                boolean noPermits = pool.poolConfig.allocationStrategy().estimatePermitCount() == 0;
 
                 if (!acquireTimeout.isZero() && noIdle && noPermits) {
                     timeoutTask = Schedulers.parallel().schedule(this, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);

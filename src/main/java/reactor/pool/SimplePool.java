@@ -65,11 +65,11 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        int initSize = poolConfig.allocationStrategy.getPermits(poolConfig.initialSize);
+        int initSize = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
         for (int i = 0; i < initSize; i++) {
             long start = metricsRecorder.now();
             try {
-                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator.block(), "allocator returned null in constructor");
+                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
                 metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
                 elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
             }
@@ -126,7 +126,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     @SuppressWarnings("WeakerAccess")
     final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
         if (!isDisposed()) {
-            if (!poolConfig.evictionPredicate.test(poolSlot.poolable, poolSlot)) {
+            if (!poolConfig.evictionPredicate().test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
                 elements.offer(poolSlot);
                 drain();
@@ -152,7 +152,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = PENDING_COUNT.get(this);
-            int permits = poolConfig.allocationStrategy.estimatePermitCount();
+            int permits = poolConfig.allocationStrategy().estimatePermitCount();
 
             if (availableCount == 0) {
                 if (pendingCount > 0 && permits > 0) {
@@ -161,14 +161,14 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.get() || poolConfig.allocationStrategy.getPermits(1) != 1) {
+                    if (borrower.get() || poolConfig.allocationStrategy().getPermits(1) != 1) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
                     borrower.stopPendingCountdown();
                     long start = metricsRecorder.now();
-                    Mono<POOLABLE> allocator = poolConfig.allocator;
-                    Scheduler s = poolConfig.acquisitionScheduler;
+                    Mono<POOLABLE> allocator = poolConfig.allocator();
+                    Scheduler s = poolConfig.acquisitionScheduler();
                     if (s != Schedulers.immediate())  {
                         allocator = allocator.publishOn(s);
                     }
@@ -176,7 +176,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy.returnPermits(1);
+                                        poolConfig.allocationStrategy().returnPermits(1);
                                         borrower.fail(e);
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
@@ -188,7 +188,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 if (slot == null) continue;
 
                 //TODO test the idle eviction scenario
-                if (poolConfig.evictionPredicate.test(slot.poolable, slot)) {
+                if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
                     destroyPoolable(slot).subscribe(null, e -> drain(), this::drain);
                     continue;
                 }
@@ -201,7 +201,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 }
                 inner.stopPendingCountdown();
                 ACQUIRED.incrementAndGet(this);
-                poolConfig.acquisitionScheduler.schedule(() -> inner.deliver(slot));
+                poolConfig.acquisitionScheduler().schedule(() -> inner.deliver(slot));
             }
 
             missed = WIP.addAndGet(this, -missed);
@@ -230,7 +230,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
             Publisher<Void> cleaner;
             try {
-                cleaner = pool.poolConfig.releaseHandler.apply(poolable);
+                cleaner = pool.poolConfig.releaseHandler().apply(poolable);
             }
             catch (Throwable e) {
                 ACQUIRED.decrementAndGet(pool); //immediately clean up state

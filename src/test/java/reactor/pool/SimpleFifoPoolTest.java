@@ -113,7 +113,7 @@ class SimpleFifoPoolTest {
         Thread.sleep(500);
         //we've finished processing, let's check resource has been automatically released
         assertThat(counter).as("after all emitted").hasValue(3);
-        assertThat(pool.poolConfig.allocationStrategy.estimatePermitCount()).as("allocation permits").isZero();
+        assertThat(pool.poolConfig.allocationStrategy().estimatePermitCount()).as("allocation permits").isZero();
         assertThat(pool.elements).as("available").hasSize(1);
         assertThat(releaseRef).as("released").hasValue("Hello Reactive World");
     }

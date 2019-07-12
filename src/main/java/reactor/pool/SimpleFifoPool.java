@@ -45,7 +45,7 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
     @Override
     boolean pendingOffer(Borrower<POOLABLE> pending) {
-        int maxPending = poolConfig.maxPending;
+        int maxPending = poolConfig.maxPending();
         for (;;) {
             int currentPending = PENDING_COUNT.get(this);
             if (maxPending >= 0 && currentPending == maxPending) {

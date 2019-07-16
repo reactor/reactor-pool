@@ -72,6 +72,7 @@ final class AllocationStrategies {
         static final AtomicIntegerFieldUpdater<SizeBasedAllocationStrategy> PERMITS = AtomicIntegerFieldUpdater.newUpdater(SizeBasedAllocationStrategy.class, "permits");
 
         SizeBasedAllocationStrategy(int max) {
+            if (max < 1) throw new IllegalArgumentException("max must be strictly positive");
             this.max = Math.max(1, max);
             PERMITS.lazySet(this, this.max);
         }

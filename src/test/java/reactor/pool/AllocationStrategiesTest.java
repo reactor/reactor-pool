@@ -35,6 +35,7 @@ import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 /**
  * @author Simon Baslé
@@ -48,17 +49,17 @@ class AllocationStrategiesTest {
     class AllocatingMaxTest {
 
         @Test
-        void negativeMaxGivesOnePermit() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(-1);
-
-            assertThat(test.estimatePermitCount()).isOne();
+        void negativeMaxThrows() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> new SizeBasedAllocationStrategy(-1))
+                    .withMessage("max must be strictly positive");
         }
 
         @Test
-        void zeroMaxGivesOnePermit() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(0);
-
-            assertThat(test.estimatePermitCount()).isOne();
+        void zeroMaxThrows() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> new SizeBasedAllocationStrategy(0))
+                    .withMessage("max must be strictly positive");
         }
 
         @Test

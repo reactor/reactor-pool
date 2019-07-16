@@ -39,11 +39,6 @@ public interface PoolConfig<POOLABLE> {
 	Mono<POOLABLE> allocator();
 
 	/**
-	 * The minimum number of objects a {@link Pool} should create at initialization.
-	 */
-	int initialSize();
-
-	/**
 	 * {@link AllocationStrategy} defines a strategy / limit for the number of pooled object to allocate.
 	 */
 	AllocationStrategy allocationStrategy();

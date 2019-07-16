@@ -65,17 +65,21 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        int initSize = poolConfig.allocationStrategy().getPermits(poolConfig.initialSize());
-        for (int i = 0; i < initSize; i++) {
-            long start = metricsRecorder.now();
-            try {
-                POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
-                elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
-            }
-            catch (Throwable e) {
-                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                throw e;
+        if (poolConfig.allocationStrategy().permitMinimum() > 0) {
+            //TODO remove that from constructor (eg. warmup method)?
+            //TODO modify tests accordingly
+            int initSize = poolConfig.allocationStrategy().getPermits(1);
+            for (int i = 0; i < initSize; i++) {
+                long start = metricsRecorder.now();
+                try {
+                    POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
+                    metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+                    elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
+                }
+                catch (Throwable e) {
+                    metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                    throw e;
+                }
             }
         }
     }
@@ -161,7 +165,8 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    if (borrower.get() || poolConfig.allocationStrategy().getPermits(1) != 1) {
+                    int toBuild = poolConfig.allocationStrategy().getPermits(1);
+                    if (borrower.get() || toBuild == 0) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
@@ -180,6 +185,19 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                         borrower.fail(e);
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
+                    for (int extra = 1; extra <= toBuild - 1; extra++) {
+                        logger.debug("warming up extra resource {}/{}", extra, toBuild - 1);
+                        allocator.subscribe(newInstance -> {
+                                    elements.offer(new QueuePooledRef<>(this, newInstance));
+                                    drain();
+                                },
+                                e -> {
+                                    metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                                    ACQUIRED.decrementAndGet(this);
+                                    poolConfig.allocationStrategy().returnPermits(1);
+                                },
+                                () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
+                    }
                 }
             }
             else if (pendingCount > 0) {

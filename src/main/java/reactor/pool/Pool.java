@@ -15,14 +15,14 @@
  */
 package reactor.pool;
 
+import java.time.Duration;
+import java.util.function.Function;
+
 import org.reactivestreams.Publisher;
+
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.time.Duration;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * A reactive pool of objects.
@@ -85,7 +85,7 @@ public interface Pool<POOLABLE> extends Disposable {
      */
     Mono<PooledRef<POOLABLE>> acquire(Duration timeout);
 
-    /**
+	/**
      * Acquire a {@code POOLABLE} object from the pool upon subscription and declaratively use it, automatically releasing
      * the object back to the pool once the derived usage pipeline terminates or is cancelled. This acquire-use-and-release
      * scope is represented by a user provided {@link Function}.

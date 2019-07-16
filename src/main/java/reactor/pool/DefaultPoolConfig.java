@@ -33,7 +33,6 @@ import reactor.core.scheduler.Scheduler;
 public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
 	protected final Mono<POOLABLE>                                allocator;
-	protected final int                                           initialSize;
 	protected final AllocationStrategy                            allocationStrategy;
 	protected final int                                           maxPending;
 	protected final Function<POOLABLE, ? extends Publisher<Void>> releaseHandler;
@@ -43,7 +42,6 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final PoolMetricsRecorder                           metricsRecorder;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
-			int initialSize,
 			AllocationStrategy allocationStrategy,
 			int maxPending,
 			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
@@ -52,7 +50,6 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			Scheduler acquisitionScheduler,
 			PoolMetricsRecorder metricsRecorder) {
 		this.allocator = allocator;
-		this.initialSize = initialSize;
 		this.allocationStrategy = allocationStrategy;
 		this.maxPending = maxPending;
 		this.releaseHandler = releaseHandler;
@@ -72,7 +69,6 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		if (toCopy instanceof DefaultPoolConfig) {
 			DefaultPoolConfig<POOLABLE> toCopyDpc = (DefaultPoolConfig<POOLABLE>) toCopy;
 			this.allocator = toCopyDpc.allocator;
-			this.initialSize = toCopyDpc.initialSize;
 			this.allocationStrategy = toCopyDpc.allocationStrategy;
 			this.maxPending = toCopyDpc.maxPending;
 			this.releaseHandler = toCopyDpc.releaseHandler;
@@ -83,7 +79,6 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		}
 		else {
 			this.allocator = toCopy.allocator();
-			this.initialSize = toCopy.initialSize();
 			this.allocationStrategy = toCopy.allocationStrategy();
 			this.maxPending = toCopy.maxPending();
 			this.releaseHandler = toCopy.releaseHandler();
@@ -97,11 +92,6 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public Mono<POOLABLE> allocator() {
 		return this.allocator;
-	}
-
-	@Override
-	public int initialSize() {
-		return this.initialSize;
 	}
 
 	@Override

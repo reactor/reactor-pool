@@ -55,8 +55,7 @@ class SimpleLifoPoolTest {
     //==utils for package-private config==
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
-                .initialSize(minSize)
-                .sizeMax(maxSize)
+                .sizeBetween(minSize, maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .buildConfig();
@@ -64,8 +63,7 @@ class SimpleLifoPoolTest {
 
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
-                .initialSize(minSize)
-                .sizeMax(maxSize)
+                .sizeBetween(minSize, maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .acquisitionScheduler(deliveryScheduler)
@@ -75,8 +73,7 @@ class SimpleLifoPoolTest {
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
-                .initialSize(minSize)
-                .sizeMax(maxSize)
+                .sizeBetween(minSize, maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
                     poolableTest.clean();
                     additionalCleaner.accept(poolableTest);
@@ -726,8 +723,7 @@ class SimpleLifoPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         SimpleLifoPool<PoolableTest> pool = new SimpleLifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .initialSize(3)
-                        .sizeMax(3)
+                        .sizeBetween(3, 3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate((value, metadata) -> !value.isHealthy())
                         .buildConfig());

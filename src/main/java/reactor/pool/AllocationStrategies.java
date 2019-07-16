@@ -54,6 +54,11 @@ final class AllocationStrategies {
         }
 
         @Override
+        public int permitMinimum() {
+            return 0;
+        }
+
+        @Override
         public int permitMaximum() {
             return Integer.MAX_VALUE;
         }
@@ -66,29 +71,44 @@ final class AllocationStrategies {
 
     static final class SizeBasedAllocationStrategy implements AllocationStrategy {
 
+        final int min;
         final int max;
 
         volatile int permits;
         static final AtomicIntegerFieldUpdater<SizeBasedAllocationStrategy> PERMITS = AtomicIntegerFieldUpdater.newUpdater(SizeBasedAllocationStrategy.class, "permits");
 
-        SizeBasedAllocationStrategy(int max) {
+        SizeBasedAllocationStrategy(int min, int max) {
+            if (min < 0) throw new IllegalArgumentException("min must be positive or zero");
             if (max < 1) throw new IllegalArgumentException("max must be strictly positive");
-            this.max = Math.max(1, max);
+            if (min > max) throw new IllegalArgumentException("min must be less than or equal to max");
+            this.min = min;
+            this.max = max;
             PERMITS.lazySet(this, this.max);
         }
 
         @Override
         public int getPermits(int desired) {
-            if (desired < 1) return 0;
+            if (desired < 0) return 0;
 
             //impl note: this should be more efficient compared to the previous approach for desired == 1
             // (incrementAndGet + decrementAndGet compensation both induce a CAS loop, vs single loop here)
             for (;;) {
+                int target;
                 int p = permits;
-                int possible = Math.min(desired, p);
+                int granted = max - p;
 
-                if (PERMITS.compareAndSet(this, p, p - possible)) {
-                    return possible;
+                if (desired >= p) {
+                    target = p;
+                }
+                else if (granted < min) {
+                    target = Math.max(desired, min - granted);
+                }
+                else {
+                    target = desired;
+                }
+
+                if (PERMITS.compareAndSet(this, p, p - target)) {
+                    return target;
                 }
             }
         }
@@ -96,6 +116,11 @@ final class AllocationStrategies {
         @Override
         public int estimatePermitCount() {
             return PERMITS.get(this);
+        }
+
+        @Override
+        public int permitMinimum() {
+            return min;
         }
 
         @Override

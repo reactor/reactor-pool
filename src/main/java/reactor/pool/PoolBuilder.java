@@ -61,7 +61,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     final Mono<T>                          allocator;
     final Function<PoolConfig<T>, CONF>    configModifier;
-    int                                    initialSize          = 0;
     int                                    maxPending           = -1;
     AllocationStrategy                     allocationStrategy   = null;
     Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
@@ -79,7 +78,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         this.configModifier = configModifier;
 
         this.allocator = source.allocator;
-        this.initialSize = source.initialSize;
         this.maxPending = source.maxPending;
         this.allocationStrategy = source.allocationStrategy;
         this.releaseHandler = source.releaseHandler;
@@ -172,23 +170,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
-     * How many resources the {@link Pool} should allocate upon creation.
-     * This parameter MAY be ignored by some implementations (although they should state so in their documentation).
-     * <p>
-     * Defaults to {@code 0}.
-     *
-     * @param n the initial size of the {@link Pool}.
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T, CONF> initialSize(int n) {
-        if (n < 0) {
-            throw new IllegalArgumentException("initialSize must be >= 0");
-        }
-        this.initialSize = n;
-        return this;
-    }
-
-    /**
      * Set the maximum number of <i>subscribed</i> {@link Pool#acquire()} Monos that can
      * be in a pending state (ie they wait for a resource to be released, as no idle
      * resource was immediately available, and the pool add already allocated the maximum
@@ -246,6 +227,33 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
+     * Let the {@link Pool} allocate between {@code min} and {@code max} resources.
+     * When acquiring and there is no available resource, the pool should strive to warm up enough resources to reach
+     * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
+     * At the same time it MUST NOT allocate any resource if that would bring the number of live resources
+     * over the {@code max}, rejecting further allocations until some resources have been {@link PooledRef#release() released}.
+     *
+     * @param min the minimum number of live resources to keep in the pool (can be best effort)
+     * @param max the maximum number of live resources to keep in the pool
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> sizeBetween(int min, int max) {
+        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, max));
+    }
+
+    /**
+     * When acquiring and there is no available resource, the pool should strive to warm up enough resources to reach
+     * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
+     * There is no upper bound to the total number of live resources created.
+     *
+     * @param min the minimum number of live resources to keep in the pool (can be best effort)
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> sizeMin(int min) {
+        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, Integer.MAX_VALUE));
+    }
+
+    /**
      * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
      * some resources have been {@link PooledRef#release() released}.
      *
@@ -253,7 +261,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * @return this {@link Pool} builder
      */
     public PoolBuilder<T, CONF> sizeMax(int max) {
-        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(max));
+        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(0, max));
     }
 
     /**
@@ -319,7 +327,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     //kept package-private for the benefit of tests
     CONF buildConfig() {
         PoolConfig<T> baseConfig = new DefaultPoolConfig<>(allocator,
-                initialSize,
                 allocationStrategy == null ?
                         new AllocationStrategies.UnboundedAllocationStrategy() :
                         allocationStrategy,

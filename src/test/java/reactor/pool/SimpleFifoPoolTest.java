@@ -38,6 +38,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.TestUtils.PoolableTest;
+import reactor.test.util.RaceTestUtils;
 import reactor.util.function.Tuple2;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,8 +53,7 @@ class SimpleFifoPoolTest {
     //==utils for package-private config==
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
         return from(allocator)
-                .initialSize(minSize)
-                .sizeMax(maxSize)
+                .sizeBetween(minSize, maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .buildConfig();
@@ -61,7 +61,7 @@ class SimpleFifoPoolTest {
 
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
-                .initialSize(minSize)
+                .sizeBetween(minSize, maxSize)
                 .sizeMax(maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
@@ -72,8 +72,7 @@ class SimpleFifoPoolTest {
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
-                .initialSize(minSize)
-                .sizeMax(maxSize)
+                .sizeBetween(minSize, maxSize)
                 .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
                     poolableTest.clean();
                     additionalCleaner.accept(poolableTest);
@@ -466,6 +465,30 @@ class SimpleFifoPoolTest {
             //we expect that only 1 element was created
             assertThat(newCount).as("elements created in round " + i).hasValue(1);
         }
+
+        @Test
+        @Tag("loops")
+        void acquireReleaseRaceWithMinSize_loop() {
+            final Scheduler racer = Schedulers.fromExecutorService(Executors.newFixedThreadPool(2));
+            AtomicInteger newCount = new AtomicInteger();
+            try {
+                PoolConfig<PoolableTest> testConfig = from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement())))
+                        .sizeBetween(4, 5)
+                        .buildConfig();
+                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+
+                for (int i = 0; i < 100; i++) {
+                    RaceTestUtils.race(() -> pool.acquire().block().release().block(),
+                            () -> pool.acquire().block().release().block(),
+                            racer);
+                }
+                //we expect that only 3 element was created
+                assertThat(newCount).as("elements created in total").hasValue(4);
+            }
+            finally {
+                racer.dispose();
+            }
+        }
     }
 
     @Nested
@@ -852,8 +875,7 @@ class SimpleFifoPoolTest {
         AtomicInteger cleanerCount = new AtomicInteger();
         SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(
                 from(Mono.fromCallable(PoolableTest::new))
-                        .initialSize(3)
-                        .sizeMax(3)
+                        .sizeBetween(3, 3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate((value, metadata) -> !value.isHealthy())
                         .buildConfig());

@@ -527,7 +527,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void firstAcquireCausesWarmupWithMinSize(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
+	void constructorCausesWarmupWithMinSize(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
 			throws InterruptedException {
 		AtomicInteger allocationCount = new AtomicInteger();
 
@@ -543,20 +543,14 @@ public class CommonPoolTest {
 		assertThat(pool).isInstanceOf(InstrumentedPool.class);
 
 		final PoolMetrics metrics = ((InstrumentedPool) pool).metrics();
-
-		assertThat(metrics.allocatedSize()).as("ctor allocated").isZero();
+		assertThat(metrics.allocatedSize()).as("constructor allocated").isEqualTo(4);
+		assertThat(metrics.idleSize()).as("warmup idle").isEqualTo(4);
 
 		final PooledRef<PoolableTest> firstAcquire = pool.acquire()
-		                                                 .block();
-
-		assertThat(metrics.allocatedSize()).as("warmup allocated").isEqualTo(4);
-		assertThat(metrics.idleSize()).as("warmup idle").isEqualTo(3);
-
-		final PooledRef<PoolableTest> secondAcquire = pool.acquire()
 		                                                  .block();
 
-		assertThat(metrics.allocatedSize()).as("second acquire allocated").isEqualTo(4);
-		assertThat(metrics.idleSize()).as("second acquire idle").isEqualTo(2);
+		assertThat(metrics.allocatedSize()).as("first acquire allocated").isEqualTo(4);
+		assertThat(metrics.idleSize()).as("first acquire idle").isEqualTo(3);
 
 		//give time for an unexpected warmup to take place so that the last assertion is valid
 		Thread.sleep(100);
@@ -565,7 +559,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void releaseBelowMinSizeThreshold(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
+	void destroyBelowMinSizeThreshold(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
 			throws InterruptedException {
 		AtomicInteger allocationCount = new AtomicInteger();
 

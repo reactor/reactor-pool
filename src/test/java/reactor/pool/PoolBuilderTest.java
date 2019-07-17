@@ -128,6 +128,10 @@ class PoolBuilderTest {
             this.config = config;
         }
 
+        public Mono<Integer> warmup() {
+            return Mono.just(0);
+        }
+
         @Override
         public Mono<PooledRef<T>> acquire() {
             return null;

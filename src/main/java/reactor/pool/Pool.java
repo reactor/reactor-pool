@@ -31,6 +31,25 @@ import reactor.core.publisher.Mono;
 public interface Pool<POOLABLE> extends Disposable {
 
     /**
+     * Warms up the {@link Pool}, if needed. This typically instructs the pool to check for a minimum size and allocate
+     * necessary objects when the minimum is not reached. The resulting {@link Mono} emits the number of extra resources
+     * it created as a result of the {@link PoolBuilder#sizeBetween(int, int) allocation minimum}.
+     * <p>
+     * Note that no work nor allocation is performed until the {@link Mono} is subscribed to.
+     * <p>
+     * Implementations MAY include more behavior, but there is no restriction on the way this method is called by users
+     * (it should be possible to call it at any time, as many times as needed or not at all).
+     *
+     * @apiNote this API is intended to easily reach the minimum allocated size (see {@link PoolBuilder#sizeMin(int)})
+     * without paying that cost on the first {@link #acquire()}. However, implementors should also consider creating
+     * the extra resources needed to honor that minimum during the acquire, as one cannot rely on the user calling
+     * warmup() consistently.
+     *
+     * @return a cold {@link Mono} that triggers resource warmup and emits the number of warmed up resources
+     */
+    Mono<Integer> warmup();
+
+    /**
      * Manually acquire a {@code POOLABLE} from the pool upon subscription and become responsible for its release.
      * The object is wrapped in a {@link PooledRef} which can be used for manually releasing the object back to the pool
      * or invalidating it. As a result, you MUST maintain a reference to it throughout the code that makes use of the

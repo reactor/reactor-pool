@@ -193,8 +193,9 @@ class SimpleFifoPoolTest {
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+            pool.warmup().block();
 
-            //the pool is started with one available element
+            //the pool is started and warmed up with one available element
             //we prepare to acquire it
             Mono<PooledRef<PoolableTest>> borrower = pool.acquire();
             CountDownLatch latch = new CountDownLatch(1);
@@ -580,8 +581,9 @@ class SimpleFifoPoolTest {
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")));
             SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+            pool.warmup().block();
 
-            //the pool is started with one available element
+            //the pool is started and warmed up with one available element
             //we prepare to acquire it
             Mono<PoolableTest> borrower = Mono.fromDirect(pool.withPoolable(Mono::just));
             CountDownLatch latch = new CountDownLatch(1);

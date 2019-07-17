@@ -26,6 +26,7 @@ import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
@@ -65,24 +66,38 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
 
-        if (poolConfig.allocationStrategy().permitMinimum() > 0) {
-            //TODO remove that from constructor (eg. warmup method)?
-            //TODO modify tests accordingly
-            int initSize = poolConfig.allocationStrategy().getPermits(0);
-            for (int i = 0; i < initSize; i++) {
-                long start = metricsRecorder.now();
-                try {
-                    POOLABLE poolable = Objects.requireNonNull(poolConfig.allocator().block(), "allocator returned null in constructor");
-                    metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
-                    elements.offer(new QueuePooledRef<>(this, poolable)); //the pool slot won't access this pool instance until after it has been constructed
-                }
-                catch (Throwable e) {
-                    metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
-                    throw e;
-                }
-            }
-        }
+		//TODO remove that from constructor (eg. warmup official API)?
+	    //TODO modify tests accordingly
+	    warmup().block();
     }
+
+	private Mono<Integer> warmup() {
+		if (poolConfig.allocationStrategy().permitMinimum() > 0) {
+			return Mono.defer(() -> {
+				int initSize = poolConfig.allocationStrategy().getPermits(0);
+				@SuppressWarnings("unchecked")
+				Mono<POOLABLE>[] allWarmups = new Mono[initSize];
+				for (int i = 0; i < initSize; i++) {
+					long start = metricsRecorder.now();
+					allWarmups[i] = poolConfig
+							.allocator()
+							.doOnNext(p -> {
+								metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+								elements.offer(new QueuePooledRef<>(this, p)); //the pool slot won't access this pool instance until after it has been constructed
+							})
+							.doOnError(e -> {
+								metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+								poolConfig.allocationStrategy().returnPermits(1);
+							});
+				}
+				return Flux.concat(allWarmups)
+				           .reduce(0, (count, p) -> count + 1);
+			});
+		}
+		else {
+			return Mono.just(0);
+		}
+	}
 
     /**
      * @return the next {@link reactor.pool.AbstractPool.Borrower} to serve

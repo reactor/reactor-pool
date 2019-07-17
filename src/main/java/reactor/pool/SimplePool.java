@@ -156,17 +156,17 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = PENDING_COUNT.get(this);
-            int permits = poolConfig.allocationStrategy().estimatePermitCount();
+            int estimatedPermitCount = poolConfig.allocationStrategy().estimatePermitCount();
 
             if (availableCount == 0) {
-                if (pendingCount > 0 && permits > 0) {
+                if (pendingCount > 0 && estimatedPermitCount > 0) {
                     final Borrower<POOLABLE> borrower = pendingPoll(); //shouldn't be null
                     if (borrower == null) {
                         continue;
                     }
                     ACQUIRED.incrementAndGet(this);
-                    int toBuild = poolConfig.allocationStrategy().getPermits(1);
-                    if (borrower.get() || toBuild == 0) {
+                    int permits = poolConfig.allocationStrategy().getPermits(1);
+                    if (borrower.get() || permits == 0) {
                         ACQUIRED.decrementAndGet(this);
                         continue;
                     }
@@ -185,8 +185,10 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                         borrower.fail(e);
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
-                    for (int extra = 1; extra <= toBuild - 1; extra++) {
-                        logger.debug("warming up extra resource {}/{}", extra, toBuild - 1);
+
+                    int toWarmup = permits - 1;
+                    for (int extra = 1; extra <= toWarmup; extra++) {
+                        logger.debug("warming up extra resource {}/{}", extra, toWarmup);
                         allocator.subscribe(newInstance -> {
                                     elements.offer(new QueuePooledRef<>(this, newInstance));
                                     drain();

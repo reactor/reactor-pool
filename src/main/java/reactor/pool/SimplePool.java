@@ -68,7 +68,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (poolConfig.allocationStrategy().permitMinimum() > 0) {
             //TODO remove that from constructor (eg. warmup method)?
             //TODO modify tests accordingly
-            int initSize = poolConfig.allocationStrategy().getPermits(1);
+            int initSize = poolConfig.allocationStrategy().getPermits(0);
             for (int i = 0; i < initSize; i++) {
                 long start = metricsRecorder.now();
                 try {

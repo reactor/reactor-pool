@@ -88,7 +88,7 @@ final class AllocationStrategies {
 
         @Override
         public int getPermits(int desired) {
-            if (desired < 1) return 0;
+            if (desired < 0) return 0;
 
             //impl note: this should be more efficient compared to the previous approach for desired == 1
             // (incrementAndGet + decrementAndGet compensation both induce a CAS loop, vs single loop here)

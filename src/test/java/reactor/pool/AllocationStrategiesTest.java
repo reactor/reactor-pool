@@ -107,17 +107,28 @@ class AllocationStrategiesTest {
         }
 
         @Test
-        void getPermitDesiredZero() {
+        void getPermitDesiredZeroWithNoMin() {
             AllocationStrategy test = new SizeBasedAllocationStrategy(0, 1);
 
             assertThat(test.getPermits(0)).isZero();
         }
 
         @Test
-        void getPermitDesiredZeroDespiteMin() {
-            AllocationStrategy test = new SizeBasedAllocationStrategy(1, 2);
+        void getPermitDesiredZeroWithMin() {
+            AllocationStrategy test = new SizeBasedAllocationStrategy(4, 8);
 
-            assertThat(test.getPermits(0)).isZero();
+            assertThat(test.getPermits(0)).isEqualTo(4);
+        }
+
+        @Test
+        void getPermitDesiredZeroWithMinPartiallyReached() {
+            AllocationStrategy test = new SizeBasedAllocationStrategy(4, 8);
+            //first getPermit returns min, but we can return some of these permits
+            assertThat(test.getPermits(0)).as("initial warmup").isEqualTo(4);
+
+            test.returnPermits(3);
+
+            assertThat(test.getPermits(0)).as("partial warmup").isEqualTo(3);
         }
 
         @Test

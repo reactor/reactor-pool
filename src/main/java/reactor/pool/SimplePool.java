@@ -65,13 +65,10 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     SimplePool(PoolConfig<POOLABLE> poolConfig) {
         super(poolConfig, Loggers.getLogger(SimplePool.class));
         this.elements = Queues.<QueuePooledRef<POOLABLE>>unboundedMultiproducer().get();
-
-        //TODO remove that from constructor (eg. warmup official API)?
-        //TODO modify tests accordingly
-        warmup().block();
     }
 
-    private Mono<Integer> warmup() {
+    @Override
+    public Mono<Integer> warmup() {
         if (poolConfig.allocationStrategy().permitMinimum() > 0) {
             return Mono.defer(() -> {
                 int initSize = poolConfig.allocationStrategy().getPermits(0);

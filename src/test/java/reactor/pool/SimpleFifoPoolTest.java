@@ -469,20 +469,25 @@ class SimpleFifoPoolTest {
         @Test
         @Tag("loops")
         void acquireReleaseRaceWithMinSize_loop() {
-            AtomicInteger newCount = new AtomicInteger();
-            PoolConfig<PoolableTest> testConfig = from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement())))
-                    .sizeBetween(4, 5)
-                    .buildConfig();
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
             final Scheduler racer = Schedulers.fromExecutorService(Executors.newFixedThreadPool(2));
+            AtomicInteger newCount = new AtomicInteger();
+            try {
+                PoolConfig<PoolableTest> testConfig = from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement())))
+                        .sizeBetween(4, 5)
+                        .buildConfig();
+                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
 
-            for (int i = 0; i < 100; i++) {
-                RaceTestUtils.race(() -> pool.acquire().block().release().block(),
-                        () -> pool.acquire().block().release().block(),
-                        racer);
+                for (int i = 0; i < 100; i++) {
+                    RaceTestUtils.race(() -> pool.acquire().block().release().block(),
+                            () -> pool.acquire().block().release().block(),
+                            racer);
+                }
+                //we expect that only 3 element was created
+                assertThat(newCount).as("elements created in total").hasValue(4);
             }
-            //we expect that only 3 element was created
-            assertThat(newCount).as("elements created in total").hasValue(4);
+            finally {
+                racer.dispose();
+            }
         }
     }
 

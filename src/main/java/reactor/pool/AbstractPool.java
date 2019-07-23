@@ -21,7 +21,6 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -160,19 +159,37 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         final long            creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;
         final T poolable;
+        final int acquireCount;
 
-        volatile int acquireCount;
-        static final AtomicIntegerFieldUpdater<AbstractPooledRef> ACQUIRE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "acquireCount");
+        long timeSinceRelease;
 
-        //might be peeked at by multiple threads, in which case a value of -1 indicates it is currently held/acquired
-        volatile long timeSinceRelease;
-        static final AtomicLongFieldUpdater<AbstractPooledRef> TIME_SINCE_RELEASE = AtomicLongFieldUpdater.newUpdater(AbstractPooledRef.class, "timeSinceRelease");
+        volatile int state;
+        static final AtomicIntegerFieldUpdater<AbstractPooledRef> STATE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "state");
 
+        /**
+         * Use this constructor the first time a resource is created and wrapped in a {@link PooledRef}.
+         * @param poolable the newly created poolable
+         * @param metricsRecorder the recorder to use for metrics
+         */
         AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder) {
             this.poolable = poolable;
             this.metricsRecorder = metricsRecorder;
             this.creationTimestamp = metricsRecorder.now();
+            this.acquireCount = 0;
             this.timeSinceRelease = -2L;
+            this.state = STATE_IDLE;
+        }
+
+        /**
+         * Use this constructor when a resource is passed to another borrower.
+         */
+        AbstractPooledRef(AbstractPooledRef<T> oldRef) {
+            this.poolable = oldRef.poolable;
+            this.metricsRecorder = oldRef.metricsRecorder;
+            this.creationTimestamp = oldRef.creationTimestamp;
+            this.acquireCount = oldRef.acquireCount(); //important to use method since the count variable is final
+            this.timeSinceRelease = oldRef.timeSinceRelease; //important to carry over the markReleased for metrics
+            this.state = STATE_IDLE; //we're dealing with a new slot that was created when the previous one was released
         }
 
         @Override
@@ -185,30 +202,34 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             return this;
         }
 
-        /**
-         * Atomically increment the {@link #acquireCount()} of this slot, returning the new value.
-         *
-         * @return the incremented {@link #acquireCount()}
-         */
-        int markAcquired() {
-            int acq = ACQUIRE.incrementAndGet(this);
-            long tsr = TIME_SINCE_RELEASE.getAndSet(this, -1);
-            if (tsr > 0) {
-                metricsRecorder.recordIdleTime(metricsRecorder.measureTime(tsr));
+        void markAcquired() {
+            if (STATE.compareAndSet(this, STATE_IDLE, STATE_ACQUIRED)) {
+                long tsr = timeSinceRelease;
+                if (tsr > 0) {
+                    metricsRecorder.recordIdleTime(metricsRecorder.measureTime(tsr));
+                }
+                else {
+                    metricsRecorder.recordIdleTime(metricsRecorder.measureTime(creationTimestamp));
+                }
             }
-            else if (tsr < -1L) { //allocated, never acquired
-                metricsRecorder.recordIdleTime(metricsRecorder.measureTime(creationTimestamp));
-            }
-            return acq;
         }
 
         void markReleased() {
-            this.timeSinceRelease = metricsRecorder.now();
+            if (STATE.compareAndSet(this, STATE_ACQUIRED, STATE_RELEASED)) {
+                this.timeSinceRelease = metricsRecorder.now();
+            }
+        }
+
+        boolean markInvalidate() {
+            return STATE.compareAndSet(this, STATE_ACQUIRED, STATE_RELEASED);
         }
 
         @Override
         public int acquireCount() {
-            return ACQUIRE.get(this);
+            if (STATE.get(this) == STATE_IDLE) {
+                return this.acquireCount;
+            }
+            return this.acquireCount + 1;
         }
 
         @Override
@@ -218,10 +239,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
         @Override
         public long idleTime() {
-            long tsr = this.timeSinceRelease;
-            if (tsr == -1L) { //-1 is when it's been marked as acquired
+            if (STATE.get(this) == STATE_ACQUIRED) {
                 return 0L;
             }
+            long tsr = this.timeSinceRelease;
             if (tsr < 0L) tsr = creationTimestamp; //any negative date other than -1 is considered "never yet released"
             return metricsRecorder.measureTime(tsr);
         }
@@ -235,7 +256,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         public abstract Mono<Void> release();
 
         /**
-         * Implementors MUST have the Mono call {@link #markReleased()} upon subscription.
+         * Implementors MUST have the Mono call {@link #markInvalidate()} upon subscription.
          * <p>
          * {@inheritDoc}
          */
@@ -251,6 +272,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
                     ", acquireCount=" + acquireCount +
                     '}';
         }
+
+        static final int STATE_IDLE = 0;
+        static final int STATE_ACQUIRED = 1;
+        static final int STATE_RELEASED = 2;
     }
 
     /**

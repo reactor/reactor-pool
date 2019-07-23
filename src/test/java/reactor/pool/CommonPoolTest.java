@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.assertj.core.api.Assertions;
 import org.assertj.core.data.Offset;
@@ -152,10 +153,12 @@ public class CommonPoolTest {
 		}
 		assertThat(acquired3).hasSize(3);
 
-		assertThat(acquired1)
-				.as("acquired1/2 all used up")
-				.hasSameElementsAs(acquired2)
-				.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+		List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
+		List<PoolableTest> poolables2 = acquired2.stream().map(PooledRef::poolable).collect(Collectors.toList());
+		assertThat(poolables1)
+				.as("poolable1 and 2 all used up")
+				.hasSameElementsAs(poolables2)
+				.allMatch(poolable -> poolable.usedUp == 2);
 
 		assertThat(acquired3)
 				.as("acquired3 all new")
@@ -281,10 +284,13 @@ public class CommonPoolTest {
 
 			assertThat(acquired3).hasSize(3);
 
-			assertThat(acquired1)
-					.as("acquired1/2 all used up")
-					.hasSameElementsAs(acquired2)
-					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+			List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
+			List<PoolableTest> poolables2 = acquired2.stream().map(PooledRef::poolable).collect(Collectors.toList());
+
+			assertThat(poolables1)
+					.as("poolables 1 and 2 all used up")
+					.hasSameElementsAs(poolables2)
+					.allSatisfy(poolable -> assertThat(poolable.usedUp).isEqualTo(2));
 
 			assertThat(acquired3)
 					.as("acquired3 all new")
@@ -383,10 +389,13 @@ public class CommonPoolTest {
 		}
 		assertThat(acquired2).hasSize(3);
 
-		assertThat(acquired1)
-				.as("acquired1/3 all used up")
-				.hasSameElementsAs(acquired3)
-				.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+		List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
+		List<PoolableTest> poolables3 = acquired3.stream().map(PooledRef::poolable).collect(Collectors.toList());
+
+		assertThat(poolables1)
+				.as("poolable 1 and 3 all used up")
+				.hasSameElementsAs(poolables3)
+				.allSatisfy(poolable -> assertThat(poolable.usedUp).isEqualTo(2));
 
 		assertThat(acquired2)
 				.as("acquired2 all new")
@@ -514,10 +523,13 @@ public class CommonPoolTest {
 
 			assertThat(acquired2).as("acquired2 size").hasSize(3);
 
-			assertThat(acquired1)
-					.as("acquired1/3 all used up")
-					.hasSameElementsAs(acquired3)
-					.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isEqualTo(2));
+			List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
+			List<PoolableTest> poolables3 = acquired3.stream().map(PooledRef::poolable).collect(Collectors.toList());
+
+			assertThat(poolables1)
+					.as("poolables 1 and 3 all used up")
+					.hasSameElementsAs(poolables3)
+					.allSatisfy(poolable -> assertThat(poolable.usedUp).isEqualTo(2));
 
 			assertThat(acquired2)
 					.as("acquired2 all new")
@@ -1299,6 +1311,62 @@ public class CommonPoolTest {
 
 		uniqueRef.release().block();
 		assertThat(resource).as("post timeout and after resource available").hasValue(1);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void eachBorrowerCanOnlyReleaseOnce(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger resource = new AtomicInteger();
+		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
+				.from(Mono.just(resource))
+				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
+				.sizeMax(1);
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
+
+		Mono<Void> releaserMono1 = acquire1.release();
+		releaserMono1.block();
+		releaserMono1.block();
+		Mono<Void> releaserMono2 = acquire1.release();
+		releaserMono2.block();
+		releaserMono2.block();
+
+		assertThat(resource).as("first acquire multi-release").hasValue(1);
+
+		Mono<Void> releaserMono3 = pool.acquire().block().release();
+		releaserMono3.block();
+		releaserMono3.block();
+
+		assertThat(resource).as("second acquire multi-release").hasValue(2);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void eachBorrowerCanOnlyInvalidateOnce(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger resource = new AtomicInteger();
+		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
+				.from(Mono.just(resource))
+				.destroyHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
+				.sizeMax(1);
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
+
+		Mono<Void> invalidateMono1 = acquire1.invalidate();
+		invalidateMono1.block();
+		invalidateMono1.block();
+		final Mono<Void> invalidateMono2 = acquire1.invalidate();
+		invalidateMono2.block();
+		invalidateMono2.block();
+
+		assertThat(resource).as("first acquire multi-invalidate").hasValue(1);
+
+		final Mono<Void> invalidateMono3 = pool.acquire().block().invalidate();
+		invalidateMono3.block();
+		invalidateMono3.block();
+
+		assertThat(resource).as("second acquire multi-invalidate").hasValue(2);
 	}
 
 	// === METRICS ===

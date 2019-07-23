@@ -138,10 +138,14 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
-     * Use an {@link #evictionPredicate(BiPredicate) eviction predicate} that causes eviction (ie returns {@code true})
+     * Set the {@link #evictionPredicate(BiPredicate) eviction predicate} to cause eviction (ie returns {@code true})
      * of resources that have been idle (ie released and available in the {@link Pool}) for more than the {@code ttl}
      * {@link Duration} (inclusive).
      * Such a predicate could be used to evict too idle objects when next encountered by an {@link Pool#acquire()}.
+     * <p>
+     * This replaces any {@link #evictionPredicate(BiPredicate)} previously set. If you need to combine idle predicate
+     * with more custom logic, prefer directly providing a {@link BiPredicate}. Note that the idle predicate from this
+     * method is written as {@code (poolable, meta) -> meta.idleTime() >= maxIdleTime.toMillis()}.
      *
      * @param maxIdleTime the {@link Duration} after which an object should not be passed to a borrower, but destroyed (resolution: ms)
      * @return this {@link Pool} builder

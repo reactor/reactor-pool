@@ -80,7 +80,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                             .doOnNext(p -> {
                                 metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
                                 //the pool slot won't access this pool instance until after it has been constructed
-                                elements.offer(new QueuePooledRef<>(this, p));
+                                elements.offer(createSlot(p));
                             })
                             .doOnError(e -> {
                                 metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
@@ -131,7 +131,15 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     boolean elementOffer(POOLABLE element) {
-        return elements.offer(new QueuePooledRef<>(this, element));
+        return elements.offer(createSlot(element));
+    }
+
+    QueuePooledRef<POOLABLE> createSlot(POOLABLE element) {
+        return new QueuePooledRef<>(this, element);
+    }
+
+    QueuePooledRef<POOLABLE> recycleSlot(QueuePooledRef<POOLABLE> slot) {
+        return new QueuePooledRef<>(slot);
     }
 
     @Override
@@ -144,7 +152,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (!isDisposed()) {
             if (!poolConfig.evictionPredicate().test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
-                elements.offer(poolSlot);
+                elements.offer(recycleSlot(poolSlot));
                 drain();
             }
             else {
@@ -189,7 +197,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                     if (s != Schedulers.immediate())  {
                         allocator = allocator.publishOn(s);
                     }
-                    allocator.subscribe(newInstance -> borrower.deliver(new QueuePooledRef<>(this, newInstance)),
+                    allocator.subscribe(newInstance -> borrower.deliver(createSlot(newInstance)),
                                     e -> {
                                         metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
                                         ACQUIRED.decrementAndGet(this);
@@ -252,33 +260,49 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             this.pool = pool;
         }
 
+        QueuePooledRef(QueuePooledRef<T> oldRef) {
+            super(oldRef);
+            this.pool = oldRef.pool;
+        }
+
         @Override
         public Mono<Void> release() {
-            if (pool.isDisposed()) {
-                ACQUIRED.decrementAndGet(pool); //immediately clean up state
-                markReleased();
-                return pool.destroyPoolable(this);
-            }
+            return Mono.defer(() -> {
+                if (STATE.get(this) == STATE_RELEASED) {
+                    return Mono.empty();
+                }
 
-            Publisher<Void> cleaner;
-            try {
-                cleaner = pool.poolConfig.releaseHandler().apply(poolable);
-            }
-            catch (Throwable e) {
-                ACQUIRED.decrementAndGet(pool); //immediately clean up state
-                markReleased();
-                return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
-            }
-            //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
-            return new QueuePoolRecyclerMono<>(cleaner, this);
+                if (pool.isDisposed()) {
+                    ACQUIRED.decrementAndGet(pool); //immediately clean up state
+                    markReleased();
+                    return pool.destroyPoolable(this);
+                }
+
+                Publisher<Void> cleaner;
+                try {
+                    cleaner = pool.poolConfig.releaseHandler().apply(poolable);
+                }
+                catch (Throwable e) {
+                    ACQUIRED.decrementAndGet(pool); //immediately clean up state
+                    markReleased();
+                    return Mono.error(new IllegalStateException("Couldn't apply cleaner function", e));
+                }
+                //the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
+                return new QueuePoolRecyclerMono<>(cleaner, this);
+            });
         }
 
         @Override
         public Mono<Void> invalidate() {
             return Mono.defer(() -> {
-                //immediately clean up state
-                ACQUIRED.decrementAndGet(pool);
-                return pool.destroyPoolable(this).then(Mono.fromRunnable(pool::drain));
+                if (markInvalidate()) {
+                    //immediately clean up state
+                    ACQUIRED.decrementAndGet(pool);
+                    return pool.destroyPoolable(this).then(Mono.fromRunnable(pool::drain));
+                }
+                else {
+                    return Mono.empty();
+                }
             });
         }
     }

@@ -19,25 +19,12 @@ package reactor.pool;
  * An interface representing ways for {@link Pool} to collect instrumentation data.
  * Some methods are pool-implementation specific.
  * <p>
- * Additionally wraps the concept of a clock, with {@link #now()} to get the current time with milliseconds
- * resolution and {@link #measureTime(long)} to get the elapsed time.
+ * Note this doesn't include the concepts of measuring timings, which should be the
+ * responsibility of a {@link java.time.Clock}.
  *
  * @author Simon Baslé
  */
 public interface PoolMetricsRecorder {
-
-	/**
-	 * Get the elapsed time in milliseconds between {@link #now()} and the given starting time.
-	 *
-	 * @param startTimeMillis the starting time initially obtained via {@link #now()}
-	 * @return the elapsed time in milliseconds
-	 */
-	long measureTime(long startTimeMillis);
-
-	/**
-	 * Get a starting time with milliseconds resolution.
-	 */
-	long now();
 
 	/**
 	 * Record a latency for successful allocation. Implies incrementing an allocation success counter as well.

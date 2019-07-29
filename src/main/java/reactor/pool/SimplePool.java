@@ -74,16 +74,16 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 int initSize = poolConfig.allocationStrategy().getPermits(0);
                 @SuppressWarnings("unchecked") Mono<POOLABLE>[] allWarmups = new Mono[initSize];
                 for (int i = 0; i < initSize; i++) {
-                    long start = metricsRecorder.now();
+                    long start = clock.millis();
                     allWarmups[i] = poolConfig
                             .allocator()
                             .doOnNext(p -> {
-                                metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start));
+                                metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
                                 //the pool slot won't access this pool instance until after it has been constructed
                                 elements.offer(createSlot(p));
                             })
                             .doOnError(e -> {
-                                metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                                metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
                                 poolConfig.allocationStrategy().returnPermits(1);
                             });
                 }
@@ -191,7 +191,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         continue;
                     }
                     borrower.stopPendingCountdown();
-                    long start = metricsRecorder.now();
+                    long start = clock.millis();
                     Mono<POOLABLE> allocator = poolConfig.allocator();
                     Scheduler s = poolConfig.acquisitionScheduler();
                     if (s != Schedulers.immediate())  {
@@ -199,12 +199,12 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                     }
                     allocator.subscribe(newInstance -> borrower.deliver(createSlot(newInstance)),
                                     e -> {
-                                        metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                                        metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
                                         ACQUIRED.decrementAndGet(this);
                                         poolConfig.allocationStrategy().returnPermits(1);
                                         borrower.fail(e);
                                     },
-                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
+                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
 
                     int toWarmup = permits - 1;
                     for (int extra = 1; extra <= toWarmup; extra++) {
@@ -214,11 +214,11 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     drain();
                                 },
                                 e -> {
-                                    metricsRecorder.recordAllocationFailureAndLatency(metricsRecorder.measureTime(start));
+                                    metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
                                     ACQUIRED.decrementAndGet(this);
                                     poolConfig.allocationStrategy().returnPermits(1);
                                 },
-                                () -> metricsRecorder.recordAllocationSuccessAndLatency(metricsRecorder.measureTime(start)));
+                                () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
                     }
                 }
             }
@@ -256,7 +256,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         final SimplePool<T> pool;
 
         QueuePooledRef(SimplePool<T> pool, T poolable) {
-            super(poolable, pool.metricsRecorder);
+            super(poolable, pool.metricsRecorder, pool.clock);
             this.pool = pool;
         }
 
@@ -350,7 +350,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             if (Operators.validate(upstream, s)) {
                 this.upstream = s;
                 actual.onSubscribe(this);
-                this.start = pool.metricsRecorder.now();
+                this.start = pool.clock.millis();
             }
         }
 
@@ -375,7 +375,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             }
 
             //TODO should we separate reset errors?
-            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
+            pool.metricsRecorder.recordResetLatency(pool.clock.millis() - start);
 
             pool.destroyPoolable(slot).subscribe(null, null, pool::drain); //TODO manage errors?
 
@@ -396,7 +396,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 ACQUIRED.decrementAndGet(pool);
             }
 
-            pool.metricsRecorder.recordResetLatency(pool.metricsRecorder.measureTime(start));
+            pool.metricsRecorder.recordResetLatency(pool.clock.millis() - start);
 
             pool.maybeRecycleAndDrain(slot);
             actual.onComplete();

@@ -17,6 +17,7 @@ package reactor.pool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,6 +54,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     final PoolConfig<POOLABLE> poolConfig;
 
     final PoolMetricsRecorder metricsRecorder;
+    final Clock clock;
 
     volatile     int                                     pendingCount;
     static final AtomicIntegerFieldUpdater<AbstractPool> PENDING_COUNT = AtomicIntegerFieldUpdater.newUpdater(AbstractPool.class, "pendingCount");
@@ -61,6 +63,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         this.poolConfig = poolConfig;
         this.logger = logger;
         this.metricsRecorder = poolConfig.metricsRecorder();
+        this.clock = poolConfig.clock();
     }
 
     // == pool introspection methods ==
@@ -134,18 +137,18 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy().returnPermits(1);
-        long start = metricsRecorder.now();
+        long start = clock.millis();
         metricsRecorder.recordLifetimeDuration(ref.lifeTime());
         Function<POOLABLE, ? extends Publisher<Void>> factory = poolConfig.destroyHandler();
         if (factory == PoolBuilder.NOOP_HANDLER) {
             return Mono.fromRunnable(() -> {
                 defaultDestroy(poolable);
-                metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start));
+                metricsRecorder.recordDestroyLatency(clock.millis() - start);
             });
         }
         else {
             return Mono.from(factory.apply(poolable))
-                       .doFinally(fin -> metricsRecorder.recordDestroyLatency(metricsRecorder.measureTime(start)));
+                       .doFinally(fin -> metricsRecorder.recordDestroyLatency(clock.millis() - start));
         }
     }
 
@@ -156,10 +159,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
      */
     abstract static class AbstractPooledRef<T> implements PooledRef<T>, PooledRefMetadata {
 
-        final long            creationTimestamp;
+        final long                creationTimestamp;
         final PoolMetricsRecorder metricsRecorder;
-        final T poolable;
-        final int acquireCount;
+        final Clock               clock;
+        final T                   poolable;
+        final int                 acquireCount;
 
         long timeSinceRelease;
 
@@ -170,11 +174,13 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
          * Use this constructor the first time a resource is created and wrapped in a {@link PooledRef}.
          * @param poolable the newly created poolable
          * @param metricsRecorder the recorder to use for metrics
+         * @param clock the {@link Clock} to use for timestamps
          */
-        AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder) {
+        AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder, Clock clock) {
             this.poolable = poolable;
             this.metricsRecorder = metricsRecorder;
-            this.creationTimestamp = metricsRecorder.now();
+            this.clock = clock;
+            this.creationTimestamp = clock.millis();
             this.acquireCount = 0;
             this.timeSinceRelease = -2L;
             this.state = STATE_IDLE;
@@ -186,6 +192,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         AbstractPooledRef(AbstractPooledRef<T> oldRef) {
             this.poolable = oldRef.poolable;
             this.metricsRecorder = oldRef.metricsRecorder;
+            this.clock = oldRef.clock;
             this.creationTimestamp = oldRef.creationTimestamp;
             this.acquireCount = oldRef.acquireCount(); //important to use method since the count variable is final
             this.timeSinceRelease = oldRef.timeSinceRelease; //important to carry over the markReleased for metrics
@@ -206,17 +213,17 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             if (STATE.compareAndSet(this, STATE_IDLE, STATE_ACQUIRED)) {
                 long tsr = timeSinceRelease;
                 if (tsr > 0) {
-                    metricsRecorder.recordIdleTime(metricsRecorder.measureTime(tsr));
+                    metricsRecorder.recordIdleTime(clock.millis() - tsr);
                 }
                 else {
-                    metricsRecorder.recordIdleTime(metricsRecorder.measureTime(creationTimestamp));
+                    metricsRecorder.recordIdleTime(clock.millis() - creationTimestamp);
                 }
             }
         }
 
         void markReleased() {
             if (STATE.compareAndSet(this, STATE_ACQUIRED, STATE_RELEASED)) {
-                this.timeSinceRelease = metricsRecorder.now();
+                this.timeSinceRelease = clock.millis();
             }
         }
 
@@ -234,7 +241,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
         @Override
         public long lifeTime() {
-            return metricsRecorder.measureTime(creationTimestamp);
+            return clock.millis() - creationTimestamp;
         }
 
         @Override
@@ -244,7 +251,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             }
             long tsr = this.timeSinceRelease;
             if (tsr < 0L) tsr = creationTimestamp; //any negative date other than -1 is considered "never yet released"
-            return metricsRecorder.measureTime(tsr);
+            return clock.millis() - tsr;
         }
 
         /**

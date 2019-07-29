@@ -16,6 +16,7 @@
 
 package reactor.pool;
 
+import java.time.Clock;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
@@ -90,5 +91,11 @@ public interface PoolConfig<POOLABLE> {
 	 * implementations.
 	 */
 	PoolMetricsRecorder metricsRecorder();
+
+	/**
+	 * The {@link java.time.Clock} to use to timestamp pool lifecycle events like allocation
+	 * and eviction, which can influence eg. the {@link #evictionPredicate()}.
+	 */
+	Clock clock();
 
 }

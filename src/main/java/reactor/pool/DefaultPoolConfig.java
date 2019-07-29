@@ -16,6 +16,7 @@
 
 package reactor.pool;
 
+import java.time.Clock;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
@@ -40,6 +41,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final BiPredicate<POOLABLE, PooledRefMetadata>      evictionPredicate;
 	protected final Scheduler                                     acquisitionScheduler;
 	protected final PoolMetricsRecorder                           metricsRecorder;
+	protected final Clock                                         clock;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -48,7 +50,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
 			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
 			Scheduler acquisitionScheduler,
-			PoolMetricsRecorder metricsRecorder) {
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock) {
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
 		this.maxPending = maxPending;
@@ -57,6 +60,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.evictionPredicate = evictionPredicate;
 		this.acquisitionScheduler = acquisitionScheduler;
 		this.metricsRecorder = metricsRecorder;
+		this.clock = clock;
 	}
 
 	/**
@@ -76,6 +80,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.evictionPredicate = toCopyDpc.evictionPredicate;
 			this.acquisitionScheduler = toCopyDpc.acquisitionScheduler;
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
+			this.clock = toCopyDpc.clock;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -86,6 +91,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.evictionPredicate = toCopy.evictionPredicate();
 			this.acquisitionScheduler = toCopy.acquisitionScheduler();
 			this.metricsRecorder = toCopy.metricsRecorder();
+			this.clock = toCopy.clock();
 		}
 	}
 
@@ -127,5 +133,10 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public PoolMetricsRecorder metricsRecorder() {
 		return this.metricsRecorder;
+	}
+
+	@Override
+	public Clock clock() {
+		return this.clock;
 	}
 }

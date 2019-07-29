@@ -29,16 +29,6 @@ final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
     }
 
     @Override
-    public long now() {
-        return 0L;
-    }
-
-    @Override
-    public long measureTime(long startTimeMillis) {
-        return 0;
-    }
-
-    @Override
     public void recordAllocationSuccessAndLatency(long latencyMs) {
 
     }

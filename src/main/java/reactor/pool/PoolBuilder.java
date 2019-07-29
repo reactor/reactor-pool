@@ -15,6 +15,7 @@
  */
 package reactor.pool;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -67,6 +68,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
     BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
     Scheduler                              acquisitionScheduler = Schedulers.immediate();
+    Clock                                  clock                = Clock.systemUTC();
     PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
 
     PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
@@ -85,6 +87,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         this.evictionPredicate = source.evictionPredicate;
         this.acquisitionScheduler = source.acquisitionScheduler;
         this.metricsRecorder = source.metricsRecorder;
+        this.clock = source.clock;
     }
 
     /**
@@ -201,6 +204,23 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      */
     public PoolBuilder<T, CONF> maxPendingAcquireUnbounded() {
         this.maxPending = -1;
+        return this;
+    }
+
+    /**
+     * Set the {@link Clock} to use for timestamps, notably marking the times at which a resource is
+     * allocated, released and acquired. The {@link Clock#millis()} method is used for this purpose,
+     * which produces timestamps and durations in milliseconds for eg. the {@link #evictionPredicate(BiPredicate)}.
+     * <p>
+     * These durations can also be exported as metrics, through the {@link #metricsRecorder}, but having
+     * a separate {@link Clock} separates the concerns and allows to disregard metrics without crippling
+     * eviction.
+     *
+     * @param clock the {@link Clock} to use to measure timestamps and durations
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> clock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         return this;
     }
 
@@ -339,7 +359,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
                 destroyHandler,
                 evictionPredicate,
                 acquisitionScheduler,
-                metricsRecorder);
+                metricsRecorder,
+                clock);
 
         return this.configModifier.apply(baseConfig);
     }

@@ -15,14 +15,18 @@
  */
 package reactor.pool;
 
-import org.HdrHistogram.Histogram;
-import org.HdrHistogram.ShortCountsHistogram;
-import reactor.core.Disposable;
-import reactor.core.publisher.Mono;
-
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+
+import org.HdrHistogram.Histogram;
+import org.HdrHistogram.ShortCountsHistogram;
+
+import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
 
 /**
  * @author Simon Baslé
@@ -133,7 +137,7 @@ public class TestUtils {
      *
      * @author Simon Baslé
      */
-    public static class InMemoryPoolMetrics implements PoolMetricsRecorder {
+    public static class InMemoryPoolMetrics extends Clock implements PoolMetricsRecorder {
 
         private final ShortCountsHistogram allocationSuccessHistogram;
         private final ShortCountsHistogram allocationErrorHistogram;
@@ -160,11 +164,30 @@ public class TestUtils {
         }
 
         @Override
-        public long now() {
+        public ZoneId getZone() {
+            return ZoneId.systemDefault();
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public long millis() {
             return System.nanoTime() / 1000000;
         }
 
         @Override
+        public Instant instant() {
+            return Instant.ofEpochMilli(millis());
+        }
+
+        /**
+         * Helper to measure the time with the precision needed for tests.
+         * @param startTimeMillis the starting time, as measured by {@link #millis()}
+         * @return the elapsed time
+         */
         public long measureTime(long startTimeMillis) {
             final long l = (System.nanoTime() / 1000000) - startTimeMillis;
             if (l <= 0) return 1;

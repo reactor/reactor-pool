@@ -147,7 +147,7 @@ public class CommonPoolTest {
 
 		PoolBuilder<PoolableTest> builder = PoolBuilder
 				//default maxUse is 5, but this test relies on it being 2
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
+				.from(Mono.fromCallable(() -> new PoolableTest(newCount.incrementAndGet(), 2)))
 				.initialSize(2)
 				.sizeMax(3)
 				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))

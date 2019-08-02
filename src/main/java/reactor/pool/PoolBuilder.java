@@ -107,14 +107,16 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     /**
      * Limits in how many resources can be allocated and managed by the {@link Pool} are driven by the
-     * provided {@link AllocationStrategy}.
+     * provided {@link AllocationStrategy}. This is a customization escape hatch that replaces the last
+     * configured strategy, but most cases should be covered by the {@link #sizeBetween(int, int)} or {@link #sizeUnbounded()}
+     * pre-made strategies.
      * <p>
-     * Defaults to an unbounded creation of resources, although it is not a recommended one.
-     * See {@link AllocationStrategies} for readily available strategies based on counters.
+     * Without a call to any of these 3 methods, the builder defaults to an {@link #sizeUnbounded() unbounded creation of resources},
+     * although it is not a recommended one.
      *
      * @param allocationStrategy the {@link AllocationStrategy} to use
      * @return this {@link Pool} builder
-     * @see #sizeMax(int)
+     * @see #sizeBetween(int, int)
      * @see #sizeUnbounded()
      */
     public PoolBuilder<T, CONF> allocationStrategy(AllocationStrategy allocationStrategy) {
@@ -251,50 +253,33 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
-     * Let the {@link Pool} allocate between {@code min} and {@code max} resources.
+     * Replace the {@link AllocationStrategy} with one that lets the {@link Pool} allocate between {@code min} and {@code max} resources.
      * When acquiring and there is no available resource, the pool should strive to warm up enough resources to reach
      * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
      * At the same time it MUST NOT allocate any resource if that would bring the number of live resources
      * over the {@code max}, rejecting further allocations until some resources have been {@link PooledRef#release() released}.
      *
      * @param min the minimum number of live resources to keep in the pool (can be best effort)
-     * @param max the maximum number of live resources to keep in the pool
+     * @param max the maximum number of live resources to keep in the pool. use {@link Integer#MAX_VALUE} when you only need a
+     * minimum and no upper bound
      * @return this {@link Pool} builder
+     * @see #sizeUnbounded()
+     * @see #allocationStrategy(AllocationStrategy)
      */
     public PoolBuilder<T, CONF> sizeBetween(int min, int max) {
         return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, max));
     }
 
     /**
-     * When acquiring and there is no available resource, the pool should strive to warm up enough resources to reach
-     * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
-     * There is no upper bound to the total number of live resources created.
-     *
-     * @param min the minimum number of live resources to keep in the pool (can be best effort)
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T, CONF> sizeMin(int min) {
-        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, Integer.MAX_VALUE));
-    }
-
-    /**
-     * Let the {@link Pool} allocate at most {@code max} resources, rejecting further allocations until
-     * some resources have been {@link PooledRef#release() released}.
-     *
-     * @param max the maximum number of live resources to keep in the pool
-     * @return this {@link Pool} builder
-     */
-    public PoolBuilder<T, CONF> sizeMax(int max) {
-        return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(0, max));
-    }
-
-    /**
-     * Let the {@link Pool} allocate new resources when no idle resource is available, without limit.
+     * Replace the {@link AllocationStrategy} with one that lets the {@link Pool} allocate new resources
+     * when no idle resource is available, without limit.
      * <p>
      * Note this is the default, if no previous call to {@link #allocationStrategy(AllocationStrategy)}
-     * or {@link #sizeMax(int)} has been made on this {@link PoolBuilder}.
+     * or {@link #sizeBetween(int, int)} has been made on this {@link PoolBuilder}.
      *
      * @return this {@link Pool} builder
+     * @see #sizeBetween(int, int)
+     * @see #allocationStrategy(AllocationStrategy)
      */
     public PoolBuilder<T, CONF> sizeUnbounded() {
         return allocationStrategy(new AllocationStrategies.UnboundedAllocationStrategy());

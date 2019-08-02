@@ -90,7 +90,7 @@ class SimpleLifoPoolTest {
 
         SimpleLifoPool<String> pool = new SimpleLifoPool<>(
                 from(Mono.just("Hello Reactive World"))
-                        .sizeMax(1)
+                        .sizeBetween(0, 1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
 

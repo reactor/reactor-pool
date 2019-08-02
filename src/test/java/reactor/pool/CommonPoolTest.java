@@ -316,7 +316,7 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest, ?> builder =
 				PoolBuilder.from(Mono.defer(() ->
 						Mono.just(new PoolableTest(newCount.incrementAndGet()))))
-				           .sizeMax(1)
+				           .sizeBetween(0, 1)
 				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean));
 
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
@@ -745,7 +745,7 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
 				          .subscribeOn(scheduler))
-				.sizeMax(1)
+				.sizeBetween(0, 1)
 				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					poolableTest.clean();
 					releasedCount.incrementAndGet();
@@ -778,7 +778,7 @@ public class CommonPoolTest {
 		PoolBuilder<PoolableTest, ?> builder =
 				PoolBuilder.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
 				                     .subscribeOn(scheduler))
-				           .sizeMax(1)
+				           .sizeBetween(0, 1)
 				           .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					           poolableTest.clean();
 					           releasedCount.incrementAndGet();
@@ -899,7 +899,7 @@ public class CommonPoolTest {
 	void cleanerFunctionError(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.sizeMax(1)
+				.sizeBetween(0, 1)
 				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					poolableTest.clean();
 					throw new IllegalStateException("boom");
@@ -921,7 +921,7 @@ public class CommonPoolTest {
 	void cleanerFunctionErrorDiscards(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.sizeMax(1)
+				.sizeBetween(0, 1)
 				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
 					poolableTest.clean();
 					throw new IllegalStateException("boom");
@@ -948,7 +948,7 @@ public class CommonPoolTest {
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.sizeMax(3)
+				.sizeBetween(0, 3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
 				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
@@ -1051,7 +1051,7 @@ public class CommonPoolTest {
 		AtomicInteger cleanerCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.sizeMax(3)
+				.sizeBetween(0, 3)
 				.releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
 				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
@@ -1071,7 +1071,7 @@ public class CommonPoolTest {
 	void poolIsDisposed(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
-				.sizeMax(3)
+				.sizeBetween(0, 3)
 				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
@@ -1175,7 +1175,7 @@ public class CommonPoolTest {
 	void allocatorErrorInAcquireIsPropagated(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.<String>error(new IllegalStateException("boom")))
-				.sizeMax(1)
+				.sizeBetween(0, 1)
 				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
@@ -1233,7 +1233,7 @@ public class CommonPoolTest {
 		try {
 			PoolBuilder<String, ?> builder = PoolBuilder
 					.from(Mono.just("delayed").delaySubscription(Duration.ofMillis(500)))
-					.sizeMax(1);
+					.sizeBetween(0, 1);
 			AbstractPool<String> pool = configAdjuster.apply(builder);
 
 			StepVerifier.withVirtualTime(
@@ -1270,7 +1270,7 @@ public class CommonPoolTest {
 	void pendingTimeoutImpactedByLongRelease(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.just("instant"))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		PooledRef<String> uniqueRef = pool.acquire().block();
@@ -1292,7 +1292,7 @@ public class CommonPoolTest {
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
 				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 		PooledRef<AtomicInteger> uniqueRef = pool.acquire().block();
@@ -1320,7 +1320,7 @@ public class CommonPoolTest {
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
 				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
@@ -1348,7 +1348,7 @@ public class CommonPoolTest {
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
 				.destroyHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
@@ -1394,7 +1394,7 @@ public class CommonPoolTest {
 						return Mono.error(new IllegalStateException("boom"));
 					}
 				}))
-				.sizeMin(10)
+				.sizeBetween(10, Integer.MAX_VALUE)
 				.metricsRecorder(recorder)
 				.clock(recorder);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
@@ -1470,7 +1470,7 @@ public class CommonPoolTest {
 						return Mono.delay(Duration.ofMillis(200)).then(Mono.error(new IllegalStateException("boom")));
 					}
 				}))
-				.sizeMin(10)
+				.sizeBetween(10, Integer.MAX_VALUE)
 				.metricsRecorder(recorder)
 				.clock(recorder);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
@@ -1631,7 +1631,7 @@ public class CommonPoolTest {
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<Integer, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
-				.sizeMax(2)
+				.sizeBetween(0, 2)
 				.evictionPredicate((poolable, metadata) -> metadata.acquireCount() >= 2)
 				.destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
 				.metricsRecorder(recorder)
@@ -1746,7 +1746,7 @@ public class CommonPoolTest {
 		PoolBuilder<Integer, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.releaseHandler(i -> Mono.fromRunnable(didReset::incrementAndGet))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		Pool<Integer> pool = configAdjuster.apply(builder);
 
 		PooledRef<Integer> uniqueElement = Objects.requireNonNull(pool.acquire().block());
@@ -1786,7 +1786,7 @@ public class CommonPoolTest {
 	@Tag("metrics")
 	void instrumentAllocatedIdleAcquired(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
 		PoolMetrics poolMetrics = pool.metrics();
 
@@ -1811,7 +1811,7 @@ public class CommonPoolTest {
 	void instrumentAllocatedIdleAcquired_1(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
 			throws Exception {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
 		PoolMetrics poolMetrics = pool.metrics();
 
@@ -1860,7 +1860,7 @@ public class CommonPoolTest {
 	@Tag("metrics")
 	void instrumentPendingAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
-				.sizeMax(1);
+				.sizeBetween(0, 1);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
 		PoolMetrics poolMetrics = pool.metrics();
 
@@ -1907,7 +1907,7 @@ public class CommonPoolTest {
 	@Tag("metrics")
 	void getConfigMaxSize(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
-		                                          .sizeMax(22);
+		                                          .sizeBetween(0, 22);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
 		PoolMetrics poolMetrics = pool.metrics();
 

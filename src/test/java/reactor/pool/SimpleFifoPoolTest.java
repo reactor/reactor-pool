@@ -62,7 +62,7 @@ class SimpleFifoPoolTest {
     static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
                 .sizeBetween(minSize, maxSize)
-                .sizeMax(maxSize)
+                .sizeBetween(0, maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
                 .acquisitionScheduler(deliveryScheduler)
@@ -89,7 +89,7 @@ class SimpleFifoPoolTest {
 
         SimpleFifoPool<String> pool = new SimpleFifoPool<>(
                 from(Mono.just("Hello Reactive World"))
-                        .sizeMax(1)
+                        .sizeBetween(0, 1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
                         .buildConfig());
 

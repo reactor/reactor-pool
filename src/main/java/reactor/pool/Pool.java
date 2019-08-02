@@ -40,7 +40,7 @@ public interface Pool<POOLABLE> extends Disposable {
      * Implementations MAY include more behavior, but there is no restriction on the way this method is called by users
      * (it should be possible to call it at any time, as many times as needed or not at all).
      *
-     * @apiNote this API is intended to easily reach the minimum allocated size (see {@link PoolBuilder#sizeMin(int)})
+     * @apiNote this API is intended to easily reach the minimum allocated size (see {@link PoolBuilder#sizeBetween(int, int)})
      * without paying that cost on the first {@link #acquire()}. However, implementors should also consider creating
      * the extra resources needed to honor that minimum during the acquire, as one cannot rely on the user calling
      * warmup() consistently.

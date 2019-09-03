@@ -46,7 +46,7 @@ ext {
   gradleVersion = '4.10'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-  reactorVersion = "3.3.0.M3"
+  reactorVersion = "3.3.0.RC1"
   hdrHistogramVersion = "2.1.11"
 
   // Languages

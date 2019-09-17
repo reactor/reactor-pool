@@ -171,8 +171,6 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     }
 
     private void drainLoop() {
-        int missed = 1;
-
         for (;;) {
             int availableCount = elements.size();
             int pendingCount = PENDING_COUNT.get(this);
@@ -244,8 +242,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 poolConfig.acquisitionScheduler().schedule(() -> inner.deliver(slot));
             }
 
-            missed = WIP.addAndGet(this, -missed);
-            if (missed == 0) {
+            if (WIP.addAndGet(this, -1) == 0) {
                 break;
             }
         }

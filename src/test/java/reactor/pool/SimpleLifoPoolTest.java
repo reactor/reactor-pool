@@ -20,18 +20,25 @@ import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.assertj.core.data.Offset;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.reactivestreams.Subscription;
 
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -49,6 +56,23 @@ import static reactor.pool.PoolBuilder.from;
  * @author Simon Baslé
  */
 class SimpleLifoPoolTest {
+
+    private Disposable.Composite disposeList;
+
+    @BeforeEach
+    void initComposite() {
+        disposeList = Disposables.composite();
+    }
+
+    @AfterEach
+    void cleanup() {
+        disposeList.dispose();
+    }
+
+    <T extends Disposable> T autoDispose(T toDispose) {
+        disposeList.add(toDispose);
+        return toDispose;
+    }
 
     //FIXME extract lifo-specific tests into CommonPoolTest
 
@@ -747,5 +771,31 @@ class SimpleLifoPoolTest {
         acquired3.release().block();
 
         assertThat(pool.acquired).as("after releases").isEqualTo(0);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"4, 1", "4, 100000", "10, 1", "10, 100000"})
+        //see https://github.com/reactor/reactor-pool/issues/65
+    void concurrentAcquireCorrectlyAccountsAll(int parallelism, int loops) throws InterruptedException {
+        final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(parallelism);
+        autoDispose(executorService::shutdownNow);
+
+        for (int l = 0; l < loops; l++) {
+            PoolConfig<String> config = PoolBuilder.from(Mono.just("foo"))
+                                                   .sizeBetween(0, 100)
+                                                   .buildConfig();
+            SimpleFifoPool<String> fifoPool = autoDispose(new SimpleFifoPool<>(config));
+            CountDownLatch latch = new CountDownLatch(parallelism);
+
+            for (int i = 0; i < parallelism; i++) {
+                executorService.submit(() -> {
+                    fifoPool.acquire()
+                            .block();
+                    latch.countDown();
+                });
+            }
+            boolean awaited = latch.await(1, TimeUnit.SECONDS);
+            assertThat(awaited).as("all concurrent acquire served in loop #" + l).isTrue();
+        }
     }
 }

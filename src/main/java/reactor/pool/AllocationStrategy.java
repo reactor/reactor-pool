@@ -61,7 +61,7 @@ public interface AllocationStrategy {
     int permitMinimum();
 
     /**
-     * @return the maximum number of permits this strategy can grant in total, or {@link Integer#MAX_VALUE} for unbounded.
+     * @return the maximum number of permits this strategy can grant in total, or {@link Integer#MAX_VALUE} for unbounded
      */
     int permitMaximum();
 

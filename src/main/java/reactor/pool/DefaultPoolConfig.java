@@ -67,7 +67,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	 * Copy constructor for the benefit of specializations of {@link PoolConfig}.
 	 *
 	 * @param toCopy the original {@link PoolConfig} to copy (only standard {@link PoolConfig}
-	 * options are copied).
+	 * options are copied)
 	 */
 	protected DefaultPoolConfig(PoolConfig<POOLABLE> toCopy) {
 		if (toCopy instanceof DefaultPoolConfig) {

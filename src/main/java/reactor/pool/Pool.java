@@ -117,9 +117,9 @@ public interface Pool<POOLABLE> extends Disposable {
      * acquisition entirely or will translate to a {@link PooledRef#release() release} of the {@code POOLABLE}.
      *
      * @param scopeFunction the {@link Function} to apply to the {@link Mono} delivering the POOLABLE to instantiate and
-     *                      trigger a processing pipeline around it.
+     *                      trigger a processing pipeline around it
      * @return a {@link Flux}, each subscription to which represents an individual act of acquiring a pooled object,
-     * processing it as declared in {@code scopeFunction} and automatically releasing it.
+     * processing it as declared in {@code scopeFunction} and automatically releasing it
      * @see #acquire()
      */
     default <V> Flux<V> withPoolable(Function<POOLABLE, Publisher<V>> scopeFunction) {

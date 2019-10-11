@@ -70,7 +70,7 @@ public interface PooledRef<POOLABLE> {
      * are NO-OP).
      *
      * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
-     * is always discarded.
+     * is always discarded
      */
     Mono<Void> release();
 

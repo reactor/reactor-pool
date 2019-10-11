@@ -82,7 +82,7 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 * <p>
 		 * A {@link Pool} might be unbounded, in which case this method returns {@link Integer#MAX_VALUE}.
 		 *
-		 * @return the maximum number of live resources that can be allocated by this {@link Pool}.
+		 * @return the maximum number of live resources that can be allocated by this {@link Pool}
 		 */
 		int getMaxAllocatedSize();
 
@@ -94,7 +94,7 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 * A {@link Pool} pending queue might be unbounded, in which case this method returns
 		 * {@link Integer#MAX_VALUE}.
 		 *
-		 * @return the maximum number of pending acquire that can be enqueued by this {@link Pool}.
+		 * @return the maximum number of pending acquire that can be enqueued by this {@link Pool}
 		 */
 		int getMaxPendingAcquireSize();
 	}

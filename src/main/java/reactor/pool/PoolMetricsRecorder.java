@@ -56,14 +56,14 @@ public interface PoolMetricsRecorder {
 	void recordRecycled();
 
 	/**
-	 * Record the number of milliseconds a pooled object has been live (ie. time between allocation and destruction).
-	 * @param millisecondsSinceAllocation the number of milliseconds since the object was allocated, at the time is is destroyed
+	 * Record the number of milliseconds a pooled object has been live (ie time between allocation and destruction).
+	 * @param millisecondsSinceAllocation the number of milliseconds since the object was allocated, at the time it is destroyed
 	 */
 	void recordLifetimeDuration(long millisecondsSinceAllocation);
 
 	/**
 	 * Record the number of milliseconds an object had been idle when it gets pulled from the pool and passed to a borrower.
-	 * @param millisecondsIdle the number of milliseconds an object that was just acquired had previously been idle.
+	 * @param millisecondsIdle the number of milliseconds an object that was just acquired had previously been idle
 	 */
 	void recordIdleTime(long millisecondsIdle);
 

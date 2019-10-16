@@ -169,7 +169,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * Defaults to never evicting (a {@link BiPredicate} that always returns false).
      *
      * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should
-     * be destroyed, {@code false} if it should be put back into the pool.
+     * be destroyed, {@code false} if it should be put back into the pool
      * @return this {@link Pool} builder
      * @see #evictionIdle(Duration)
      */
@@ -202,7 +202,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * <p>
      * This is the default.
      *
-     * @return a builder of {@link Pool} with no maximum pending queue size.
+     * @return a builder of {@link Pool} with no maximum pending queue size
      */
     public PoolBuilder<T, CONF> maxPendingAcquireUnbounded() {
         this.maxPending = -1;
@@ -304,7 +304,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * {@link Pool#acquire()} {@link Mono Mono} that was pending is served first
      * whenever a resource becomes available.
      *
-     * @return a builder of {@link Pool} with LIFO pending acquire ordering.
+     * @return a builder of {@link Pool} with LIFO pending acquire ordering
      */
     public InstrumentedPool<T> lifo() {
         return build(SimpleLifoPool::new);
@@ -315,7 +315,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * {@link Pool#acquire()} {@link Mono Mono}, serving the oldest pending acquire first
      * whenever a resource becomes available.
      *
-     * @return a builder of {@link Pool} with FIFO pending acquire ordering.
+     * @return a builder of {@link Pool} with FIFO pending acquire ordering
      */
     public InstrumentedPool<T> fifo() {
         return build(SimpleFifoPool::new);

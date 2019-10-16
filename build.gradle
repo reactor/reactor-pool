@@ -43,7 +43,6 @@ ext {
     }
   }
 
-  gradleVersion = '4.10'
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
   reactorVersion = "3.3.1.BUILD-SNAPSHOT"

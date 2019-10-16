@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-wrapper {
-	gradleVersion = "$gradleVersion"
-}
-
 configure(rootProject) { subproject ->
 	apply from: "$gradleScriptDir/doc.gradle"
 	apply plugin: 'propdeps-maven'

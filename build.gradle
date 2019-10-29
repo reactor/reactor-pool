@@ -189,6 +189,12 @@ configure(rootProject) { project ->
     testCompile "org.junit.jupiter:junit-jupiter-params:$junit5Version"
     testRuntime "org.junit.jupiter:junit-jupiter-engine:$junit5Version"
   }
+  
+  task groupId {
+    doLast {
+      println project.group
+    }
+  }
 
   jar {
     manifest {

@@ -167,7 +167,7 @@ configure(rootProject) { project ->
   }
 
   dependencies {
-    compile "io.projectreactor:reactor-core:$reactorVersion"
+    compile "io.projectreactor:reactor-core:$reactorCoreVersion"
 
     // JSR-305 annotations
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"
@@ -179,7 +179,7 @@ configure(rootProject) { project ->
     testCompile "org.assertj:assertj-core:$assertJVersion"
     testCompile "org.awaitility:awaitility:$awaitilityVersion"
     testCompile "org.hdrhistogram:HdrHistogram:$hdrHistogramVersion"
-    testCompile "io.projectreactor:reactor-test:$reactorVersion"
+    testCompile "io.projectreactor:reactor-test:$reactorCoreVersion"
     testRuntime "org.slf4j:jcl-over-slf4j:$slf4jVersion"
     testRuntime "ch.qos.logback:logback-classic:$logbackVersion"
 

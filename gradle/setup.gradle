@@ -38,20 +38,30 @@ ext {
 		return 'snapshot'
 	}
 
-	repoUrl = isReleaseToCentral ?
-			"https://oss.sonatype.org/service/local/staging/deploy/maven2/" :
-			"https://repo.spring.io/${resolveRepoName(project)}"
-	logger.lifecycle("Resolved url is [${repoUrl}]")
+	repoUrl = "https://repo.spring.io/${resolveRepoName(project)}"
 }
 
 publishing {
 
 	repositories {
 		maven {
+			logger.lifecycle("Resolved publication url is [${repoUrl}]")
 			url repoUrl
 			credentials {
 				username getProp('REPO_USERNAME') ?: 'admin'
 				password getProp('REPO_PASSWORD') ?: 'password'
+			}
+		}
+
+		if (isReleaseToCentral) {
+			maven {
+				String sonatypeUrl = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+				logger.lifecycle("Resolved publication url is [${sonatypeUrl}]")
+				url sonatypeUrl
+				credentials {
+					username getProp('REPO_USERNAME') ?: 'admin'
+					password getProp('REPO_PASSWORD') ?: 'password'
+				}
 			}
 		}
 	}

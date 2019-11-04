@@ -14,87 +14,127 @@
  * limitations under the License.
  */
 
-configure(rootProject) { subproject ->
-	apply from: "$gradleScriptDir/doc.gradle"
-	apply plugin: 'propdeps-maven'
-	apply plugin: 'maven'
 
-	install {
-		repositories.mavenInstaller {
-			customizePom(pom, subproject)
+ext {
+	resolveRepoName = { Project project ->
+		resolvedRepoName = "libs-${resolveVersion(project.version)}-local"
+		logger.lifecycle("For project [$project.name] with " +
+				"version [$project.version] the resolved Artifactory repo is [$resolvedRepoName]")
+		return resolvedRepoName
+	}
+
+	isReleaseVersion = version.endsWith("RELEASE")
+	isMilestoneVersion = version.matches('[0-9].[0-9].[0-9].M[0-9]+') || version.matches('[0-9].[0-9].[0-9].RC[0-9]+')
+	isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
+	isReleaseToCentral = project.hasProperty('central')
+
+	resolveVersion = { String version ->
+		if (isMilestoneVersion) {
+			return 'milestone'
+		}
+		if (isReleaseVersion) {
+			return 'release'
+		}
+		return 'snapshot'
+	}
+
+	repoUrl = isReleaseToCentral ?
+			"https://oss.sonatype.org/service/local/staging/deploy/maven2/" :
+			"https://repo.spring.io/${resolveRepoName(project)}"
+	logger.lifecycle("Resolved url is [${repoUrl}]")
+}
+
+publishing {
+
+	repositories {
+		maven {
+			url repoUrl
+			credentials {
+				username getProp('REPO_USERNAME') ?: 'admin'
+				password getProp('REPO_PASSWORD') ?: 'password'
+			}
 		}
 	}
 
-	task sourcesJar(type: Jar) {
-		classifier = 'sources'
-		from sourceSets.main.allSource
-	}
-
-	task javadocJar(type: Jar) {
-		classifier = 'javadoc'
-		from javadoc
-	}
-
-	artifacts {
-		archives sourcesJar
-		archives javadocJar
+	publications {
+		mavenJava(MavenPublication) {
+			artifactId = 'reactor-pool'
+			from components.java
+			pom {
+				afterEvaluate {
+					name = project.description
+					description = project.description
+				}
+				url = 'https://projectreactor.io'
+				organization {
+					name = 'Pivotal Software, Inc.'
+					url = 'https://pivotal.io/'
+				}
+				licenses {
+					license {
+						name = 'The Apache Software License, Version 2.0'
+						url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+						distribution = 'repo'
+					}
+				}
+				scm {
+					url = 'https://github.com/reactor/reactor-pool'
+					connection = 'scm:git:git://github.com/reactor/reactor-pool'
+					developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
+				}
+				issueManagement {
+					system = "GitHub Issues"
+					url = "https://github.com/reactor/reactor-pool"
+				}
+				developers {
+					developer {
+						id = 'smaldini'
+						name = 'Stephane Maldini'
+						email = 'smaldini at pivotal.io'
+					}
+					developer {
+						id = 'simonbasle'
+						name = 'Simon Baslé'
+						email = 'sbasle at pivotal.io'
+					}
+					developer {
+						id = 'violetagg'
+						name = 'Violeta Georgieva'
+						email = 'vgeorgieva at pivotal.io'
+					}
+					developer {
+						id = 'bsideup'
+						name = 'Sergei Egorov'
+						email = 'segorov at pivotal.io'
+					}
+					developer {
+						id = 'akarnokd'
+						name = 'David Karnok'
+						email = 'akarnokd at gmail.com'
+					}
+				}
+				// remove scope information from published BOM
+				// to be removed after Gradle 6.0 upgrade, see https://github.com/gradle/gradle/issues/10878
+				withXml {
+					asNode().dependencyManagement.first().dependencies.first().each {
+						it.remove(it.scope.first())
+					}
+				}
+			}
+			versionMapping {
+				usage('java-api') {
+					fromResolutionResult()
+				}
+				usage('java-runtime') {
+					fromResolutionResult()
+				}
+			}
+		}
 	}
 }
 
-def customizePom(pom, gradleProject) {
-	pom.whenConfigured { generatedPom ->
-		// eliminate test-scoped dependencies (no need in maven central poms)
-		generatedPom.dependencies.removeAll { dep ->
-			dep.scope == "test"
-		}
-
-		// sort to make pom dependencies order consistent to ease comparison of older poms
-		generatedPom.dependencies = generatedPom.dependencies.sort { dep ->
-			"$dep.scope:$dep.groupId:$dep.artifactId"
-		}
-
-		// add all items necessary for maven central publication
-		generatedPom.project {
-			name = gradleProject.description
-			description = gradleProject.description
-			url = 'https://github.com/reactor/reactor-pool'
-			organization {
-				name = 'reactor'
-				url = 'https://github.com/reactor'
-			}
-			licenses {
-				license {
-					name 'The Apache Software License, Version 2.0'
-					url 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-					distribution 'repo'
-				}
-			}
-			scm {
-				url = 'https://github.com/reactor/reactor-pool'
-				connection = 'scm:git:git://github.com/reactor/reactor-pool'
-				developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
-			}
-			developers {
-				developer {
-					id = 'smaldini'
-					name = 'Stephane Maldini'
-					email = 'smaldini@pivotal.io'
-				}
-				developer {
-					id = 'simonbasle'
-					name = 'Simon Baslé'
-					email = 'sbasle@pivotal.io'
-				}
-				developer {
-					id = 'violetagg'
-					name = 'Violeta Georgieva'
-					email = 'vgeorgieva@pivotal.io'
-				}
-			}
-			issueManagement {
-				system = "GitHub Issues"
-				url = "https://github.com/reactor/reactor-pool/issues"
-			}
-		}
-	}
+String getProp(String propName) {
+	return hasProperty(propName) ?
+			(getProperty(propName) ?: System.properties[propName]) : System.properties[propName] ?:
+			System.getenv(propName)
 }

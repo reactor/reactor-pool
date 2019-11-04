@@ -28,7 +28,6 @@ buildscript {
 plugins {
   id "com.github.hierynomus.license" version "0.14.0"
   id "io.spring.dependency-management" version "1.0.6.RELEASE"
-	id "maven-publish"
 }
 
 description = 'Reactive Object Pool'

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+apply plugin: "maven-publish"
 
 ext {
 	resolveRepoName = { Project project ->
@@ -41,6 +42,10 @@ ext {
 	repoUrl = "https://repo.spring.io/${resolveRepoName(project)}"
 }
 
+if (isReleaseToCentral && isReleaseVersion) {
+	apply plugin: "signing"
+}
+
 publishing {
 
 	repositories {
@@ -53,7 +58,7 @@ publishing {
 			}
 		}
 
-		if (isReleaseToCentral) {
+		if (isReleaseToCentral && isReleaseVersion) {
 			maven {
 				String sonatypeUrl = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
 				logger.lifecycle("Resolved publication url is [${sonatypeUrl}]")

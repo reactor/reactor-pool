@@ -57,6 +57,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     final Clock clock;
 
     volatile     int                                     pendingCount;
+    @SuppressWarnings("rawtypes")
     static final AtomicIntegerFieldUpdater<AbstractPool> PENDING_COUNT = AtomicIntegerFieldUpdater.newUpdater(AbstractPool.class, "pendingCount");
 
     AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
@@ -168,6 +169,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         long timeSinceRelease;
 
         volatile int state;
+        @SuppressWarnings("rawtypes")
         static final AtomicIntegerFieldUpdater<AbstractPooledRef> STATE = AtomicIntegerFieldUpdater.newUpdater(AbstractPooledRef.class, "state");
 
         /**
@@ -351,6 +353,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
         @Override
         @Nullable
+        @SuppressWarnings("rawtypes")
         public Object scanUnsafe(Attr key) {
             if (key == Attr.CANCELLED) return get();
             if (key == Attr.REQUESTED_FROM_DOWNSTREAM) return 1;

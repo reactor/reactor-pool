@@ -45,6 +45,7 @@ class AllocationStrategiesTest {
     private static final Logger LOG = Loggers.getLogger(AllocationStrategies.class);
 
     @DisplayName("allocatingSize")
+    @SuppressWarnings("ClassCanBeStatic")
     @Nested
     class AllocatingSizeTest {
 
@@ -214,6 +215,7 @@ class AllocationStrategiesTest {
             assertThat(test.getPermits(5)).isEqualTo(5);
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @ParameterizedTest(name = "{0} workers")
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
@@ -239,6 +241,7 @@ class AllocationStrategiesTest {
             assertThat(test.estimatePermitCount()).as("end permit count").isEqualTo(10);
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @ParameterizedTest(name = "{0} workers")
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
@@ -270,6 +273,7 @@ class AllocationStrategiesTest {
             assertThat(test.estimatePermitCount()).as("end permit count").isEqualTo(10);
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @ParameterizedTest(name = "{0} workers")
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")
@@ -316,6 +320,7 @@ class AllocationStrategiesTest {
             assertThat(test.estimatePermitCount()).as("end permit count").isEqualTo(10);
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @ParameterizedTest(name = "{0} workers")
         @ValueSource(ints = {5, 10, 20})
         @Tag("race")

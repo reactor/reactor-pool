@@ -54,10 +54,12 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
     final Queue<QueuePooledRef<POOLABLE>> elements;
 
     volatile int                                               acquired;
+    @SuppressWarnings("rawtypes")
     private static final AtomicIntegerFieldUpdater<SimplePool> ACQUIRED = AtomicIntegerFieldUpdater.newUpdater(
             SimplePool.class, "acquired");
 
     volatile int                                               wip;
+    @SuppressWarnings("rawtypes")
     private static final AtomicIntegerFieldUpdater<SimplePool> WIP = AtomicIntegerFieldUpdater.newUpdater(
             SimplePool.class, "wip");
 
@@ -72,7 +74,8 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (poolConfig.allocationStrategy().permitMinimum() > 0) {
             return Mono.defer(() -> {
                 int initSize = poolConfig.allocationStrategy().getPermits(0);
-                @SuppressWarnings("unchecked") Mono<POOLABLE>[] allWarmups = new Mono[initSize];
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                Mono<POOLABLE>[] allWarmups = new Mono[initSize];
                 for (int i = 0; i < initSize; i++) {
                     long start = clock.millis();
                     allWarmups[i] = poolConfig
@@ -334,6 +337,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         //once protects against multiple requests
         volatile int once;
+        @SuppressWarnings("rawtypes")
         static final AtomicIntegerFieldUpdater<QueuePoolRecyclerInner> ONCE = AtomicIntegerFieldUpdater.newUpdater(QueuePoolRecyclerInner.class, "once");
 
         QueuePoolRecyclerInner(CoreSubscriber<? super Void> actual, QueuePooledRef<T> pooledRef) {
@@ -417,6 +421,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 
         @Override
+        @SuppressWarnings("rawtypes")
         public Object scanUnsafe(Attr key) {
             if (key == Attr.ACTUAL) return actual;
             if (key == Attr.PARENT) return upstream;
@@ -452,6 +457,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
         @Override
         @Nullable
+        @SuppressWarnings("rawtypes")
         public Object scanUnsafe(Attr key) {
             if (key == Attr.PREFETCH) return Integer.MAX_VALUE;
             if (key == Attr.PARENT) return source;

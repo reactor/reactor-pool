@@ -123,12 +123,14 @@ public interface Pool<POOLABLE> extends Disposable {
      * @see #acquire()
      */
     default <V> Flux<V> withPoolable(Function<POOLABLE, Publisher<V>> scopeFunction) {
-        return Flux.usingWhen(acquire(),
+        return Flux.usingWhen(
+                acquire(),
                 slot -> { POOLABLE poolable = slot.poolable();
                 if (poolable == null) return Mono.empty();
                 return scopeFunction.apply(poolable);
                 },
                 PooledRef::release,
+                (ref, error) -> ref.release(),
                 PooledRef::release);
     }
 

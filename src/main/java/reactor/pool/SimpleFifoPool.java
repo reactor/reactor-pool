@@ -32,9 +32,11 @@ import reactor.util.concurrent.Queues;
  */
 final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
+    @SuppressWarnings("rawtypes")
     private static final Queue TERMINATED = Queues.empty().get();
 
     volatile Queue<Borrower<POOLABLE>>                                      pending;
+    @SuppressWarnings("rawtypes")
     private static final AtomicReferenceFieldUpdater<SimpleFifoPool, Queue> PENDING = AtomicReferenceFieldUpdater.newUpdater(
             SimpleFifoPool.class, Queue.class, "pending");
 

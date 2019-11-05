@@ -164,6 +164,7 @@ class SimpleFifoPoolTest {
 
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
             final ExecutorService executorService = Executors.newFixedThreadPool(2);
@@ -559,6 +560,7 @@ class SimpleFifoPoolTest {
 
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
@@ -925,6 +927,7 @@ class SimpleFifoPoolTest {
         assertThat(pool.acquired).as("after releases").isEqualTo(0);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @ParameterizedTest
     @CsvSource({"4, 1", "4, 100000", "10, 1", "10, 100000"})
     //see https://github.com/reactor/reactor-pool/issues/65

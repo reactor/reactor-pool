@@ -34,9 +34,11 @@ import reactor.core.publisher.Mono;
  */
 final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
 
+    @SuppressWarnings("rawtypes")
     private static final ConcurrentLinkedDeque TERMINATED = new ConcurrentLinkedDeque();
 
     volatile ConcurrentLinkedDeque<Borrower<POOLABLE>>                                      pending;
+    @SuppressWarnings("rawtypes")
     private static final AtomicReferenceFieldUpdater<SimpleLifoPool, ConcurrentLinkedDeque> PENDING = AtomicReferenceFieldUpdater.newUpdater(
             SimpleLifoPool.class, ConcurrentLinkedDeque.class, "pending");
 

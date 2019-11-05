@@ -14,86 +14,109 @@
  * limitations under the License.
  */
 
-configure(rootProject) { subproject ->
-	apply from: "$gradleScriptDir/doc.gradle"
-	apply plugin: 'propdeps-maven'
-	apply plugin: 'maven'
+configure(rootProject) { project ->
+	apply plugin: "maven-publish"
+	apply plugin: "com.jfrog.artifactory"
 
-	install {
-		repositories.mavenInstaller {
-			customizePom(pom, subproject)
+	ext {
+		isReleaseVersion = version.endsWith("RELEASE")
+			isMilestoneVersion = version.matches('[0-9].[0-9].[0-9].M[0-9]+') || version.matches('[0-9].[0-9].[0-9].RC[0-9]+')
+		isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
+
+		resolveVersion = { String version ->
+			if (isMilestoneVersion) {
+			return 'milestone'
+			}
+			if (isReleaseVersion) {
+			return 'release'
+			}
+			return 'snapshot'
 		}
+		artifactoryRepo = "libs-${resolveVersion(project.version)}-local"
+		logger.lifecycle("For project [$project.name] with version [$project.version] the resolved Artifactory repo is [$artifactoryRepo]")
 	}
 
+  	//the sourcesJar and javadocJar tasks must be defined before publications in order to be publishable
 	task sourcesJar(type: Jar) {
-		classifier = 'sources'
+		archiveClassifier.set('sources')
 		from sourceSets.main.allSource
 	}
 
 	task javadocJar(type: Jar) {
-		classifier = 'javadoc'
+		archiveClassifier.set('javadoc')
 		from javadoc
 	}
 
-	artifacts {
-		archives sourcesJar
-		archives javadocJar
+	publishing {
+		publications {
+			mavenJava(MavenPublication) {
+				from components.java
+				artifact sourcesJar
+				artifact javadocJar
+
+				pom {
+					afterEvaluate {
+						name = 'Reactor Pool'
+						description = project.description
+					}
+					url = 'https://github.com/reactor/reactor-pool'
+						organization {
+						name = 'reactor'
+						url = 'https://github.com/reactor'
+					}
+					licenses {
+						license {
+							name = 'The Apache Software License, Version 2.0'
+							url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+							distribution = 'repo'
+						}
+					}
+					scm {
+						url = 'https://github.com/reactor/reactor-pool'
+						connection = 'scm:git:git://github.com/reactor/reactor-pool'
+						developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
+					}
+					developers {
+						developer {
+							id = 'smaldini'
+							name = 'Stephane Maldini'
+							email = 'smaldini@pivotal.io'
+						}
+						developer {
+							id = 'simonbasle'
+							name = 'Simon Baslé'
+							email = 'sbasle@pivotal.io'
+						}
+						developer {
+							id = 'violetagg'
+							name = 'Violeta Georgieva'
+							email = 'vgeorgieva@pivotal.io'
+						}
+					}
+					issueManagement {
+						system = "GitHub Issues"
+						url = "https://github.com/reactor/reactor-pool/issues"
+					}
+				}
+			}
+		}
 	}
-}
 
-def customizePom(pom, gradleProject) {
-	pom.whenConfigured { generatedPom ->
-		// eliminate test-scoped dependencies (no need in maven central poms)
-		generatedPom.dependencies.removeAll { dep ->
-			dep.scope == "test"
-		}
+	artifactory {
+		publish {
+			contextUrl = 'https://repo.spring.io'
+			repository {
+				repoKey = "${artifactoryRepo}"
 
-		// sort to make pom dependencies order consistent to ease comparison of older poms
-		generatedPom.dependencies = generatedPom.dependencies.sort { dep ->
-			"$dep.scope:$dep.groupId:$dep.artifactId"
-		}
-
-		// add all items necessary for maven central publication
-		generatedPom.project {
-			name = gradleProject.description
-			description = gradleProject.description
-			url = 'https://github.com/reactor/reactor-pool'
-			organization {
-				name = 'reactor'
-				url = 'https://github.com/reactor'
-			}
-			licenses {
-				license {
-					name 'The Apache Software License, Version 2.0'
-					url 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-					distribution 'repo'
+				//it might be that Artifactory Bamboo plugin passes credentials differently, so assume defaults if -P is not used
+				if (project.findProperty("artifactoryUsername") != null && project.findProperty("artifactoryPassword") != null) {
+					logger.lifecycle("Artifactory credentials passed via project properties")
+					username = "${artifactoryUsername}"
+					password = "${artifactoryPassword}"
 				}
 			}
-			scm {
-				url = 'https://github.com/reactor/reactor-pool'
-				connection = 'scm:git:git://github.com/reactor/reactor-pool'
-				developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
-			}
-			developers {
-				developer {
-					id = 'smaldini'
-					name = 'Stephane Maldini'
-					email = 'smaldini@pivotal.io'
-				}
-				developer {
-					id = 'simonbasle'
-					name = 'Simon Baslé'
-					email = 'sbasle@pivotal.io'
-				}
-				developer {
-					id = 'violetagg'
-					name = 'Violeta Georgieva'
-					email = 'vgeorgieva@pivotal.io'
-				}
-			}
-			issueManagement {
-				system = "GitHub Issues"
-				url = "https://github.com/reactor/reactor-pool/issues"
+			defaults {
+				publications(publishing.publications.mavenJava)
 			}
 		}
 	}

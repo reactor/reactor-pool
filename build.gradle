@@ -130,10 +130,6 @@ configure(rootProject) { project ->
   [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
   sourceSets.test.resources.srcDirs = ["src/test/resources", "src/test/java"]
 
-  configurations.all {
-    exclude group: 'commons-logging', module: 'commons-logging'
-  }
-
   project.tasks.withType(Test).all {
     systemProperty("java.awt.headless", "true")
     systemProperty("testGroups", project.properties.get("testGroups"))
@@ -171,9 +167,6 @@ configure(rootProject) { project ->
 
     // JSR-305 annotations
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"
-
-    // Logging
-    optional "org.slf4j:slf4j-api:$slf4jVersion"
 
     // Testing
     testCompile "org.assertj:assertj-core:$assertJVersion"

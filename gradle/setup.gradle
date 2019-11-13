@@ -20,7 +20,7 @@ configure(rootProject) { project ->
 
 	ext {
 		isReleaseVersion = version.endsWith("RELEASE")
-			isMilestoneVersion = version.matches('[0-9].[0-9].[0-9].M[0-9]+') || version.matches('[0-9].[0-9].[0-9].RC[0-9]+')
+		isMilestoneVersion = version.matches('[0-9].[0-9].[0-9].M[0-9]+') || version.matches('[0-9].[0-9].[0-9].RC[0-9]+')
 		isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
 
 		resolveVersion = { String version ->
@@ -60,7 +60,7 @@ configure(rootProject) { project ->
 						description = project.description
 					}
 					url = 'https://github.com/reactor/reactor-pool'
-						organization {
+					organization {
 						name = 'reactor'
 						url = 'https://github.com/reactor'
 					}

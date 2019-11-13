@@ -20,8 +20,7 @@ buildscript {
     maven { url "https://repo.spring.io/plugins-release" }
   }
   dependencies {
-    classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7',
-            'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
+    classpath 'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
   }
 }
 
@@ -77,7 +76,6 @@ configure(rootProject) { project ->
   apply plugin: 'jacoco'
   apply from: "$gradleScriptDir/doc.gradle"
   apply from: "$gradleScriptDir/setup.gradle"
-  apply plugin: 'propdeps'
   apply plugin: 'osgi'
   apply from: "${gradleScriptDir}/errorprone.gradle"
 

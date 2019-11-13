@@ -32,8 +32,6 @@ configure(rootProject) { project ->
 			}
 			return 'snapshot'
 		}
-		artifactoryRepo = "libs-${resolveVersion(project.version)}-local"
-		logger.lifecycle("For project [$project.name] with version [$project.version] the resolved Artifactory repo is [$artifactoryRepo]")
 	}
 
   	//the sourcesJar and javadocJar tasks must be defined before publications in order to be publishable
@@ -102,22 +100,7 @@ configure(rootProject) { project ->
 		}
 	}
 
-	artifactory {
-		publish {
-			contextUrl = 'https://repo.spring.io'
-			repository {
-				repoKey = "${artifactoryRepo}"
-
-				//it might be that Artifactory Bamboo plugin passes credentials differently, so assume defaults if -P is not used
-				if (project.findProperty("artifactoryUsername") != null && project.findProperty("artifactoryPassword") != null) {
-					logger.lifecycle("Artifactory credentials passed via project properties")
-					username = "${artifactoryUsername}"
-					password = "${artifactoryPassword}"
-				}
-			}
-			defaults {
-				publications(publishing.publications.mavenJava)
-			}
-		}
+	artifactoryPublish {
+		publications(publishing.publications.mavenJava)
 	}
 }

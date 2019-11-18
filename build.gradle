@@ -78,6 +78,7 @@ configure(rootProject) { project ->
   apply from: "$gradleScriptDir/setup.gradle"
   apply plugin: 'osgi'
   apply from: "${gradleScriptDir}/errorprone.gradle"
+  apply from: "${gradleScriptDir}/releaser.gradle"
 
   jacocoTestReport {
     reports {
@@ -151,7 +152,7 @@ configure(rootProject) { project ->
   }
 
   repositories {
-    if (version.endsWith('BUILD-SNAPSHOT') || project.hasProperty('platformVersion')) {
+    if (version.endsWith('BUILD-SNAPSHOT')) {
       maven { url 'https://repo.spring.io/libs-snapshot' }
     }
     maven { url 'https://repo.spring.io/libs-milestone' }
@@ -180,12 +181,6 @@ configure(rootProject) { project ->
     testCompile "org.junit.jupiter:junit-jupiter-api:$junit5Version"
     testCompile "org.junit.jupiter:junit-jupiter-params:$junit5Version"
     testRuntime "org.junit.jupiter:junit-jupiter-engine:$junit5Version"
-  }
-  
-  task groupId {
-    doLast {
-      println project.group
-    }
   }
 
   jar {

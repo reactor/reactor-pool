@@ -101,6 +101,7 @@ configure(rootProject) { project ->
 	}
 
 	artifactoryPublish {
+		onlyIf { project.hasProperty("artifactory_publish_password") }
 		publications(publishing.publications.mavenJava)
 	}
 }

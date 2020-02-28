@@ -228,7 +228,6 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                 QueuePooledRef<POOLABLE> slot = elements.poll();
                 if (slot == null) continue;
 
-                //TODO test the idle eviction scenario
                 if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
                     destroyPoolable(slot).subscribe(null, e -> drain(), this::drain);
                     continue;

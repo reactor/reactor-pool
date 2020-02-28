@@ -961,7 +961,10 @@ public class CommonPoolTest {
 		pool.elementOffer(pt1);
 		pool.elementOffer(pt2);
 		pool.elementOffer(pt3);
+		//important: acquire the permits to simulate the proper creation of resources
+		assertThat(pool.poolConfig.allocationStrategy().getPermits(3)).as("permits granted").isEqualTo(3);
 
+		//this releases the permits acquired above
 		pool.dispose();
 
 		assertThat(pool.idleSize()).as("idleSize").isZero();
@@ -969,6 +972,7 @@ public class CommonPoolTest {
 		assertThat(pt1.isDisposed()).as("pt1 disposed").isTrue();
 		assertThat(pt2.isDisposed()).as("pt2 disposed").isTrue();
 		assertThat(pt3.isDisposed()).as("pt3 disposed").isTrue();
+		assertThat(pool.poolConfig.allocationStrategy().estimatePermitCount()).as("permits available post dispose").isEqualTo(3);
 	}
 
 	@ParameterizedTest

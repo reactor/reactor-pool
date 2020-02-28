@@ -139,24 +139,24 @@ class AllocationStrategiesTest {
             assertThat(test.getPermits(-1)).isZero();
         }
 
-        //TODO should we be more strict in enforcing max here?
         @Test
-        void misuseReturnPermitCanGoOverMax() {
+        void misuseReturnPermitThrowsWhenGoingOverMax() {
             final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 1);
 
-            test.returnPermits(1);
+            assertThatIllegalArgumentException().isThrownBy(() -> test.returnPermits(1))
+                                             .withMessage("Too many permits returned: returned=1, would bring to 2/1");
 
-            assertThat(test.estimatePermitCount()).isEqualTo(2);
+            assertThat(test.estimatePermitCount()).isEqualTo(1);
         }
 
-        //TODO should we be more strict in enforcing max here?
         @Test
-        void misuseReturnPermitsCanGoOverMax() {
+        void misuseReturnPermitsThrowsWhenGoingOverMax() {
             final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 1);
 
-            test.returnPermits(100);
+            assertThatIllegalArgumentException().isThrownBy(() -> test.returnPermits(100))
+                                             .withMessage("Too many permits returned: returned=100, would bring to 101/1");
 
-            assertThat(test.estimatePermitCount()).isEqualTo(101);
+            assertThat(test.estimatePermitCount()).isEqualTo(1);
         }
 
         @Test

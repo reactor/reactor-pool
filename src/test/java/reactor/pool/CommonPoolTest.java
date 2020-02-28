@@ -26,6 +26,7 @@ import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +43,7 @@ import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -1930,7 +1932,6 @@ public class CommonPoolTest {
 		assertThat(poolMetrics.getMaxAllocatedSize()).isEqualTo(Integer.MAX_VALUE);
 	}
 
-
 	@ParameterizedTest
 	@MethodSource("allPools")
 	void invalidateRaceIdleState(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
@@ -1958,5 +1959,45 @@ public class CommonPoolTest {
 
 		assertThat(destroyCounter).hasValue(4000);
 	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void releaseOnAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger intSource = new AtomicInteger();
+		AtomicInteger releasedIndex = new AtomicInteger();
+		ConcurrentLinkedQueue<Integer> destroyed = new ConcurrentLinkedQueue<>();
+
+		PoolBuilder<Integer, PoolConfig<Integer>> builder =
+				PoolBuilder.from(Mono.fromCallable(intSource::incrementAndGet))
+				           .evictionPredicate((obj, meta) -> obj <= releasedIndex.get())
+				           .destroyHandler(i -> Mono.fromRunnable(() -> destroyed.offer(i)))
+				           .sizeBetween(0, 5)
+				           .maxPendingAcquire(100);
+
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+
+		//acquire THEN release four refs
+		List<PooledRef<Integer>> fourRefs = Arrays.asList(
+				pool.acquire().block(),
+				pool.acquire().block(),
+				pool.acquire().block(),
+				pool.acquire().block()
+		);
+		for (PooledRef<Integer> ref : fourRefs) {
+			ref.release().block();
+		}
+		//4 idle
+		assertThat(pool.metrics().idleSize()).as("idleSize").isEqualTo(4);
+		assertThat(destroyed).as("none destroyed so far").isEmpty();
+
+		//set the release predicate to release <= 3 on acquire
+		releasedIndex.set(3);
+
+		assertThat(pool.acquire().block().poolable()).as("acquire post idle").isEqualTo(4);
+		assertThat(intSource).as("didn't generate a new value").hasValue(4);
+		assertThat(destroyed).as("single acquire released all evictable idle")
+		                     .containsExactly(1, 2, 3);
+	}
+
 
 }

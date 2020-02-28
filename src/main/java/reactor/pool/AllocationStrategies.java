@@ -135,7 +135,15 @@ final class AllocationStrategies {
 
         @Override
         public void returnPermits(int returned) {
-            PERMITS.addAndGet(this, returned);
+            for(;;) {
+                int p = PERMITS.get(this);
+                if (p + returned > max) {
+                    throw new IllegalArgumentException("Too many permits returned: returned=" + returned + ", would bring to " + (p + returned) + "/" + max);
+                }
+                if (PERMITS.compareAndSet(this, p, p + returned)) {
+                    return;
+                }
+            }
         }
     }
 }

@@ -69,6 +69,9 @@ public interface AllocationStrategy {
      * Update the strategy to indicate that N resources were discarded from the {@link Pool}, potentially leaving space
      * for N new ones to be allocated. Users MUST ensure that this method isn't called with a value greater than the
      * number of held permits it has.
+     * <p>
+     * Some strategy MIGHT throw an {@link IllegalArgumentException} if it can be determined the number of returned permits
+     * is not consistent with the strategy's limits and delivered permits.
      */
     void returnPermits(int returned);
 }

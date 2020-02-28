@@ -1929,4 +1929,34 @@ public class CommonPoolTest {
 
 		assertThat(poolMetrics.getMaxAllocatedSize()).isEqualTo(Integer.MAX_VALUE);
 	}
+
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void invalidateRaceIdleState(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
+			throws Exception {
+		AtomicInteger destroyCounter = new AtomicInteger();
+		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
+		                                             .evictionPredicate((obj, meta) -> true)
+		                                             .destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
+		                                             .sizeBetween(0, 1)
+		                                             .maxPendingAcquire(1);
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		int loops = 4000;
+
+		final CountDownLatch latch = new CountDownLatch(loops * 2);
+
+		for (int i = 0; i < loops; i++) {
+			final PooledRef<Integer> pooledRef = pool.acquire().block();
+			RaceTestUtils.race(() -> pooledRef.release().subscribe(v -> {}, e -> latch.countDown(),
+					latch::countDown),
+					() -> pooledRef.invalidate().subscribe(v -> {}, e -> latch.countDown(),
+							latch::countDown));
+		}
+
+		assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+
+		assertThat(destroyCounter).hasValue(4000);
+	}
+
 }

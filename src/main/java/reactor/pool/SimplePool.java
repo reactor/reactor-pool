@@ -445,11 +445,10 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         @Override
         public void subscribe(CoreSubscriber<? super Void> actual) {
             QueuePooledRef<T> slot = slotRef.getAndSet(null);
-            if (slot == null) {
+            if (slot == null || !slot.markReleased()) {
                 Operators.complete(actual);
             }
             else {
-                slot.markReleased();
                 QueuePoolRecyclerInner<T> qpr = new QueuePoolRecyclerInner<>(actual, slot);
                 source.subscribe(qpr);
             }

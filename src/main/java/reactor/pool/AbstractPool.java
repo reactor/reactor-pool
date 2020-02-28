@@ -223,14 +223,29 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             }
         }
 
-        void markReleased() {
-            if (STATE.compareAndSet(this, STATE_ACQUIRED, STATE_RELEASED)) {
-                this.timeSinceRelease = clock.millis();
+        boolean markReleased() {
+            for(;;) {
+                int s = state;
+                if (s == STATE_RELEASED) {
+                    return false;
+                }
+                else if (STATE.compareAndSet(this, s, STATE_RELEASED)) {
+                    this.timeSinceRelease = clock.millis();
+                    return true;
+                }
             }
         }
 
         boolean markInvalidate() {
-            return STATE.compareAndSet(this, STATE_ACQUIRED, STATE_RELEASED);
+            for(;;) {
+                int s = state;
+                if (s == STATE_RELEASED) {
+                    return false;
+                }
+                else if (STATE.compareAndSet(this, s, STATE_RELEASED)) {
+                    return true;
+                }
+            }
         }
 
         @Override

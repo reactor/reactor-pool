@@ -76,11 +76,6 @@ configure(rootProject) { project ->
 					}
 					developers {
 						developer {
-							id = 'smaldini'
-							name = 'Stephane Maldini'
-							email = 'smaldini@pivotal.io'
-						}
-						developer {
 							id = 'simonbasle'
 							name = 'Simon Baslé'
 							email = 'sbasle@pivotal.io'

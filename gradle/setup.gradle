@@ -19,8 +19,8 @@ configure(rootProject) { project ->
 	apply plugin: "com.jfrog.artifactory"
 
 	ext {
-		isReleaseVersion = version.endsWith("RELEASE")
-		isMilestoneVersion = version.matches('[0-9].[0-9].[0-9].M[0-9]+') || version.matches('[0-9].[0-9].[0-9].RC[0-9]+')
+		isReleaseVersion = version.matches('[0-9].[0-9].[0-9]')
+		isMilestoneVersion = version.matches('[0-9].[0-9].[0-9]-M[0-9]+') || version.matches('[0-9].[0-9].[0-9]-RC[0-9]+')
 		isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
 
 		resolveVersion = { String version ->

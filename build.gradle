@@ -32,10 +32,10 @@ plugins {
 description = 'Reactive Object Pool'
 
 ext {
-  if (project.hasProperty('versionBranch') && version.toString().endsWith(".BUILD-SNAPSHOT")) {
+  if (project.hasProperty('versionBranch') && version.toString().endsWith("-SNAPSHOT")) {
     versionBranch = versionBranch.replaceAll("\"", "").trim()
     if (!versionBranch.isEmpty()) {
-      realVersion = version.toString().replace("BUILD-SNAPSHOT", versionBranch + ".BUILD-SNAPSHOT")
+      realVersion = version.toString() + "-" + versionBranch
       project.version = realVersion
       println "Building special snapshot ${project.version}"
       println "OSGI version would be: ${new OsgiHelper().getVersion(project.version.toString())}"
@@ -62,8 +62,7 @@ ext {
 
   rxJava2Version = '2.2.7'
 
-  javadocLinks = ["https://docs.oracle.com/javase/7/docs/api/",
-                  "https://docs.oracle.com/javaee/6/api/",
+  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
                   "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
                   "https://projectreactor.io/docs/core/release/api/"] as String[]
 }
@@ -152,7 +151,7 @@ configure(rootProject) { project ->
   }
 
   repositories {
-    if (version.endsWith('BUILD-SNAPSHOT')) {
+    if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots
       maven { url 'https://repo.spring.io/libs-snapshot' }
     }
     maven { url 'https://repo.spring.io/libs-milestone' }

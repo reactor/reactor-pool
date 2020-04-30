@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.gradle.api.internal.plugins.osgi.OsgiHelper
-
 buildscript {
   repositories {
     maven { url "https://repo.spring.io/plugins-release" }
@@ -38,7 +36,6 @@ ext {
       realVersion = version.toString() + "-" + versionBranch
       project.version = realVersion
       println "Building special snapshot ${project.version}"
-      println "OSGI version would be: ${new OsgiHelper().getVersion(project.version.toString())}"
     }
   }
 
@@ -75,7 +72,6 @@ configure(rootProject) { project ->
   apply plugin: 'jacoco'
   apply from: "$gradleScriptDir/doc.gradle"
   apply from: "$gradleScriptDir/setup.gradle"
-  apply plugin: 'osgi'
   apply from: "${gradleScriptDir}/errorprone.gradle"
   apply from: "${gradleScriptDir}/releaser.gradle"
 
@@ -85,8 +81,6 @@ configure(rootProject) { project ->
       html.enabled = true
     }
   }
-
-  ext.bundleImportPackages = [ '!javax.annotation', '*']
 
   [compileJava, compileTestJava]*.options*.compilerArgs = ["-Xlint:varargs",
                                                            "-Xlint:cast",
@@ -184,7 +178,6 @@ configure(rootProject) { project ->
 
   jar {
     manifest {
-      instruction 'Import-Package', bundleImportPackages.join(',')
       attributes("Created-By": "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})",
               "Implementation-Title": project.name,
               "Implementation-Version": project.version,

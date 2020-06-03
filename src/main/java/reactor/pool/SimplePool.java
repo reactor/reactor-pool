@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
@@ -51,7 +52,10 @@ import reactor.util.concurrent.Queues;
  */
 abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
-    final Queue<QueuePooledRef<POOLABLE>> elements;
+    volatile               Queue<QueuePooledRef<POOLABLE>>         elements;
+    @SuppressWarnings("rawtypes")
+    protected static final AtomicReferenceFieldUpdater<SimplePool, Queue> ELEMENTS = AtomicReferenceFieldUpdater.newUpdater(
+            SimplePool.class, Queue.class, "elements");
 
     volatile int                                               acquired;
     @SuppressWarnings("rawtypes")
@@ -83,7 +87,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                             .doOnNext(p -> {
                                 metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
                                 //the pool slot won't access this pool instance until after it has been constructed
-                                elements.offer(createSlot(p));
+                                this.elements.offer(createSlot(p));
                             })
                             .doOnError(e -> {
                                 metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
@@ -134,7 +138,12 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     boolean elementOffer(POOLABLE element) {
-        return elements.offer(createSlot(element));
+        @SuppressWarnings("unchecked")
+        Queue<QueuePooledRef<POOLABLE>> e = ELEMENTS.get(this);
+        if (e == null) {
+            return false;
+        }
+        return e.offer(createSlot(element));
     }
 
     QueuePooledRef<POOLABLE> createSlot(POOLABLE element) {
@@ -147,7 +156,8 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public int idleSize() {
-        return elements.size();
+        Queue e = ELEMENTS.get(this);
+        return e == null ? 0 : e.size();
     }
 
     @SuppressWarnings("WeakerAccess")
@@ -155,14 +165,19 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (!isDisposed()) {
             if (!poolConfig.evictionPredicate().test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
-                elements.offer(recycleSlot(poolSlot));
-                drain();
-            }
-            else {
-                destroyPoolable(poolSlot).subscribe(null, e -> drain(), this::drain); //TODO manage errors?
+                Queue e = ELEMENTS.get(this);
+                if (e != null) {
+                    QueuePooledRef<POOLABLE> slot = recycleSlot(poolSlot);
+                    e.offer(slot);
+                    drain();
+                    if (isDisposed() && slot.markInvalidate()) {
+                        destroyPoolable(slot).subscribe(); //TODO manage errors?
+                    }
+                    return;
+                }
             }
         }
-        else {
+        if (poolSlot.markInvalidate()) {
             destroyPoolable(poolSlot).subscribe(null, e -> drain(), this::drain); //TODO manage errors?
         }
     }
@@ -175,76 +190,85 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     private void drainLoop() {
         for (;;) {
-            int availableCount = elements.size();
-            int pendingCount = PENDING_COUNT.get(this);
-            int estimatedPermitCount = poolConfig.allocationStrategy().estimatePermitCount();
+            @SuppressWarnings("unchecked")
+            Queue<QueuePooledRef<POOLABLE>> e = ELEMENTS.get(this);
+            if (e != null) {
+                int availableCount = e.size();
+                int pendingCount = PENDING_COUNT.get(this);
+                int estimatedPermitCount = poolConfig.allocationStrategy().estimatePermitCount();
 
-            if (availableCount == 0) {
-                if (pendingCount > 0 && estimatedPermitCount > 0) {
-                    final Borrower<POOLABLE> borrower = pendingPoll(); //shouldn't be null
-                    if (borrower == null) {
-                        continue;
-                    }
-                    ACQUIRED.incrementAndGet(this);
-                    int permits = poolConfig.allocationStrategy().getPermits(1);
-                    if (borrower.get() || permits == 0) {
-                        ACQUIRED.decrementAndGet(this);
-                        continue;
-                    }
-                    borrower.stopPendingCountdown();
-                    long start = clock.millis();
-                    Mono<POOLABLE> allocator = poolConfig.allocator();
-                    Scheduler s = poolConfig.acquisitionScheduler();
-                    if (s != Schedulers.immediate())  {
-                        allocator = allocator.publishOn(s);
-                    }
-                    allocator.subscribe(newInstance -> borrower.deliver(createSlot(newInstance)),
-                                    e -> {
-                                        metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
-                                        ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy().returnPermits(1);
-                                        borrower.fail(e);
-                                    },
-                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
-
-                    int toWarmup = permits - 1;
-                    for (int extra = 1; extra <= toWarmup; extra++) {
-                        logger.debug("warming up extra resource {}/{}", extra, toWarmup);
-                        allocator.subscribe(newInstance -> {
-                                    elements.offer(new QueuePooledRef<>(this, newInstance));
-                                    drain();
-                                },
-                                e -> {
+                if (availableCount == 0) {
+                    if (pendingCount > 0 && estimatedPermitCount > 0) {
+                        final Borrower<POOLABLE> borrower = pendingPoll(); //shouldn't be null
+                        if (borrower == null) {
+                            continue;
+                        }
+                        ACQUIRED.incrementAndGet(this);
+                        int permits = poolConfig.allocationStrategy().getPermits(1);
+                        if (borrower.get() || permits == 0) {
+                            ACQUIRED.decrementAndGet(this);
+                            continue;
+                        }
+                        borrower.stopPendingCountdown();
+                        long start = clock.millis();
+                        Mono<POOLABLE> allocator = poolConfig.allocator();
+                        Scheduler s = poolConfig.acquisitionScheduler();
+                        if (s != Schedulers.immediate())  {
+                            allocator = allocator.publishOn(s);
+                        }
+                        allocator.subscribe(newInstance -> borrower.deliver(createSlot(newInstance)),
+                                error -> {
                                     metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
                                     ACQUIRED.decrementAndGet(this);
                                     poolConfig.allocationStrategy().returnPermits(1);
+                                    borrower.fail(error);
                                 },
                                 () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
+
+                        int toWarmup = permits - 1;
+                        for (int extra = 1; extra <= toWarmup; extra++) {
+                            logger.debug("warming up extra resource {}/{}", extra, toWarmup);
+                            allocator.subscribe(newInstance -> {
+                                        e.offer(new QueuePooledRef<>(this, newInstance));
+                                        drain();
+                                    },
+                                    error -> {
+                                        metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
+                                        ACQUIRED.decrementAndGet(this);
+                                        poolConfig.allocationStrategy().returnPermits(1);
+                                    },
+                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
+                        }
                     }
                 }
-            }
-            else if (pendingCount > 0) {
-                //there are objects ready and unclaimed in the pool + a pending
-                QueuePooledRef<POOLABLE> slot = elements.poll();
-                if (slot == null) continue;
+                else if (pendingCount > 0) {
+                    if (isDisposed()) {
+                        continue;
+                    }
+                    //there are objects ready and unclaimed in the pool + a pending
+                    QueuePooledRef<POOLABLE> slot = e.poll();
+                    if (slot == null) continue;
 
-                if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
-                    destroyPoolable(slot).subscribe(null, e -> drain(), this::drain);
-                    continue;
+                    if (poolConfig.evictionPredicate().test(slot.poolable, slot) && slot.markInvalidate()) {
+                        destroyPoolable(slot).subscribe(null, error -> drain(), this::drain);
+                        continue;
+                    }
+
+                    //there is a party currently pending acquiring
+                    Borrower<POOLABLE> inner = pendingPoll();
+                    if (inner == null) {
+                        if (!isDisposed()) {
+                            e.offer(slot);
+                        }
+                        continue;
+                    }
+                    inner.stopPendingCountdown();
+                    ACQUIRED.incrementAndGet(this);
+                    poolConfig.acquisitionScheduler().schedule(() -> inner.deliver(slot));
                 }
-
-                //there is a party currently pending acquiring
-                Borrower<POOLABLE> inner = pendingPoll();
-                if (inner == null) {
-                    elements.offer(slot);
-                    continue;
-                }
-                inner.stopPendingCountdown();
-                ACQUIRED.incrementAndGet(this);
-                poolConfig.acquisitionScheduler().schedule(() -> inner.deliver(slot));
             }
 
-            if (WIP.addAndGet(this, -1) == 0) {
+            if (WIP.decrementAndGet(this) == 0) {
                 break;
             }
         }
@@ -273,8 +297,12 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
                 if (pool.isDisposed()) {
                     ACQUIRED.decrementAndGet(pool); //immediately clean up state
-                    markReleased();
-                    return pool.destroyPoolable(this);
+                    if (markInvalidate()) {
+                        return pool.destroyPoolable(this);
+                    }
+                    else {
+                        return Mono.empty();
+                    }
                 }
 
                 Publisher<Void> cleaner;
@@ -377,7 +405,9 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
             //TODO should we separate reset errors?
             pool.metricsRecorder.recordResetLatency(pool.clock.millis() - start);
 
-            pool.destroyPoolable(slot).subscribe(null, null, pool::drain); //TODO manage errors?
+            if (slot.markInvalidate()) {
+                pool.destroyPoolable(slot).subscribe(null, null, pool::drain); //TODO manage errors?
+            }
 
             actual.onError(throwable);
         }

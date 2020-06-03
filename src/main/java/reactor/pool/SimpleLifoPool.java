@@ -17,6 +17,7 @@
 package reactor.pool;
 
 import java.util.Deque;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
@@ -92,13 +93,18 @@ final class SimpleLifoPool<POOLABLE> extends SimplePool<POOLABLE> {
                     p.fail(new PoolShutdownException());
                 }
 
-                Mono<Void> destroyMonos = Mono.when();
-
-                while (!elements.isEmpty()) {
-                    destroyMonos = destroyMonos.and(destroyPoolable(elements.poll()));
+                @SuppressWarnings("unchecked")
+                Queue<QueuePooledRef<POOLABLE>> e = ELEMENTS.getAndSet(this, null);
+                if (e != null) {
+                    Mono<Void> destroyMonos = Mono.empty();
+                    while (!e.isEmpty()) {
+                        QueuePooledRef<POOLABLE> ref = e.poll();
+                        if (ref.markInvalidate()) {
+                            destroyMonos = destroyMonos.and(destroyPoolable(ref));
+                        }
+                    }
+                    return destroyMonos;
                 }
-
-                return destroyMonos;
             }
             return Mono.empty();
         });

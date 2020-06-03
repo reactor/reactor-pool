@@ -38,6 +38,8 @@ import reactor.util.Logger;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
 
+import static reactor.pool.AbstractPool.AbstractPooledRef.STATE_INVALIDATED;
+
 /**
  * An abstract base version of a {@link Pool}, mutualizing small amounts of code and allowing to build common
  * related classes like {@link AbstractPooledRef} or {@link Borrower}.
@@ -131,11 +133,16 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
     /**
      * Apply the configured destroyHandler to get the destroy {@link Mono} AND return a permit to the {@link AllocationStrategy},
      * which assumes that the {@link Mono} will always be subscribed immediately.
+     * <p>
+     * Calls to this method MUST be guarded by {@link AbstractPooledRef#markInvalidate()}.
      *
      * @param ref the {@link PooledRef} that is not part of the live set
      * @return the destroy {@link Mono}, which MUST be subscribed immediately
      */
     Mono<Void> destroyPoolable(AbstractPooledRef<POOLABLE> ref) {
+        if (ref.state != STATE_INVALIDATED) {
+            throw new IllegalStateException("destroying non invalidated ref " + ref);
+        }
         POOLABLE poolable = ref.poolable();
         poolConfig.allocationStrategy().returnPermits(1);
         long start = clock.millis();
@@ -198,7 +205,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             this.creationTimestamp = oldRef.creationTimestamp;
             this.acquireCount = oldRef.acquireCount(); //important to use method since the count variable is final
             this.timeSinceRelease = oldRef.timeSinceRelease; //important to carry over the markReleased for metrics
-            this.state = STATE_IDLE; //we're dealing with a new slot that was created when the previous one was released
+            //we're dealing with a new slot that was created when the previous one was released
+            this.state = oldRef.state == STATE_INVALIDATED ?
+                    STATE_INVALIDATED :
+                    STATE_IDLE;
         }
 
         @Override
@@ -226,7 +236,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         boolean markReleased() {
             for(;;) {
                 int s = state;
-                if (s == STATE_RELEASED) {
+                if (s == STATE_RELEASED || s == STATE_INVALIDATED) {
                     return false;
                 }
                 else if (STATE.compareAndSet(this, s, STATE_RELEASED)) {
@@ -239,10 +249,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         boolean markInvalidate() {
             for(;;) {
                 int s = state;
-                if (s == STATE_RELEASED) {
+                if (s == STATE_INVALIDATED) {
                     return false;
                 }
-                else if (STATE.compareAndSet(this, s, STATE_RELEASED)) {
+                else if (STATE.compareAndSet(this, s, STATE_INVALIDATED)) {
                     return true;
                 }
             }
@@ -297,9 +307,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
                     '}';
         }
 
-        static final int STATE_IDLE = 0;
-        static final int STATE_ACQUIRED = 1;
-        static final int STATE_RELEASED = 2;
+        static final int STATE_IDLE        = 0;
+        static final int STATE_ACQUIRED    = 1;
+        static final int STATE_RELEASED    = 2;
+        //destroyed or in the process of being destroyed
+        static final int STATE_INVALIDATED = 3;
     }
 
     /**

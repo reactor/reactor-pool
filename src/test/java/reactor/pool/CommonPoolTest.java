@@ -42,10 +42,12 @@ import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import reactor.core.Disposable;
 import reactor.core.Disposables;
@@ -1999,5 +2001,76 @@ public class CommonPoolTest {
 		                     .containsExactly(1, 2, 3);
 	}
 
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void releaseRacingWithPoolClose(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster)
+			throws InterruptedException {
+		for (int i = 0; i < 10_000; i++) {
+			final int round = i + 1;
+			ConcurrentLinkedQueue<AtomicInteger> created = new ConcurrentLinkedQueue<>();
+			PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> builder =
+					PoolBuilder.from(Mono.fromCallable(() -> {
+						AtomicInteger resource = new AtomicInteger(round);
+						created.add(resource);
+						return resource;
+					}))
+					           .evictionPredicate((obj, meta) -> false)
+					           .destroyHandler(ai -> Mono.fromRunnable(() -> ai.set(-1)))
+					           .sizeBetween(0, 4);
+
+			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+			PooledRef<AtomicInteger> ref = pool.acquire().block();
+
+			final CountDownLatch latch = new CountDownLatch(2);
+			//acquire-and-release, vs pool disposal
+			RaceTestUtils.race(
+					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe(),
+					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe()
+			);
+
+			assertThat(latch.await(30, TimeUnit.SECONDS)).as("latch counted down").isTrue();
+			assertThat(pool.isDisposed()).as("pool isDisposed").isTrue();
+			assertThat(pool.metrics().idleSize()).as("pool has no idle elements").isZero();
+
+//			Thread.sleep(10);
+			assertThat(created).allSatisfy(ai -> assertThat(ai).hasValue(-1));
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void poolCloseRacingWithRelease(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster)
+			throws InterruptedException {
+		for (int i = 0; i < 10_000; i++) {
+			final int round = i + 1;
+			ConcurrentLinkedQueue<AtomicInteger> created = new ConcurrentLinkedQueue<>();
+			PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> builder =
+					PoolBuilder.from(Mono.fromCallable(() -> {
+						AtomicInteger resource = new AtomicInteger(round);
+						created.add(resource);
+						return resource;
+					}))
+					           .evictionPredicate((obj, meta) -> false)
+					           .destroyHandler(ai -> Mono.fromRunnable(() -> ai.set(-1)))
+					           .sizeBetween(0, 4);
+
+			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+			PooledRef<AtomicInteger> ref = pool.acquire().block();
+
+			final CountDownLatch latch = new CountDownLatch(2);
+			//acquire-and-release, vs pool disposal
+			RaceTestUtils.race(
+					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe(),
+					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe()
+			);
+
+			assertThat(latch.await(30, TimeUnit.SECONDS)).as("latch counted down").isTrue();
+			assertThat(pool.isDisposed()).as("pool isDisposed").isTrue();
+			assertThat(pool.metrics().idleSize()).as("pool has no idle elements").isZero();
+			assertThat(created).allSatisfy(ai -> assertThat(ai).hasValue(-1));
+		}
+	}
 
 }

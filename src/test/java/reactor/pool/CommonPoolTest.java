@@ -1182,17 +1182,26 @@ public class CommonPoolTest {
 	@ParameterizedTest
 	@MethodSource("allPools")
 	void allocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		AtomicInteger errorThrown = new AtomicInteger();
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.delay(Duration.ofMillis(100))
-						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
+						.flatMap(l -> {
+							if (errorThrown.compareAndSet(0, 1)) {
+								return Mono.<String>error(new IllegalStateException("boom"));
+							}
+							else {
+								return Mono.just("success");
+							}
+						}))
 				.sizeBetween(0, 1)
 				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		StepVerifier.create(Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()), pool.acquire())
 								.flatMap(Function.identity()))
-				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
-						.hasMessage("boom"));
+					.expectNextMatches(pooledRef -> "success".equals(pooledRef.poolable()))
+					.expectComplete()
+					.verify(Duration.ofSeconds(5));
 	}
 
 	@ParameterizedTest

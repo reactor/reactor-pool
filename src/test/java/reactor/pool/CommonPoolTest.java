@@ -1181,7 +1181,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
-	void allocatorErrorInAcquireDrains(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void allocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.delay(Duration.ofMillis(100))
 						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
@@ -1191,6 +1191,25 @@ public class CommonPoolTest {
 
 		StepVerifier.create(Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()), pool.acquire())
 								.flatMap(Function.identity()))
+				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
+						.hasMessage("boom"));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void allocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.delay(Duration.ofMillis(100))
+						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
+				.sizeBetween(2, 2)
+				.evictionPredicate((poolable, metadata) -> true);
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
+		StepVerifier.create(
+				Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()),
+						pool.acquire().onErrorResume(e -> Mono.empty()),
+						pool.acquire())
+					.flatMap(Function.identity()))
 				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
 						.hasMessage("boom"));
 	}

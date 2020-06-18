@@ -51,6 +51,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import reactor.core.Disposable;
 import reactor.core.Disposables;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
@@ -1176,6 +1177,50 @@ public class CommonPoolTest {
 
 		Awaitility.await().atMost(600, TimeUnit.MILLISECONDS) //serially would add up to 1500ms
 		          .untilAtomic(live, CoreMatchers.is(0));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void allocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		AtomicInteger errorThrown = new AtomicInteger();
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.delay(Duration.ofMillis(100))
+						.flatMap(l -> {
+							if (errorThrown.compareAndSet(0, 1)) {
+								return Mono.<String>error(new IllegalStateException("boom"));
+							}
+							else {
+								return Mono.just("success");
+							}
+						}))
+				.sizeBetween(0, 1)
+				.evictionPredicate((poolable, metadata) -> true);
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
+		StepVerifier.create(Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()), pool.acquire())
+								.flatMap(Function.identity()))
+					.expectNextMatches(pooledRef -> "success".equals(pooledRef.poolable()))
+					.expectComplete()
+					.verify(Duration.ofSeconds(5));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void allocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.delay(Duration.ofMillis(100))
+						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
+				.sizeBetween(2, 2)
+				.evictionPredicate((poolable, metadata) -> true);
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
+		StepVerifier.create(
+				Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()),
+						pool.acquire().onErrorResume(e -> Mono.empty()),
+						pool.acquire())
+					.flatMap(Function.identity()))
+				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
+						.hasMessage("boom"));
 	}
 
 	@ParameterizedTest

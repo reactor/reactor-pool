@@ -222,6 +222,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     ACQUIRED.decrementAndGet(this);
                                     poolConfig.allocationStrategy().returnPermits(1);
                                     borrower.fail(error);
+                                    drain();
                                 },
                                 () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
 
@@ -236,6 +237,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                         metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
                                         ACQUIRED.decrementAndGet(this);
                                         poolConfig.allocationStrategy().returnPermits(1);
+                                        drain();
                                     },
                                     () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
                         }

@@ -211,35 +211,59 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                         }
                         borrower.stopPendingCountdown();
                         long start = clock.millis();
-                        Mono<POOLABLE> allocator = poolConfig.allocator();
+                        Mono<POOLABLE> allocator;
                         Scheduler s = poolConfig.acquisitionScheduler();
                         if (s != Schedulers.immediate())  {
-                            allocator = allocator.publishOn(s);
+                            allocator = poolConfig.allocator().publishOn(s);
                         }
-                        allocator.subscribe(newInstance -> borrower.deliver(createSlot(newInstance)),
-                                error -> {
-                                    metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
-                                    ACQUIRED.decrementAndGet(this);
-                                    poolConfig.allocationStrategy().returnPermits(1);
-                                    borrower.fail(error);
-                                    drain();
-                                },
-                                () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
+                        else {
+                            allocator = poolConfig.allocator();
+                        }
+                        Mono<POOLABLE> primary = allocator.doOnEach(sig -> {
+                            if (sig.isOnNext()) {
+                                POOLABLE newInstance = sig.get();
+                                metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
+                                borrower.deliver(createSlot(newInstance));
+                            }
+                            else if (sig.isOnError()) {
+                                metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
+                                ACQUIRED.decrementAndGet(this);
+                                poolConfig.allocationStrategy()
+                                          .returnPermits(1);
+                                borrower.fail(sig.getThrowable());
+                                drain();
+                            }
+                        });
 
                         int toWarmup = permits - 1;
-                        for (int extra = 1; extra <= toWarmup; extra++) {
-                            logger.debug("warming up extra resource {}/{}", extra, toWarmup);
-                            allocator.subscribe(newInstance -> {
-                                        e.offer(new QueuePooledRef<>(this, newInstance));
-                                        drain();
-                                    },
-                                    error -> {
-                                        metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
-                                        ACQUIRED.decrementAndGet(this);
-                                        poolConfig.allocationStrategy().returnPermits(1);
-                                        drain();
-                                    },
-                                    () -> metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start));
+                        if (toWarmup < 1) {
+                            primary.subscribe(alreadyPropagated -> {}, alreadyPropagatedOrLogged -> {});
+                        }
+                        else {
+                            logger.debug("should warm up {} extra resources", toWarmup);
+                            final long startWarmupIteration = clock.millis();
+                            final Mono<Void> warmup = Flux
+                                    .range(1, toWarmup)
+                                    .flatMap(i -> allocator
+                                            .doOnNext(poolable -> {
+                                                logger.debug("warmed up extra resource {}/{}", i, toWarmup);
+                                                metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - startWarmupIteration);
+                                                e.offer(new QueuePooledRef<>(this, poolable));
+                                                drain();
+                                            })
+                                            .onErrorResume(warmupError -> {
+                                                    logger.debug("failed to warm up extra resource {}/{}: {}", i, toWarmup, warmupError.toString());
+                                                    metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - startWarmupIteration);
+                                                    poolConfig.allocationStrategy().returnPermits(1);
+                                                    drain();
+                                                    return Mono.empty();
+                                            })
+                                    )
+                                    .then();
+
+                            primary.onErrorResume(ignore -> Mono.empty())
+                                   .thenMany(warmup)
+                                   .subscribe(alreadyPropagated -> {}, alreadyPropagatedOrLogged -> {});
                         }
                     }
                 }

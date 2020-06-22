@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.assertj.core.api.Assertions;
 import org.assertj.core.data.Offset;
@@ -63,6 +64,7 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.test.util.RaceTestUtils;
 import reactor.test.util.TestLogger;
+import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.*;
@@ -1184,15 +1186,15 @@ public class CommonPoolTest {
 	void allocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		AtomicInteger errorThrown = new AtomicInteger();
 		PoolBuilder<String, ?> builder = PoolBuilder
-				.from(Mono.delay(Duration.ofMillis(100))
+				.from(Mono.delay(Duration.ofMillis(50))
 						.flatMap(l -> {
-							if (errorThrown.compareAndSet(0, 1)) {
-								return Mono.<String>error(new IllegalStateException("boom"));
-							}
-							else {
-								return Mono.just("success");
-							}
-						}))
+					if (errorThrown.compareAndSet(0, 1)) {
+						return Mono.<String>error(new IllegalStateException("boom"));
+					}
+					else {
+						return Mono.just("success");
+					}
+				}))
 				.sizeBetween(0, 1)
 				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
@@ -1206,11 +1208,34 @@ public class CommonPoolTest {
 
 	@ParameterizedTest
 	@MethodSource("allPools")
+	@Tag("loops")
+	void loopAllocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		TestLogger testLogger = new TestLogger();
+		Loggers.useCustomLoggers(s -> testLogger);
+		try {
+			for (int i = 0; i < 100; i++) {
+				allocatorErrorInAcquireDrains_NoMinSize(configAdjuster);
+			}
+			String log = testLogger.getOutContent();
+			if (!log.isEmpty()) {
+				System.out.println("Log in loop test, removed duplicated lines:");
+				Stream.of(log.split("\n"))
+				      .distinct()
+				      .forEach(System.out::println);
+			}
+		}
+		finally {
+			Loggers.resetLoggerFactory();
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
 	void allocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
-				.from(Mono.delay(Duration.ofMillis(100))
+				.from(Mono.delay(Duration.ofMillis(50))
 						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
-				.sizeBetween(2, 2)
+				.sizeBetween(3, 3)
 				.evictionPredicate((poolable, metadata) -> true);
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
@@ -1218,9 +1243,33 @@ public class CommonPoolTest {
 				Flux.just(pool.acquire().onErrorResume(e -> Mono.empty()),
 						pool.acquire().onErrorResume(e -> Mono.empty()),
 						pool.acquire())
-					.flatMap(Function.identity()))
-				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
-						.hasMessage("boom"));
+				    .flatMap(Function.identity()))
+		            .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
+		                                                    .hasMessage("boom"))
+		            .verify(Duration.ofSeconds(5));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	@Tag("loops")
+	void loopAllocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+		TestLogger testLogger = new TestLogger();
+		Loggers.useCustomLoggers(s -> testLogger);
+		try {
+			for (int i = 0; i < 100; i++) {
+				allocatorErrorInAcquireDrains_WithMinSize(configAdjuster);
+			}
+			String log = testLogger.getOutContent();
+			if (!log.isEmpty()) {
+				System.out.println("Log in loop test, removed duplicated lines:");
+				Stream.of(log.split("\n"))
+				      .distinct()
+				      .forEach(System.out::println);
+			}
+		}
+		finally {
+			Loggers.resetLoggerFactory();
+		}
 	}
 
 	@ParameterizedTest

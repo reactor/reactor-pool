@@ -198,7 +198,7 @@ class SimpleLifoPoolTest {
             }
 
             //release due to cancel is async, give it a bit of time
-            await().atMost(100, TimeUnit.MILLISECONDS).with().pollInterval(10, TimeUnit.MILLISECONDS)
+            await().atMost(200, TimeUnit.MILLISECONDS).with().pollInterval(10, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertThat(releasedCount)
                            .as("released vs created in round " + round + (cancelFirst? " (cancel first)" : " (request first)"))
                            .hasValue(newCount.get()));

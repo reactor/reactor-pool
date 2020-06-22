@@ -254,6 +254,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                             .onErrorResume(warmupError -> {
                                                     logger.debug("failed to warm up extra resource {}/{}: {}", i, toWarmup, warmupError.toString());
                                                     metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - startWarmupIteration);
+                                                    //we return permits in case of warmup failure, but shouldn't further decrement ACQUIRED
                                                     poolConfig.allocationStrategy().returnPermits(1);
                                                     drain();
                                                     return Mono.empty();
@@ -261,8 +262,11 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
                                     )
                                     .then();
 
+                            //we ignore errors from primary (already propagated), which allows us to attempt
+                            // the warmup in all cases. individual warmup failures decrement the permit and are logged
                             primary.onErrorResume(ignore -> Mono.empty())
                                    .thenMany(warmup)
+                                   //all errors and values are either propagated or logged, nothing to do
                                    .subscribe(alreadyPropagated -> {}, alreadyPropagatedOrLogged -> {});
                         }
                     }

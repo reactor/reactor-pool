@@ -62,14 +62,16 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     final Mono<T>                          allocator;
     final Function<PoolConfig<T>, CONF>    configModifier;
-    int                                    maxPending           = -1;
-    AllocationStrategy                     allocationStrategy   = null;
-    Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
-    Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
-    BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
-    Scheduler                              acquisitionScheduler = Schedulers.immediate();
-    Clock                                  clock                = Clock.systemUTC();
-    PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    int                                    maxPending                  = -1;
+    AllocationStrategy                     allocationStrategy          = null;
+    Function<T, ? extends Publisher<Void>> releaseHandler              = noopHandler();
+    Function<T, ? extends Publisher<Void>> destroyHandler              = noopHandler();
+    BiPredicate<T, PooledRefMetadata>      evictionPredicate           = neverPredicate();
+    Duration                               evictionBackgroundInterval  = Duration.ZERO;
+    Scheduler                              evictionBackgroundScheduler = Schedulers.immediate();
+    Scheduler                              acquisitionScheduler        = Schedulers.immediate();
+    Clock                                  clock                       = Clock.systemUTC();
+    PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
     boolean                                idleLruOrder         = true;
 
     PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
@@ -86,6 +88,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         this.releaseHandler = source.releaseHandler;
         this.destroyHandler = source.destroyHandler;
         this.evictionPredicate = source.evictionPredicate;
+        this.evictionBackgroundInterval = source.evictionBackgroundInterval;
+        this.evictionBackgroundScheduler = source.evictionBackgroundScheduler;
         this.acquisitionScheduler = source.acquisitionScheduler;
         this.metricsRecorder = source.metricsRecorder;
         this.clock = source.clock;
@@ -177,6 +181,22 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      */
     public PoolBuilder<T, CONF> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
         this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
+        return this;
+    }
+
+    public PoolBuilder<T, CONF> evictOnlyWhenUsed() {
+        this.evictionBackgroundInterval = Duration.ZERO;
+        this.evictionBackgroundScheduler = Schedulers.immediate();
+        return this;
+    }
+
+    public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval) {
+        return this.evictInBackground(evictionInterval, Schedulers.parallel());
+    }
+
+    public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval, Scheduler reaperTaskScheduler) {
+        this.evictionBackgroundInterval = evictionInterval;
+        this.evictionBackgroundScheduler = reaperTaskScheduler;
         return this;
     }
 
@@ -404,6 +424,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,
+                evictionBackgroundInterval,
+                evictionBackgroundScheduler,
                 acquisitionScheduler,
                 metricsRecorder,
                 clock,

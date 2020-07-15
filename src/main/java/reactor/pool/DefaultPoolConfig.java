@@ -17,6 +17,7 @@
 package reactor.pool;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
@@ -24,6 +25,7 @@ import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * A default {@link PoolConfig} that can be extended to bear more configuration options
@@ -39,6 +41,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final Function<POOLABLE, ? extends Publisher<Void>> releaseHandler;
 	protected final Function<POOLABLE, ? extends Publisher<Void>> destroyHandler;
 	protected final BiPredicate<POOLABLE, PooledRefMetadata>      evictionPredicate;
+	protected final Duration                                      evictInBackgroundInterval;
+	protected final Scheduler                                     evictInBackgroundScheduler;
 	protected final Scheduler                                     acquisitionScheduler;
 	protected final PoolMetricsRecorder                           metricsRecorder;
 	protected final Clock                                         clock;
@@ -50,6 +54,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
 			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
 			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Duration evictInBackgroundInterval,
+			Scheduler evictInBackgroundScheduler,
 			Scheduler acquisitionScheduler,
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock,
@@ -60,6 +66,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.releaseHandler = releaseHandler;
 		this.destroyHandler = destroyHandler;
 		this.evictionPredicate = evictionPredicate;
+		this.evictInBackgroundInterval = evictInBackgroundInterval;
+		this.evictInBackgroundScheduler = evictInBackgroundScheduler;
 		this.acquisitionScheduler = acquisitionScheduler;
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
@@ -67,8 +75,28 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	}
 
 	/**
-	 * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, Function, Function, BiPredicate, Scheduler, PoolMetricsRecorder, Clock, boolean) other constructor}
-	 * with explicit setting of {@code isIdleLru}, to be removed in 0.3.x
+	 * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, Function, Function, BiPredicate, Duration, Scheduler, Scheduler, PoolMetricsRecorder, Clock, boolean) other constructor}
+	 * with explicit setting of background eviction, to be removed in 0.3.x
+	 */
+	@Deprecated
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock,
+			boolean isIdleLRU) {
+		this(allocator, allocationStrategy, maxPending, releaseHandler, destroyHandler, evictionPredicate,
+				Duration.ZERO, Schedulers.immediate(),
+				acquisitionScheduler, metricsRecorder, clock, isIdleLRU);
+	}
+
+	/**
+	 * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, Function, Function, BiPredicate, Duration, Scheduler, Scheduler, PoolMetricsRecorder, Clock, boolean) other constructor}
+	 * with explicit setting of {@code isIdleLru} and background eviction, to be removed in 0.3.x
 	 */
 	@Deprecated
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
@@ -80,7 +108,10 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			Scheduler acquisitionScheduler,
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock) {
-		this(allocator, allocationStrategy, maxPending, releaseHandler, destroyHandler, evictionPredicate, acquisitionScheduler, metricsRecorder, clock,
+		this(allocator, allocationStrategy, maxPending, releaseHandler, destroyHandler, evictionPredicate,
+				Duration.ZERO,
+				Schedulers.immediate(),
+				acquisitionScheduler, metricsRecorder, clock,
 				true);
 	}
 
@@ -99,6 +130,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.releaseHandler = toCopyDpc.releaseHandler;
 			this.destroyHandler = toCopyDpc.destroyHandler;
 			this.evictionPredicate = toCopyDpc.evictionPredicate;
+			this.evictInBackgroundInterval = toCopyDpc.evictInBackgroundInterval;
+			this.evictInBackgroundScheduler = toCopyDpc.evictInBackgroundScheduler;
 			this.acquisitionScheduler = toCopyDpc.acquisitionScheduler;
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
 			this.clock = toCopyDpc.clock;
@@ -111,6 +144,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.releaseHandler = toCopy.releaseHandler();
 			this.destroyHandler = toCopy.destroyHandler();
 			this.evictionPredicate = toCopy.evictionPredicate();
+			this.evictInBackgroundInterval = toCopy.evictInBackgroundInterval();
+			this.evictInBackgroundScheduler = toCopy.evictInBackgroundScheduler();
 			this.acquisitionScheduler = toCopy.acquisitionScheduler();
 			this.metricsRecorder = toCopy.metricsRecorder();
 			this.clock = toCopy.clock();
@@ -146,6 +181,16 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate() {
 		return this.evictionPredicate;
+	}
+
+	@Override
+	public Duration evictInBackgroundInterval() {
+		return this.evictInBackgroundInterval;
+	}
+
+	@Override
+	public Scheduler evictInBackgroundScheduler() {
+		return this.evictInBackgroundScheduler;
 	}
 
 	@Override

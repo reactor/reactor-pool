@@ -17,6 +17,7 @@
 package reactor.pool;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
@@ -73,6 +74,22 @@ public interface PoolConfig<POOLABLE> {
 	 * reaping process. Both the resource and some {@link PooledRefMetadata metrics} about the resource's life within the pool are provided.
 	 */
 	BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate();
+
+	/**
+	 * If the pool is configured to perform regular eviction checks on the background, returns the {@link Duration} representing
+	 * the interval at which such checks are made. Otherwise returns {@link Duration#ZERO} (the default).
+	 */
+	default Duration evictInBackgroundInterval() {
+		return Duration.ZERO; //TODO remove the default implementation in 0.2.0
+	}
+
+	/**
+	 * If the pool is configured to perform regular eviction checks on the background, returns the {@link Scheduler} on
+	 * which these checks are made. Otherwise returns {@link Schedulers#immediate()} (the default).
+	 */
+	default Scheduler evictInBackgroundScheduler() {
+		return Schedulers.immediate(); //TODO remove the default implementation in 0.2.0
+	}
 
 	/**
 	 * When set, {@link Pool} implementation MAY decide to use the {@link Scheduler}

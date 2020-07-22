@@ -44,12 +44,9 @@ import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import reactor.core.Disposable;
 import reactor.core.Disposables;
@@ -65,7 +62,6 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.test.util.RaceTestUtils;
 import reactor.test.util.TestLogger;
-import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.*;
@@ -2166,6 +2162,136 @@ public class CommonPoolTest {
 			assertThat(pool.metrics().idleSize()).as("pool has no idle elements").isZero();
 			assertThat(created).allSatisfy(ai -> assertThat(ai).hasValue(-1));
 		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void raceShutdownAndAcquireInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger ai = new AtomicInteger();
+		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
+				.from(Mono.fromSupplier(() -> {
+					ai.incrementAndGet();
+					return ai;
+				}))
+				.evictionIdle(Duration.ZERO)
+				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
+				.sizeBetween(0, 1);
+
+		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		for (int i = 0; i < 100_000; i++) {
+			errorRef.set(null);
+			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
+
+			if (i % 2 == 0) {
+				RaceTestUtils.race(
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set),
+						() -> pool.acquire()
+						          .flatMap(PooledRef::invalidate)
+						          .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						          .subscribe(v -> {}, errorRef::set)
+				);
+			}
+			else {
+				RaceTestUtils.race(
+						() -> pool.acquire()
+						          .flatMap(PooledRef::invalidate)
+						          .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						          .subscribe(v -> {}, errorRef::set),
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
+				);
+			}
+			if (errorRef.get() != null) {
+				errorRef.get().printStackTrace();
+			}
+			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+		}
+		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void raceShutdownAndPreAcquiredInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger ai = new AtomicInteger();
+		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
+				.from(Mono.fromSupplier(() -> {
+					ai.incrementAndGet();
+					return ai;
+				}))
+				.evictionIdle(Duration.ZERO)
+				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
+				.sizeBetween(0, 1);
+
+		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		for (int i = 0; i < 100_000; i++) {
+			errorRef.set(null);
+			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
+			PooledRef<AtomicInteger> aiRef = pool.acquire().block();
+
+			if (i % 2 == 0) {
+				RaceTestUtils.race(
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set),
+						() -> aiRef.invalidate()
+						           .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						           .subscribe(v -> {}, errorRef::set)
+				);
+			}
+			else {
+				RaceTestUtils.race(
+						() -> aiRef.invalidate()
+						           .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						           .subscribe(v -> {}, errorRef::set),
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
+				);
+			}
+			if (errorRef.get() != null) {
+				errorRef.get().printStackTrace();
+			}
+			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+		}
+		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void raceShutdownAndPreAcquiredReleaseWithEviction(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger ai = new AtomicInteger();
+		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
+				.from(Mono.fromSupplier(() -> {
+					ai.incrementAndGet();
+					return ai;
+				}))
+				.evictionIdle(Duration.ZERO)
+				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
+				.sizeBetween(0, 1);
+
+		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		for (int i = 0; i < 100_000; i++) {
+			errorRef.set(null);
+			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
+			PooledRef<AtomicInteger> aiRef = pool.acquire().block();
+
+			if (i % 2 == 0) {
+				RaceTestUtils.race(
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set),
+						() -> aiRef.release()
+						           .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						           .subscribe(v -> {}, errorRef::set)
+				);
+			}
+			else {
+				RaceTestUtils.race(
+						() -> aiRef.release()
+						           .onErrorResume(PoolShutdownException.class, e -> Mono.empty())
+						           .subscribe(v -> {}, errorRef::set),
+						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
+				);
+			}
+			if (errorRef.get() != null) {
+				errorRef.get().printStackTrace();
+			}
+			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+		}
+		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
 	}
 
 }

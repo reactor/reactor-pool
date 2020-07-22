@@ -85,8 +85,9 @@ final class SimpleFifoPool<POOLABLE> extends SimplePool<POOLABLE> {
             @SuppressWarnings("unchecked")
             Queue<Borrower<POOLABLE>> q = PENDING.getAndSet(this, TERMINATED);
             if (q != TERMINATED) {
-                while(!q.isEmpty()) {
-                    q.poll().fail(new PoolShutdownException());
+                Borrower<POOLABLE> nextPending;
+                while((nextPending = q.poll()) != null) {
+                    nextPending.fail(new PoolShutdownException());
                 }
 
                 @SuppressWarnings("unchecked")

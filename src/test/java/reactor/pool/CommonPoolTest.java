@@ -18,6 +18,7 @@ package reactor.pool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1477,7 +1478,7 @@ public class CommonPoolTest {
 
 	@BeforeEach
 	void initRecorder() {
-		this.recorder = new TestUtils.InMemoryPoolMetrics();
+		this.recorder = new TestUtils.InMemoryPoolMetrics(new TestUtils.NanoTimeClock());
 	}
 
 	@ParameterizedTest
@@ -1498,7 +1499,7 @@ public class CommonPoolTest {
 				}))
 				.sizeBetween(10, Integer.MAX_VALUE)
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		assertThatIllegalStateException()
@@ -1530,7 +1531,7 @@ public class CommonPoolTest {
 					}
 				}))
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		pool.acquire().block(); //success
@@ -1574,7 +1575,7 @@ public class CommonPoolTest {
 				}))
 				.sizeBetween(10, Integer.MAX_VALUE)
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		assertThatIllegalStateException()
@@ -1606,7 +1607,7 @@ public class CommonPoolTest {
 					}
 				}))
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		pool.acquire().block(); //success
@@ -1646,7 +1647,7 @@ public class CommonPoolTest {
 					}
 				})
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		pool.acquire().flatMap(PooledRef::release).block();
@@ -1683,7 +1684,7 @@ public class CommonPoolTest {
 					}
 				})
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		pool.acquire().flatMap(PooledRef::release).block();
@@ -1713,7 +1714,7 @@ public class CommonPoolTest {
 				.from(Mono.fromCallable(() -> content.getAndSet("bar")))
 				.evictionPredicate((poolable, metadata) -> "foo".equals(poolable))
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		pool.acquire().flatMap(PooledRef::release).block();
@@ -1737,7 +1738,7 @@ public class CommonPoolTest {
 				.evictionPredicate((poolable, metadata) -> metadata.acquireCount() >= 2)
 				.destroyHandler(i -> Mono.fromRunnable(destroyCounter::incrementAndGet))
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<Integer> pool = configAdjuster.apply(builder);
 
 		//first round
@@ -1774,7 +1775,7 @@ public class CommonPoolTest {
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeBetween(2, 2)
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<Integer> pool = configAdjuster.apply(builder);
 		pool.warmup().block();
 
@@ -1805,7 +1806,7 @@ public class CommonPoolTest {
 				.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				.sizeBetween(2, 2)
 				.metricsRecorder(recorder)
-				.clock(recorder);
+				.clock(recorder.getClock());
 		Pool<Integer> pool = configAdjuster.apply(builder);
 		pool.warmup().block();
 

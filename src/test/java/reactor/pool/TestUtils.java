@@ -16,6 +16,7 @@
 package reactor.pool;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.concurrent.TimeUnit;
@@ -137,7 +138,7 @@ public class TestUtils {
      *
      * @author Simon Baslé
      */
-    public static class InMemoryPoolMetrics extends Clock implements PoolMetricsRecorder {
+    public static class InMemoryPoolMetrics implements PoolMetricsRecorder {
 
         private final ShortCountsHistogram allocationSuccessHistogram;
         private final ShortCountsHistogram allocationErrorHistogram;
@@ -149,7 +150,10 @@ public class TestUtils {
         private final Histogram lifetimeHistogram;
         private final Histogram idleTimeHistogram;
 
-        public InMemoryPoolMetrics() {
+        private final Clock clock;
+
+        public InMemoryPoolMetrics(Clock clock) {
+            this.clock = clock;
             long maxLatency = TimeUnit.HOURS.toMillis(1);
             int precision = 3; //precision 3 = 1/1000 of each time unit
             allocationSuccessHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
@@ -163,33 +167,17 @@ public class TestUtils {
             fastPathCounter = new LongAdder();
         }
 
-        @Override
-        public ZoneId getZone() {
-            return ZoneId.systemDefault();
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
-
-        @Override
-        public long millis() {
-            return System.nanoTime() / 1000000;
-        }
-
-        @Override
-        public Instant instant() {
-            return Instant.ofEpochMilli(millis());
+        public Clock getClock() {
+            return this.clock;
         }
 
         /**
          * Helper to measure the time with the precision needed for tests.
-         * @param startTimeMillis the starting time, as measured by {@link #millis()}
+         * @param startTimeMillis the starting time, as measured by {@link #getClock() the Clock's} {@link Clock#millis() millis()}
          * @return the elapsed time
          */
         public long measureTime(long startTimeMillis) {
-            final long l = (System.nanoTime() / 1000000) - startTimeMillis;
+            final long l = clock.millis() - startTimeMillis;
             if (l <= 0) return 1;
             return l;
         }
@@ -293,6 +281,80 @@ public class TestUtils {
 
         public long getSlowPathCount() {
             return slowPathCounter.sum();
+        }
+    }
+
+    /**
+     * A simple test {@link Clock} that is based on {@link System#nanoTime()}.
+     */
+    public static class NanoTimeClock extends Clock {
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.systemDefault();
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public long millis() {
+            return System.nanoTime() / 1000000;
+        }
+
+        @Override
+        public Instant instant() {
+            return Instant.ofEpochMilli(millis());
+        }
+    }
+
+    /**
+     * A simple virtual {@link Clock} that can be moved backward and forward. Starts at time 0.
+     */
+    public static class VirtualClock extends Clock {
+
+        private Instant now;
+
+        public VirtualClock() {
+            this(Instant.EPOCH);
+        }
+
+        public VirtualClock(Instant startTime) {
+            now = startTime;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.systemDefault();
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+
+        /**
+         * Advance this {@link Clock} by the given (positive or negative) {@link Duration}.
+         *
+         * @param duration the {@link Duration} to advance by
+         */
+        public void advanceTimeBy(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        /**
+         * Set this {@link Clock} to the given timestamp in milliseconds from the origin (0).
+         *
+         * @param timestampInMillis the new timestamp
+         */
+        public void setTimeTo(long timestampInMillis) {
+            now = Instant.ofEpochMilli(timestampInMillis);
         }
     }
 }

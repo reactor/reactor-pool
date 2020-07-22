@@ -83,6 +83,16 @@ public class TestUtils {
         public long idleTime() {
             return msSinceRelease;
         }
+
+        @Override
+        public long allocationTimestamp() {
+            return 0;
+        }
+
+        @Override
+        public long releaseTimestamp() {
+            return msSinceAllocation - msSinceRelease;
+        }
     }
 
     public static final class PoolableTest implements Disposable {

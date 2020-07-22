@@ -68,4 +68,24 @@ public interface PooledRefMetadata {
 	 * @return the wall-clock age (time since allocation) of the underlying object in milliseconds
 	 */
 	long lifeTime();
+
+	/**
+	 * Return a timestamp that denotes the order in which the {@link PooledRef} was last released,
+	 * or an equivalently totally-ordered positive number that can be used to compare in which order
+	 * two references have been released (unless released within the same millisecond).
+	 * If the {@link PooledRef} is currently acquired and held outside the pool, returns {@literal zero}
+	 * instead.
+	 *
+	 * @return the last release timestamp, or {@literal zero} if currently acquired
+	 */
+	long releaseTimestamp();
+
+	/**
+	 * Return a timestamp that denotes the order in which the {@link PooledRef} was created/allocated,
+	 * or an equivalently totally-ordered positive number that can be used to compare in which order
+	 * two references have been created (unless created within the same millisecond).
+	 *
+	 * @return the creation timestamp
+	 */
+	long allocationTimestamp();
 }

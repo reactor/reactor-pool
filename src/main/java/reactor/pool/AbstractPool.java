@@ -173,7 +173,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
         final T                   poolable;
         final int                 acquireCount;
 
-        long timeSinceRelease;
+        long releaseTimestamp;
 
         volatile int state;
         @SuppressWarnings("rawtypes")
@@ -191,7 +191,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             this.clock = clock;
             this.creationTimestamp = clock.millis();
             this.acquireCount = 0;
-            this.timeSinceRelease = -2L;
+            this.releaseTimestamp = -2L;
             this.state = STATE_IDLE;
         }
 
@@ -204,7 +204,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             this.clock = oldRef.clock;
             this.creationTimestamp = oldRef.creationTimestamp;
             this.acquireCount = oldRef.acquireCount(); //important to use method since the count variable is final
-            this.timeSinceRelease = oldRef.timeSinceRelease; //important to carry over the markReleased for metrics
+            this.releaseTimestamp = oldRef.releaseTimestamp; //important to carry over the markReleased for metrics
             //we're dealing with a new slot that was created when the previous one was released
             this.state = oldRef.state == STATE_INVALIDATED ?
                     STATE_INVALIDATED :
@@ -223,9 +223,9 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
         void markAcquired() {
             if (STATE.compareAndSet(this, STATE_IDLE, STATE_ACQUIRED)) {
-                long tsr = timeSinceRelease;
-                if (tsr > 0) {
-                    metricsRecorder.recordIdleTime(clock.millis() - tsr);
+                long rt = releaseTimestamp;
+                if (rt > 0) {
+                    metricsRecorder.recordIdleTime(clock.millis() - rt);
                 }
                 else {
                     metricsRecorder.recordIdleTime(clock.millis() - creationTimestamp);
@@ -240,7 +240,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
                     return false;
                 }
                 else if (STATE.compareAndSet(this, s, STATE_RELEASED)) {
-                    this.timeSinceRelease = clock.millis();
+                    this.releaseTimestamp = clock.millis();
                     return true;
                 }
             }
@@ -276,9 +276,24 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             if (STATE.get(this) == STATE_ACQUIRED) {
                 return 0L;
             }
-            long tsr = this.timeSinceRelease;
-            if (tsr < 0L) tsr = creationTimestamp; //any negative date other than -1 is considered "never yet released"
-            return clock.millis() - tsr;
+            long rt = this.releaseTimestamp;
+            if (rt < 0L) rt = creationTimestamp; //any negative date other than -1 is considered "never yet released"
+            return clock.millis() - rt;
+        }
+
+        @Override
+        public long allocationTimestamp() {
+            return creationTimestamp;
+        }
+
+        @Override
+        public long releaseTimestamp() {
+            if (STATE.get(this) == STATE_ACQUIRED) {
+                return 0L;
+            }
+            long rt = this.releaseTimestamp;
+            if (rt < 0L) rt = creationTimestamp; //any negative date other than -1 is considered "never yet released"
+            return rt;
         }
 
         /**

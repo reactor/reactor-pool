@@ -156,7 +156,7 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
     @Override
     public int idleSize() {
-        Queue e = ELEMENTS.get(this);
+        Queue<?> e = ELEMENTS.get(this);
         return e == null ? 0 : e.size();
     }
 
@@ -165,7 +165,8 @@ abstract class SimplePool<POOLABLE> extends AbstractPool<POOLABLE> {
         if (!isDisposed()) {
             if (!poolConfig.evictionPredicate().test(poolSlot.poolable, poolSlot)) {
                 metricsRecorder.recordRecycled();
-                Queue e = ELEMENTS.get(this);
+                @SuppressWarnings("unchecked")
+                Queue<QueuePooledRef<POOLABLE>> e = ELEMENTS.get(this);
                 if (e != null) {
                     QueuePooledRef<POOLABLE> slot = recycleSlot(poolSlot);
                     e.offer(slot);

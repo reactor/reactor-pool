@@ -359,7 +359,9 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
      *
      * @return a {@link Pool} with LIFO pending acquire ordering
+     * @deprecated use {@link #buildPool()} instead, the FIFO vs LIFO is to be removed in 0.3.x
      */
+    @Deprecated
     public InstrumentedPool<T> lifo() {
         return new SimpleDequePool<>(this.buildConfig(), false);
     }
@@ -373,7 +375,9 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
      *
      * @return a {@link Pool} with FIFO pending acquire ordering
+     * @deprecated use {@link #buildPool()} instead, to be removed in 0.3.x
      */
+    @Deprecated
     public InstrumentedPool<T> fifo() {
         return buildPool();
     }

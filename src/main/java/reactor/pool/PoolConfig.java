@@ -98,4 +98,15 @@ public interface PoolConfig<POOLABLE> {
 	 */
 	Clock clock();
 
+	/**
+	 * The order in which idle (aka available) resources should be used when the pool was
+	 * under-utilized and a new {@link Pool#acquire()} is performed. Returns {@code true}
+	 * if LRU (Least-Recently Used, the resource that was released first is emitted) or
+	 * {@code false} for MRU (Most-Recently Used, the resource that was released last is
+	 * emitted).
+	 *
+	 * @return {@code true} for LRU, {@code false} for MRU
+	 */
+	boolean reuseIdleResourcesInLruOrder();
+
 }

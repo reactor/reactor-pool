@@ -42,6 +42,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final Scheduler                                     acquisitionScheduler;
 	protected final PoolMetricsRecorder                           metricsRecorder;
 	protected final Clock                                         clock;
+	protected final boolean                                       isIdleLRU;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -51,7 +52,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
 			Scheduler acquisitionScheduler,
 			PoolMetricsRecorder metricsRecorder,
-			Clock clock) {
+			Clock clock,
+			boolean isIdleLRU) {
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
 		this.maxPending = maxPending;
@@ -61,6 +63,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.acquisitionScheduler = acquisitionScheduler;
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
+		this.isIdleLRU = isIdleLRU;
 	}
 
 	/**
@@ -81,6 +84,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.acquisitionScheduler = toCopyDpc.acquisitionScheduler;
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
 			this.clock = toCopyDpc.clock;
+			this.isIdleLRU = toCopyDpc.isIdleLRU;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -92,6 +96,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.acquisitionScheduler = toCopy.acquisitionScheduler();
 			this.metricsRecorder = toCopy.metricsRecorder();
 			this.clock = toCopy.clock();
+			this.isIdleLRU = toCopy.reuseIdleResourcesInLruOrder();
 		}
 	}
 
@@ -138,5 +143,10 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public Clock clock() {
 		return this.clock;
+	}
+
+	@Override
+	public boolean reuseIdleResourcesInLruOrder() {
+		return isIdleLRU;
 	}
 }

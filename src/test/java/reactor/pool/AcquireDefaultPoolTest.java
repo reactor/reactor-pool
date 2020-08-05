@@ -53,9 +53,14 @@ import static org.awaitility.Awaitility.await;
 import static reactor.pool.PoolBuilder.from;
 
 /**
+ * This test class uses both modes of acquire on the {@link PoolBuilder#buildPool()} default
+ * pool.
+ *
  * @author Simon Baslé
  */
-class SimpleFifoPoolTest {
+//TODO merge with CommonPoolTest ?
+//TODO ensure correct cleanup of executors and schedulers in all tests
+class AcquireDefaultPoolTest {
 
     private Disposable.Composite disposeList;
 
@@ -75,25 +80,22 @@ class SimpleFifoPoolTest {
     }
 
     //==utils for package-private config==
-    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+    static final PoolBuilder<PoolableTest, PoolConfig<PoolableTest>> poolableTestBuilder(int minSize, int maxSize, Mono<PoolableTest> allocator) {
+        return from(allocator)
+                .sizeBetween(minSize, maxSize)
+                .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+                .evictionPredicate((value, metadata) -> !value.isHealthy());
+    }
+
+    static final PoolBuilder<PoolableTest, PoolConfig<PoolableTest>> poolableTestBuilder(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
         return from(allocator)
                 .sizeBetween(minSize, maxSize)
                 .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
                 .evictionPredicate((value, metadata) -> !value.isHealthy())
-                .buildConfig();
+                .acquisitionScheduler(deliveryScheduler);
     }
 
-    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator, Scheduler deliveryScheduler) {
-        return from(allocator)
-                .sizeBetween(minSize, maxSize)
-                .sizeBetween(0, maxSize)
-                .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-                .evictionPredicate((value, metadata) -> !value.isHealthy())
-                .acquisitionScheduler(deliveryScheduler)
-                .buildConfig();
-    }
-
-    static final PoolConfig<PoolableTest> poolableTestConfig(int minSize, int maxSize, Mono<PoolableTest> allocator,
+    static final PoolBuilder<PoolableTest, PoolConfig<PoolableTest>> poolableTestBuilder(int minSize, int maxSize, Mono<PoolableTest> allocator,
             Consumer<? super PoolableTest> additionalCleaner) {
         return from(allocator)
                 .sizeBetween(minSize, maxSize)
@@ -101,8 +103,7 @@ class SimpleFifoPoolTest {
                     poolableTest.clean();
                     additionalCleaner.accept(poolableTest);
                 }))
-                .evictionPredicate((value, metadata) -> !value.isHealthy())
-                .buildConfig();
+                .evictionPredicate((value, metadata) -> !value.isHealthy());
     }
     //======
 
@@ -111,11 +112,11 @@ class SimpleFifoPoolTest {
         AtomicInteger counter = new AtomicInteger();
         AtomicReference<String> releaseRef = new AtomicReference<>();
 
-        SimpleFifoPool<String> pool = new SimpleFifoPool<>(
+        InstrumentedPool<String> pool =
                 from(Mono.just("Hello Reactive World"))
                         .sizeBetween(0, 1)
                         .releaseHandler(s -> Mono.fromRunnable(()-> releaseRef.set(s)))
-                        .buildConfig());
+                        .buildPool();
 
         Flux<String> words = pool.withPoolable(poolable -> Mono.just(poolable)
                 //simulate deriving a value from the resource (ie. query from DB connection)
@@ -136,8 +137,8 @@ class SimpleFifoPoolTest {
         Thread.sleep(500);
         //we've finished processing, let's check resource has been automatically released
         assertThat(counter).as("after all emitted").hasValue(3);
-        assertThat(pool.poolConfig.allocationStrategy().estimatePermitCount()).as("allocation permits").isZero();
-        assertThat(pool.elements).as("available").hasSize(1);
+        assertThat(pool.metrics().allocatedSize()).as("allocation permits").isEqualTo(pool.metrics().getMaxAllocatedSize());
+        assertThat(pool.metrics().idleSize()).as("available").isOne();
         assertThat(releaseRef).as("released").hasValue("Hello Reactive World");
     }
 
@@ -171,11 +172,11 @@ class SimpleFifoPoolTest {
 
             try {
 
-                PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+                InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                         Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                             .subscribeOn(scheduler),
-                        pt -> releasedCount.incrementAndGet());
-                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        pt -> releasedCount.incrementAndGet())
+.buildPool();
 
                 //acquire the only element and capture the subscription, don't request just yet
                 CountDownLatch latch = new CountDownLatch(1);
@@ -214,10 +215,10 @@ class SimpleFifoPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
             pool.warmup().block();
 
             //the pool is started and warmed up with one available element
@@ -237,10 +238,10 @@ class SimpleFifoPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
@@ -262,10 +263,10 @@ class SimpleFifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -322,11 +323,10 @@ class SimpleFifoPoolTest {
             Scheduler racerAcquireScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerAcquire"))));
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -360,11 +360,11 @@ class SimpleFifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one available element
             //we prepare to acquire it
@@ -384,11 +384,11 @@ class SimpleFifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
@@ -411,11 +411,11 @@ class SimpleFifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -460,11 +460,11 @@ class SimpleFifoPoolTest {
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerAcquireScheduler = Schedulers.newSingle("racerAcquire");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -498,10 +498,10 @@ class SimpleFifoPoolTest {
             final Scheduler racer = Schedulers.fromExecutorService(Executors.newFixedThreadPool(2));
             AtomicInteger newCount = new AtomicInteger();
             try {
-                PoolConfig<PoolableTest> testConfig = from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement())))
+                InstrumentedPool<PoolableTest> pool =
+                from(Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement())))
                         .sizeBetween(4, 5)
-                        .buildConfig();
-                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .buildPool();
 
                 for (int i = 0; i < 100; i++) {
                     RaceTestUtils.race(() -> pool.acquire().block().release().block(),
@@ -526,8 +526,9 @@ class SimpleFifoPoolTest {
         @DisplayName("acquire delays instead of allocating past maxSize")
         void acquireDelaysNotAllocate() {
             AtomicInteger newCount = new AtomicInteger();
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(poolableTestConfig(2, 3,
-                    Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet())))));
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(2, 3,
+                    Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet()))))
+                    .buildPool();
 
             pool.withPoolable(poolable -> Mono.just(poolable).delayElement(Duration.ofMillis(500))).subscribe();
             pool.withPoolable(poolable -> Mono.just(poolable).delayElement(Duration.ofMillis(500))).subscribe();
@@ -564,11 +565,11 @@ class SimpleFifoPoolTest {
         void allocatedReleasedOrAbortedIfCancelRequestRace(int round, AtomicInteger newCount, AtomicInteger releasedCount, boolean cancelFirst) throws InterruptedException {
             Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                     Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
                         .subscribeOn(scheduler),
-                    pt -> releasedCount.incrementAndGet());
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    pt -> releasedCount.incrementAndGet())
+.buildPool();
 
             //acquire the only element and capture the subscription, don't request just yet
             CountDownLatch latch = new CountDownLatch(1);
@@ -603,10 +604,10 @@ class SimpleFifoPoolTest {
         void defaultThreadDeliveringWhenHasElements() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
             pool.warmup().block();
 
             //the pool is started and warmed up with one available element
@@ -626,10 +627,10 @@ class SimpleFifoPoolTest {
         void defaultThreadDeliveringWhenNoElementsButNotFull() throws InterruptedException {
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
@@ -651,10 +652,10 @@ class SimpleFifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
-                        .subscribeOn(Schedulers.newParallel("poolable test allocator")));
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                        .subscribeOn(Schedulers.newParallel("poolable test allocator")))
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -713,11 +714,10 @@ class SimpleFifoPoolTest {
             Scheduler allocatorScheduler = Schedulers.newParallel("poolable test allocator");
 
             try {
-                PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+                InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                         Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
-                            .subscribeOn(allocatorScheduler));
-
-                SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                            .subscribeOn(allocatorScheduler))
+.buildPool();
 
                 //the pool is started with one elements, and has capacity for 1.
                 //we actually first acquire that element so that next acquire will wait for a release
@@ -765,11 +765,11 @@ class SimpleFifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one available element
             //we prepare to acquire it
@@ -789,11 +789,11 @@ class SimpleFifoPoolTest {
             Scheduler deliveryScheduler = Schedulers.newSingle("delivery");
             AtomicReference<String> threadName = new AtomicReference<>();
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(0, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with no elements, and has capacity for 1
             //we prepare to acquire, which would allocate the element
@@ -816,11 +816,11 @@ class SimpleFifoPoolTest {
             Scheduler acquireScheduler = Schedulers.newSingle("acquire");
             Scheduler releaseScheduler = Schedulers.fromExecutorService(
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"release"))));
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(PoolableTest::new)
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -865,11 +865,11 @@ class SimpleFifoPoolTest {
                     Executors.newSingleThreadScheduledExecutor((r -> new Thread(r,"racerRelease"))));
             Scheduler racerAcquireScheduler = Schedulers.newSingle("racerAcquire");
 
-            PoolConfig<PoolableTest> testConfig = poolableTestConfig(1, 1,
+            InstrumentedPool<PoolableTest> pool = poolableTestBuilder(1, 1,
                     Mono.fromCallable(() -> new PoolableTest(newCount.getAndIncrement()))
                         .subscribeOn(Schedulers.newParallel("poolable test allocator")),
-                    deliveryScheduler);
-            SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(testConfig);
+                    deliveryScheduler)
+.buildPool();
 
             //the pool is started with one elements, and has capacity for 1.
             //we actually first acquire that element so that next acquire will wait for a release
@@ -901,12 +901,12 @@ class SimpleFifoPoolTest {
     @Test
     void stillacquiredAfterPoolDisposedMaintainsCount() {
         AtomicInteger cleanerCount = new AtomicInteger();
-        SimpleFifoPool<PoolableTest> pool = new SimpleFifoPool<>(
+        InstrumentedPool<PoolableTest> pool =
                 from(Mono.fromCallable(PoolableTest::new))
                         .sizeBetween(3, 3)
                         .releaseHandler(p -> Mono.fromRunnable(cleanerCount::incrementAndGet))
                         .evictionPredicate((value, metadata) -> !value.isHealthy())
-                        .buildConfig());
+                        .buildPool();
 
         PooledRef<PoolableTest> acquired1 = pool.acquire().block();
         PooledRef<PoolableTest> acquired2 = pool.acquire().block();
@@ -918,13 +918,13 @@ class SimpleFifoPoolTest {
 
         pool.dispose();
 
-        assertThat(pool.acquired).as("before releases").isEqualTo(3);
+        assertThat(pool.metrics().acquiredSize()).as("before releases").isEqualTo(3);
 
         acquired1.release().block();
         acquired2.release().block();
         acquired3.release().block();
 
-        assertThat(pool.acquired).as("after releases").isEqualTo(0);
+        assertThat(pool.metrics().acquiredSize()).as("after releases").isEqualTo(0);
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
@@ -936,10 +936,10 @@ class SimpleFifoPoolTest {
         autoDispose(executorService::shutdownNow);
 
         for (int l = 0; l < loops; l++) {
-            PoolConfig<String> config = PoolBuilder.from(Mono.just("foo"))
-                                                   .sizeBetween(0, 100)
-                                                   .buildConfig();
-            SimpleFifoPool<String> fifoPool = autoDispose(new SimpleFifoPool<>(config));
+            InstrumentedPool<String> fifoPool = autoDispose(
+                    PoolBuilder.from(Mono.just("foo"))
+                               .sizeBetween(0, 100)
+                               .buildPool());
             CountDownLatch latch = new CountDownLatch(parallelism);
 
             for (int i = 0; i < parallelism; i++) {

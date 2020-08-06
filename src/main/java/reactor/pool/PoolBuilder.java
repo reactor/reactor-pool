@@ -70,6 +70,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     Scheduler                              acquisitionScheduler = Schedulers.immediate();
     Clock                                  clock                = Clock.systemUTC();
     PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    boolean                                idleLruOrder         = true;
 
     PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
         this.allocator = allocator;
@@ -88,6 +89,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         this.acquisitionScheduler = source.acquisitionScheduler;
         this.metricsRecorder = source.metricsRecorder;
         this.clock = source.clock;
+        this.idleLruOrder = source.idleLruOrder;
     }
 
     /**
@@ -286,11 +288,51 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
+     * Configure the pool so that if there are idle resources (ie pool is under-utilized),
+     * the next {@link Pool#acquire()} will get the <b>Least Recently Used</b> resource
+     * (LRU, ie. the resource that was released first among the current idle resources).
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> idleResourceReuseLruOrder() {
+        return idleResourceReuseOrder(true);
+    }
+
+    /**
+     * Configure the pool so that if there are idle resources (ie pool is under-utilized),
+     * the next {@link Pool#acquire()} will get the <b>Most Recently Used</b> resource
+     * (MRU, ie. the resource that was released last among the current idle resources).
+     *
+     * @return this {@link Pool} builder
+     */
+    public PoolBuilder<T, CONF> idleResourceReuseMruOrder() {
+        return idleResourceReuseOrder(false);
+    }
+
+    /**
+     * Configure the order in which idle resources are used when the next {@link Pool#acquire()}
+     * is performed (while the pool is under-utilized). Allows to chose between
+     * the <b>Least Recently Used</b> order when {@code true} (LRU, ie. the resource that
+     * was released first among the current idle resources, the default) and
+     * <b>Most Recently Used</b> order (MRU, ie. the resource that was released last among
+     * the current idle resources).
+     *
+     * @param isLru {@code true} for LRU (the default) or {@code false} for MRU
+     * @return this {@link Pool} builder
+     * @see #idleResourceReuseLruOrder()
+     * @see #idleResourceReuseMruOrder()
+     */
+    public PoolBuilder<T, CONF> idleResourceReuseOrder(boolean isLru) {
+        this.idleLruOrder = isLru;
+        return this;
+    }
+
+    /**
      * Add implementation-specific configuration, changing the type of {@link PoolConfig}
      * passed to the {@link Pool} factory in {@link #build(Function)}.
      *
      * @param configModifier {@link Function} to transform the type of {@link PoolConfig}
-     * create by this builder for the benefit of the pool factory, allowing for custom
+     * created by this builder for the benefit of the pool factory, allowing for custom
      * implementations with custom configurations
      * @param <CONF2> new type for the configuration
      * @return a new PoolBuilder that now produces a different type of {@link PoolConfig}
@@ -300,25 +342,44 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
     }
 
     /**
+     * Construct a default reactor pool with the builder's configuration.
+     *
+     * @return an {@link InstrumentedPool}
+     */
+    public InstrumentedPool<T> buildPool() {
+        return new SimpleDequePool<>(this.buildConfig(), true);
+    }
+
+    /**
      * Build a LIFO flavor of {@link Pool}, that is to say a flavor where the last
      * {@link Pool#acquire()} {@link Mono Mono} that was pending is served first
      * whenever a resource becomes available.
+     * <p>
+     * This is different from the {@link #idleResourceReuseOrder(boolean) idle resource reuse order},
+     * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
      *
-     * @return a builder of {@link Pool} with LIFO pending acquire ordering
+     * @return a {@link Pool} with LIFO pending acquire ordering
+     * @deprecated use {@link #buildPool()} instead, the FIFO vs LIFO is to be removed in 0.3.x
      */
+    @Deprecated
     public InstrumentedPool<T> lifo() {
-        return build(SimpleLifoPool::new);
+        return new SimpleDequePool<>(this.buildConfig(), false);
     }
 
     /**
      * Build the default flavor of {@link Pool}, which has FIFO semantics on pending
      * {@link Pool#acquire()} {@link Mono Mono}, serving the oldest pending acquire first
      * whenever a resource becomes available.
+     * <p>
+     * This is different from the {@link #idleResourceReuseOrder(boolean) idle resource reuse order},
+     * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
      *
-     * @return a builder of {@link Pool} with FIFO pending acquire ordering
+     * @return a {@link Pool} with FIFO pending acquire ordering
+     * @deprecated use {@link #buildPool()} instead, to be removed in 0.3.x
      */
+    @Deprecated
     public InstrumentedPool<T> fifo() {
-        return build(SimpleFifoPool::new);
+        return buildPool();
     }
 
     /**
@@ -345,7 +406,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
                 evictionPredicate,
                 acquisitionScheduler,
                 metricsRecorder,
-                clock);
+                clock,
+                idleLruOrder);
 
         return this.configModifier.apply(baseConfig);
     }

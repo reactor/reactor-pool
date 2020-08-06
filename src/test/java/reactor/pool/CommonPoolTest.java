@@ -18,11 +18,9 @@ package reactor.pool;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
@@ -44,6 +42,7 @@ import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -72,22 +71,23 @@ import static org.awaitility.Awaitility.await;
  */
 public class CommonPoolTest {
 
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> simplePoolFifo() {
+	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> lruFifo() {
 		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
-				return (AbstractPool<T>) builder.fifo();
+				return (AbstractPool<T>) builder.buildPool();
 			}
 
 			@Override
 			public String toString() {
-				return "simplePool FIFO";
+				return "LRU & FIFO";
 			}
 		};
 	}
 
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> simplePoolLifo() {
+	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> lruLifo() {
 		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
+			@SuppressWarnings("deprecation")
 			@Override
 			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
 				return (AbstractPool<T>) builder.lifo();
@@ -95,21 +95,58 @@ public class CommonPoolTest {
 
 			@Override
 			public String toString() {
-				return "simplePool LIFO";
+				return "LRU & LIFO";
+			}
+		};
+	}
+
+	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> mruFifo() {
+		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
+			@Override
+			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
+				return (AbstractPool<T>) builder.idleResourceReuseMruOrder().buildPool();
+			}
+
+			@Override
+			public String toString() {
+				return "MRU & FIFO";
+			}
+		};
+	}
+
+	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> mruLifo() {
+		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
+			@SuppressWarnings("deprecation")
+			@Override
+			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
+				return (AbstractPool<T>) builder.idleResourceReuseMruOrder().lifo();
+			}
+
+			@Override
+			public String toString() {
+				return "MRU & LIFO";
 			}
 		};
 	}
 
 	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> allPools() {
-		return Arrays.asList(simplePoolFifo(), simplePoolLifo());
+		return Arrays.asList(lruFifo(), lruLifo(), mruFifo(), mruLifo());
 	}
 
 	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> fifoPools() {
-		return Collections.singletonList(simplePoolFifo());
+		return Arrays.asList(lruFifo(), mruFifo());
 	}
 
 	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> lifoPools() {
-		return Collections.singletonList(simplePoolLifo());
+		return Arrays.asList(lruLifo(), mruLifo());
+	}
+
+	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> mruPools() {
+		return Arrays.asList(mruFifo(), mruLifo());
+	}
+
+	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> lruPools() {
+		return Arrays.asList(lruFifo(), lruLifo());
 	}
 
 	@ParameterizedTest
@@ -546,6 +583,40 @@ public class CommonPoolTest {
 		else {
 			fail("not enough new elements generated, missing " + latch2.getCount());
 		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("mruPools")
+	void smokeTestMruIdle(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+		AtomicInteger newCount = new AtomicInteger();
+		PoolBuilder<PoolableTest, ?> builder =
+				PoolBuilder.from(Mono.fromSupplier(() -> new PoolableTest(newCount.incrementAndGet())))
+				           .sizeBetween(0, 3)
+				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
+				           .evictionPredicate((value, metadata) -> !value.isHealthy());
+		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		PooledRef<PoolableTest> ref1 = pool.acquire().block();
+		PooledRef<PoolableTest> ref2 = pool.acquire().block();
+		PooledRef<PoolableTest> ref3 = pool.acquire().block();
+
+		ref2.release().block();
+		ref1.release().block();
+		ref3.release().block();
+
+		assertThat(pool.idleSize()).as("pool fully idle").isEqualTo(3);
+
+		pool.acquire()
+		    .as(StepVerifier::create)
+		    .assertNext(ref -> assertThat(ref.poolable().id).as("MRU first call returns ref3").isEqualTo(3))
+		    .verifyComplete();
+
+		pool.acquire()
+		    .as(StepVerifier::create)
+		    .assertNext(ref -> assertThat(ref.poolable().id).as("MRU second call returns ref1").isEqualTo(1))
+		    .verifyComplete();
+
+		assertThat(pool.idleSize()).as("idleSize after 2 MRU calls").isOne();
 	}
 
 	@ParameterizedTest
@@ -2054,8 +2125,8 @@ public class CommonPoolTest {
 	}
 
 	@ParameterizedTest
-	@MethodSource("allPools")
-	void releaseOnAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	@MethodSource("lruPools")
+	void releaseAllOnAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
 		AtomicInteger intSource = new AtomicInteger();
 		AtomicInteger releasedIndex = new AtomicInteger();
 		ConcurrentLinkedQueue<Integer> destroyed = new ConcurrentLinkedQueue<>();
@@ -2084,12 +2155,12 @@ public class CommonPoolTest {
 		assertThat(destroyed).as("none destroyed so far").isEmpty();
 
 		//set the release predicate to release <= 3 on acquire
-		releasedIndex.set(3);
+		releasedIndex.set(4);
 
-		assertThat(pool.acquire().block().poolable()).as("acquire post idle").isEqualTo(4);
-		assertThat(intSource).as("didn't generate a new value").hasValue(4);
-		assertThat(destroyed).as("single acquire released all evictable idle")
-		                     .containsExactly(1, 2, 3);
+		assertThat(pool.acquire().block().poolable()).as("allocated post idle").isEqualTo(5);
+		assertThat(intSource).as("did generate a new value").hasValue(5);
+		assertThat(destroyed).as("single acquire released all idle")
+		                     .containsExactly(1, 2, 3, 4);
 	}
 
 	@ParameterizedTest

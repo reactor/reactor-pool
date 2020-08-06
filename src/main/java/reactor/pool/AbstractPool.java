@@ -106,7 +106,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
     // == common methods to interact with idle/pending queues ==
 
-    abstract boolean elementOffer(POOLABLE element);
+    abstract boolean elementOffer(POOLABLE element); //used in tests
 
     /**
      * Note to implementors: stop the {@link Borrower} countdown by calling

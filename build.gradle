@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.gradle.api.internal.plugins.osgi.OsgiHelper
+import me.champeau.gradle.japicmp.JapicmpTask
 
 buildscript {
   repositories {
@@ -28,6 +28,8 @@ plugins {
   id "com.github.hierynomus.license" version "0.15.0"
   id "com.jfrog.artifactory" version "4.15.2" apply false
   id 'biz.aQute.bnd.builder' version '5.0.1' apply false
+  id "me.champeau.gradle.japicmp" version "0.2.6"
+  id "de.undercouch.download" version "3.4.3"
 }
 
 description = 'Reactive Object Pool'
@@ -39,7 +41,6 @@ ext {
       realVersion = version.toString().replace("BUILD-SNAPSHOT", versionBranch + ".BUILD-SNAPSHOT")
       project.version = realVersion
       println "Building special snapshot ${project.version}"
-      println "OSGI version would be: ${new OsgiHelper().getVersion(project.version.toString())}"
     }
   }
 
@@ -91,7 +92,6 @@ configure(rootProject) { project ->
   apply plugin: 'biz.aQute.bnd.builder'
   apply from: "$gradleScriptDir/doc.gradle"
   apply from: "$gradleScriptDir/setup.gradle"
-  apply plugin: 'osgi'
   apply from: "${gradleScriptDir}/errorprone.gradle"
   apply from: "${gradleScriptDir}/releaser.gradle"
 
@@ -101,8 +101,6 @@ configure(rootProject) { project ->
       html.enabled = true
     }
   }
-
-  ext.bundleImportPackages = [ '!javax.annotation', '*']
 
   [compileJava, compileTestJava]*.options*.compilerArgs = ["-Xlint:varargs",
                                                            "-Xlint:cast",
@@ -201,7 +199,6 @@ configure(rootProject) { project ->
 
   jar {
     manifest {
-      instruction 'Import-Package', bundleImportPackages.join(',')
       attributes("Created-By": "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})",
               "Implementation-Title": project.name,
               "Implementation-Version": project.version,
@@ -225,5 +222,52 @@ configurations.all {
     mapping {
       java = 'SLASHSTAR_STYLE'
     }
+  }
+}
+
+
+task downloadBaseline(type: Download) {
+  onlyIfNewer true
+  compress true
+
+  src "${repositories.jcenter().url}io/projectreactor/addons/reactor-pool/$compatibleVersion/reactor-pool-${compatibleVersion}.jar"
+  dest "${buildDir}/baselineLibs/reactor-pool-${compatibleVersion}.jar"
+}
+
+task japicmp(type: JapicmpTask) {
+  if (project.gradle.startParameter.isOffline()) {
+    println "Offline: skipping downloading of baseline and JAPICMP"
+    enabled = false
+  }
+  else if ("$compatibleVersion" == "SKIP") {
+    println "SKIP: Instructed to skip the baseline comparison"
+    enabled = false
+  }
+  else {
+    println "Will download and perform baseline comparison with ${compatibleVersion}"
+    dependsOn(downloadBaseline)
+  }
+
+  oldClasspath = tasks.downloadBaseline.outputs.files
+  newClasspath = tasks.jar.outputs.files
+  onlyBinaryIncompatibleModified = true
+  failOnModification = true
+  failOnSourceIncompatibility = true
+  txtOutputFile = file("${project.buildDir}/reports/japi.txt")
+  ignoreMissingClasses = true
+  includeSynthetic = true
+
+  //TODO after a release, bump the gradle.properties baseline
+  //TODO after a release, remove the reactor-pool exclusions below if any
+  classExcludes = [
+  ]
+  methodExcludes = [
+  ]
+}
+check.dependsOn japicmp
+
+gradle.taskGraph.afterTask { task, state ->
+  if (task instanceof JapicmpTask && state.failure) {
+    print file("${project.buildDir}/reports/japi.txt").getText()
   }
 }

@@ -67,6 +67,24 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	}
 
 	/**
+	 * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, Function, Function, BiPredicate, Scheduler, PoolMetricsRecorder, Clock, boolean) other constructor}
+	 * with explicit setting of {@code isIdleLru}, to be removed in 0.3.x
+	 */
+	@Deprecated
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock) {
+		this(allocator, allocationStrategy, maxPending, releaseHandler, destroyHandler, evictionPredicate, acquisitionScheduler, metricsRecorder, clock,
+				true);
+	}
+
+	/**
 	 * Copy constructor for the benefit of specializations of {@link PoolConfig}.
 	 *
 	 * @param toCopy the original {@link PoolConfig} to copy (only standard {@link PoolConfig}

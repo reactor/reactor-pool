@@ -27,6 +27,7 @@ buildscript {
 plugins {
   id "com.github.hierynomus.license" version "0.15.0"
   id "com.jfrog.artifactory" version "4.15.2" apply false
+  id 'biz.aQute.bnd.builder' version '5.0.1' apply false
 }
 
 description = 'Reactive Object Pool'
@@ -66,6 +67,19 @@ ext {
                   "https://docs.oracle.com/javaee/6/api/",
                   "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
                   "https://projectreactor.io/docs/core/release/api/"] as String[]
+
+  bndOptions = [
+          "Export-Package": [
+                  "!*internal*",
+                  "reactor.pool.*"
+          ].join(","),
+          "Import-Package": [
+                  "!javax.annotation",
+                  "*"
+          ].join(","),
+          "Bundle-Name" : "reactor-pool",
+          "Bundle-SymbolicName" : "io.projectreactor.addons.reactor-pool"
+  ]
 }
 
 
@@ -74,6 +88,7 @@ configure(rootProject) { project ->
 
   apply plugin: 'java-library'
   apply plugin: 'jacoco'
+  apply plugin: 'biz.aQute.bnd.builder'
   apply from: "$gradleScriptDir/doc.gradle"
   apply from: "$gradleScriptDir/setup.gradle"
   apply plugin: 'osgi'
@@ -192,6 +207,7 @@ configure(rootProject) { project ->
               "Implementation-Version": project.version,
               "Automatic-Module-Name": "reactor.pool")
     }
+    bnd(bndOptions)
   }
 
   check.dependsOn jacocoTestReport

@@ -91,7 +91,7 @@ public class TestUtils {
 
         @Override
         public long releaseTimestamp() {
-            return msSinceAllocation - msSinceRelease;
+            return (long) msSinceAllocation - msSinceRelease;
         }
     }
 

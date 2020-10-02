@@ -21,6 +21,8 @@ plugins {
   id 'biz.aQute.bnd.builder' version '5.0.1' apply false
   id "me.champeau.gradle.japicmp" version "0.2.6"
   id "de.undercouch.download" version "3.4.3"
+  id "com.github.erizo.gradle.jcstress" version "0.8.4"
+  id "idea"
 }
 
 description = 'Reactive Object Pool'
@@ -261,3 +263,9 @@ gradle.taskGraph.afterTask { task, state ->
     print file("${project.buildDir}/reports/japi.txt").getText()
   }
 }
+
+jcstress {
+  mode = 'default' //quick, default, tough
+}
+tasks.jcstressJar.classifier("jcstress") // make sure jcstress jar doesn't override our own
+tasks.check.dependsOn(tasks.jcstress)

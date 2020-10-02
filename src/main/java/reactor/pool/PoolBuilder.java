@@ -184,16 +184,57 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         return this;
     }
 
-    public PoolBuilder<T, CONF> evictOnlyWhenUsed() {
-        this.evictionBackgroundInterval = Duration.ZERO;
-        this.evictionBackgroundScheduler = Schedulers.immediate();
-        return this;
+    /**
+     * Disable background eviction entirely, so that {@link #evictionPredicate(BiPredicate) evictionPredicate}
+     * is only checked upon {@link Pool#acquire() acquire} and {@link PooledRef#release() release} (ie only
+     * when there is pool activity).
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration)
+     */
+    public PoolBuilder<T, CONF> evictInBackgroundDisabled() {
+        return evictInBackground(Duration.ZERO);
     }
 
+    /**
+     * Enable background eviction so that {@link #evictionPredicate(BiPredicate) evictionPredicate} is regularly
+     * applied to elements that are idle in the pool when there is no pool activity (i.e. {@link Pool#acquire() acquire}
+     * and {@link PooledRef#release() release}).
+     * <p>
+     * Providing an {@code evictionInterval} of {@link Duration#ZERO zero} is similar to {@link #evictInBackgroundDisabled() disabling}
+     * background eviction.
+     * <p>
+     * Background eviction support is optional: although all vanilla reactor-pool implementations DO support it,
+     * other implementations MAY ignore it.
+     * The background eviction process can be implemented in a best effort fashion, backing off if it detects any pool activity.
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration, Scheduler)
+     */
     public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval) {
+        if (evictionInterval == Duration.ZERO) {
+            this.evictionBackgroundInterval = Duration.ZERO;
+            this.evictionBackgroundScheduler = Schedulers.immediate();
+            return this;
+        }
         return this.evictInBackground(evictionInterval, Schedulers.parallel());
     }
 
+    /**
+     * Enable background eviction so that {@link #evictionPredicate(BiPredicate) evictionPredicate} is regularly
+     * applied to elements that are idle in the pool when there is no pool activity (i.e. {@link Pool#acquire() acquire}
+     * and {@link PooledRef#release() release}).
+     * <p>
+     * Providing an {@code evictionInterval} of {@link Duration#ZERO zero} is similar to {@link #evictInBackgroundDisabled() disabling}
+     * background eviction.
+     * <p>
+     * Background eviction support is optional: although all vanilla reactor-pool implementations DO support it,
+     * other implementations MAY ignore it.
+     * The background eviction process can be implemented in a best effort fashion, backing off if it detects any pool activity.
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration)
+     */
     public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval, Scheduler reaperTaskScheduler) {
         this.evictionBackgroundInterval = evictionInterval;
         this.evictionBackgroundScheduler = reaperTaskScheduler;

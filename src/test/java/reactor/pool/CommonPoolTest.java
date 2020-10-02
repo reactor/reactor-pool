@@ -25,9 +25,11 @@ import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,6 +46,7 @@ import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -2365,4 +2368,77 @@ public class CommonPoolTest {
 		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
 	}
 
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void maxPendingZero(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+		AtomicInteger source = new AtomicInteger();
+		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
+				.from(Mono.fromSupplier(source::incrementAndGet))
+				.sizeBetween(1, 2)
+				.maxPendingAcquire(0);
+
+		AbstractPool<Integer> pool = configAdjuster.apply(configBuilder);
+
+		assertThat(pool.warmup().block(Duration.ofSeconds(1))).as("warmup").isOne();
+
+		//there is one idle resource
+		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+				.as("acquire on idle")
+				.isNotNull()
+				.returns(1 , PooledRef::poolable);
+
+		//there is now idle resource, but still capacity
+		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+				.as("acquire on allocate")
+				.isNotNull()
+				.returns(2 , PooledRef::poolable);
+
+		//there is now idle resource, but still capacity
+		assertThatExceptionOfType(PoolAcquirePendingLimitException.class)
+				.isThrownBy(() -> pool.acquire().block(Duration.ofSeconds(1)))
+				.as("acquire on maxPending")
+				.withMessage("No pending allowed and pool has reached allocation limit");
+	}
+
+	@ParameterizedTest
+	@MethodSource("allPools")
+	void maxPendingOne(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
+			throws InterruptedException {
+		AtomicInteger source = new AtomicInteger();
+		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
+				.from(Mono.fromSupplier(source::incrementAndGet))
+				.sizeBetween(1, 2)
+				.maxPendingAcquire(1);
+
+		AbstractPool<Integer> pool = configAdjuster.apply(configBuilder);
+
+		assertThat(pool.warmup().block(Duration.ofSeconds(1))).as("warmup").isOne();
+
+		//there is one idle resource
+		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+				.as("acquire on idle")
+				.isNotNull()
+				.returns(1 , PooledRef::poolable);
+
+		//there is now idle resource, but still capacity
+		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+				.as("acquire on allocate")
+				.isNotNull()
+				.returns(2 , PooledRef::poolable);
+
+		//there is now idle resource, no capacity, but pending 1 is allowed
+		//in order to test the scenario where we've reached maxPending, this pending must not be cancelled
+		CompletableFuture<PooledRef<Integer>> pendingNumberOne = pool.acquire().timeout(Duration.ofSeconds(1)).toFuture();
+
+		//there is now idle resource, no capacity and we've reached maxPending
+		assertThatExceptionOfType(PoolAcquirePendingLimitException.class)
+				.isThrownBy(() -> pool.acquire().block(Duration.ofSeconds(1)))
+				.as("pending acquire on maxPending")
+				.withMessage("Pending acquire queue has reached its maximum size of 1");
+
+		//post-assert the intermediate
+		assertThatCode(pendingNumberOne::join)
+					.as("pending 1 was parked for 1s and then timed out")
+					.hasMessageStartingWith("java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 1000ms");
+	}
 }

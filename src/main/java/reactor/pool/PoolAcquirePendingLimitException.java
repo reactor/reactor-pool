@@ -33,6 +33,11 @@ public class PoolAcquirePendingLimitException extends RuntimeException {
 		this.maxPending = maxPending;
 	}
 
+	public PoolAcquirePendingLimitException(int maxPending, String message) {
+		super(message);
+		this.maxPending = maxPending;
+	}
+
 	/**
 	 * @return the configured maximum pending size for the {@link Pool}
 	 */

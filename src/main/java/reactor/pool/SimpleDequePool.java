@@ -386,10 +386,21 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		for (; ; ) {
 			int currentPending = PENDING_COUNT.get(this);
 			if (maxPending >= 0 && currentPending == maxPending) {
-				pending.fail(new PoolAcquirePendingLimitException(maxPending));
-				return false;
+				//best effort: check for idle and capacity
+				Deque<QueuePooledRef<POOLABLE>> ir = this.idleResources;
+				if (ir.isEmpty() && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
+					//fail fast. differentiate slightly special case of maxPending == 0
+					if (maxPending == 0) {
+						pending.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+					}
+					else {
+						pending.fail(new PoolAcquirePendingLimitException(maxPending));
+					}
+					return false;
+				}
 			}
-			else if (PENDING_COUNT.compareAndSet(this,
+
+			if (PENDING_COUNT.compareAndSet(this,
 					currentPending,
 					currentPending + 1)) {
 				this.pending.offerLast(pending); //unbounded

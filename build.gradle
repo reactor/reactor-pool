@@ -15,15 +15,6 @@
  */
 import me.champeau.gradle.japicmp.JapicmpTask
 
-buildscript {
-  repositories {
-    maven { url "https://repo.spring.io/plugins-release" }
-  }
-  dependencies {
-    classpath 'io.spring.gradle:spring-io-plugin:0.0.4.RELEASE'
-  }
-}
-
 plugins {
   id "com.github.hierynomus.license" version "0.15.0"
   id "com.jfrog.artifactory" version "4.15.2" apply false
@@ -92,7 +83,6 @@ configure(rootProject) { project ->
   apply plugin: 'biz.aQute.bnd.builder'
   apply from: "$gradleScriptDir/doc.gradle"
   apply from: "$gradleScriptDir/setup.gradle"
-  apply from: "${gradleScriptDir}/errorprone.gradle"
   apply from: "${gradleScriptDir}/releaser.gradle"
 
   jacocoTestReport {

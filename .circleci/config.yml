@@ -9,9 +9,14 @@ orbs:
   codecov: codecov/codecov@1.0.4
 jobs:
   build:
+    context:
+      - docker-hub-cred
     docker:
       # specify the version you desire here
-      - image: circleci/openjdk:8-jdk
+      - image: cimg/openjdk:8.0
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
 
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images

@@ -7,10 +7,14 @@ version: 2.1
 
 orbs:
   codecov: codecov/codecov@1.0.4
+
 workflows:
   build:
-    context:
-      - docker-hub-cred
+    jobs:
+      - build:
+          context:
+            -  docker-hub-cred
+
 jobs:
     docker:
       # specify the version you desire here

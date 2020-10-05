@@ -10,7 +10,7 @@ orbs:
 workflows:
   build:
     jobs:
-      - docker:
+      - build:
           context:
             - docker-hub-cred
 jobs:

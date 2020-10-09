@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package reactor.pool;
 
 import java.time.Duration;
@@ -24,14 +25,72 @@ import org.openjdk.jcstress.annotations.Arbiter;
 import org.openjdk.jcstress.annotations.JCStressTest;
 import org.openjdk.jcstress.annotations.Outcome;
 import org.openjdk.jcstress.annotations.State;
+import org.openjdk.jcstress.infra.results.IIII_Result;
 import org.openjdk.jcstress.infra.results.II_Result;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import static org.openjdk.jcstress.annotations.Expect.ACCEPTABLE;
-import static org.openjdk.jcstress.annotations.Expect.FORBIDDEN;
+import static org.openjdk.jcstress.annotations.Expect.*;
 
 public class SimpleDequePoolStressTest {
+
+	@JCStressTest
+	@Outcome(id = "1001, 2, 0, 0", expect = ACCEPTABLE,  desc = "evicted, acquired second resource")
+	@Outcome(id = "1001, -1, 0, 1", expect = ACCEPTABLE_INTERESTING,  desc = "evicted, acquired failed fast during/before destroy")
+	@Outcome(id = "1001, 1, 0, 0", expect = FORBIDDEN,  desc = "evicted resource acquired, before destroy")
+	@Outcome(id = "1001, 1001, 0, 0", expect = FORBIDDEN,  desc = "evicted resource acquired, after destroy")
+	@State
+	public static class BackgroundEvictionVsAcquire {
+
+		//we'll check the resource has been modified by destroyHandler in arbiter
+		final AtomicInteger resource = new AtomicInteger();
+		final AtomicBoolean firstResourceCreated = new AtomicBoolean();
+
+		final SimpleDequePool<AtomicInteger> pool = PoolBuilder
+				.from(Mono.defer(() -> {
+					if (firstResourceCreated.getAndSet(true)) {
+						return Mono.just(new AtomicInteger(2));
+					}
+					resource.compareAndSet(0, 1);
+					return Mono.just(resource);
+				}))
+				.evictInBackground(Duration.ZERO, Schedulers.immediate()) //we'll call directly
+				.sizeBetween(1, 1) //we'll warmup the first resource
+				.evictionPredicate((res, meta) -> res.get() > 0)
+				.destroyHandler(ai -> Mono.fromRunnable(() -> ai.addAndGet(1000)))
+				.build(conf -> new SimpleDequePool<>(conf, true));
+
+
+		{
+			int warmedUp = pool.warmup().block(Duration.ofSeconds(1));
+			if (warmedUp != 1) throw new IllegalStateException("should have warmed up one");
+			if (resource.get() != 1) throw new IllegalStateException("should have initiated");
+		}
+
+		@Actor
+		public void backgroundEviction() {
+			pool.evictInBackground();
+		}
+
+		@Actor
+		public void acquisition(IIII_Result r) {
+			try {
+				AtomicInteger ai = pool.acquire().block().poolable();
+				r.r2 = ai.get();
+			}
+			catch (PoolAcquirePendingLimitException error) {
+				r.r2 = -1;
+			}
+		}
+
+		@Arbiter
+		public void arbiter(IIII_Result r) {
+			r.r1 = resource.get();
+			r.r3 = pool.idleResources.size();
+			r.r4 = pool.poolConfig.allocationStrategy().estimatePermitCount();
+		}
+	}
 
 	@JCStressTest
 	@Outcome(id = "2, 0", expect = ACCEPTABLE,  desc = "acquired a new resource")

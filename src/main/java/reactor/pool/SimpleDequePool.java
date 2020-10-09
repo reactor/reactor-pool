@@ -17,18 +17,25 @@
 package reactor.pool;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.BiPredicate;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -80,12 +87,16 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final AtomicReferenceFieldUpdater<SimpleDequePool, ConcurrentLinkedDeque> PENDING =
 			AtomicReferenceFieldUpdater.newUpdater(SimpleDequePool.class, ConcurrentLinkedDeque.class, "pending");
 
+	Disposable evictionTask;
+
 	SimpleDequePool(PoolConfig<POOLABLE> poolConfig, boolean pendingBorrowerFirstInFirstServed) {
 		super(poolConfig, Loggers.getLogger(SimpleDequePool.class));
 		this.idleResourceLeastRecentlyUsed = poolConfig.reuseIdleResourcesInLruOrder();
 		this.pendingBorrowerFirstInFirstServed = pendingBorrowerFirstInFirstServed;
 		this.pending = new ConcurrentLinkedDeque<>(); //unbounded
 		this.idleResources = new ConcurrentLinkedDeque<>();
+
+		scheduleEviction();
 	}
 
 	@Override
@@ -105,12 +116,59 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		return acquired;
 	}
 
+
+	void scheduleEviction() {
+		if (!poolConfig.evictInBackgroundInterval().isZero()) {
+			long nanosEvictionInterval = poolConfig.evictInBackgroundInterval().toNanos();
+			this.evictionTask = poolConfig.evictInBackgroundScheduler().schedule(this::evictInBackground, nanosEvictionInterval, TimeUnit.NANOSECONDS);
+		}
+		else {
+			this.evictionTask = Disposables.disposed();
+		}
+	}
+
+	void evictInBackground() {
+		@SuppressWarnings("unchecked")
+		Queue<QueuePooledRef<POOLABLE>> e = IDLE_RESOURCES.get(this);
+		if (e == null) {
+			//no need to schedule the task again, pool has been disposed
+			return;
+		}
+
+		if (WIP.getAndIncrement(this) == 0) {
+			if (PENDING_COUNT.get(this) == 0) {
+				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
+				//only one evictInBackground can enter here, and it won vs `drain` calls
+				//let's "purge" the pool
+				Iterator<QueuePooledRef<POOLABLE>> iterator = e.iterator();
+				while (iterator.hasNext()) {
+					QueuePooledRef<POOLABLE> pooledRef = iterator.next();
+					if (evictionPredicate.test(pooledRef.poolable, pooledRef)) {
+						if (pooledRef.markInvalidate()) {
+							iterator.remove();
+							destroyPoolable(pooledRef).subscribe();
+						}
+					}
+				}
+			}
+			//at the end if there are racing drain calls, go into the drainLoop
+			if (WIP.decrementAndGet(this) > 0) {
+				drainLoop();
+			}
+		}
+		//schedule the next iteration
+		scheduleEviction();
+	}
+
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =
 					PENDING.getAndSet(this, TERMINATED);
 			if (q != TERMINATED) {
+				//stop reaper thread
+				this.evictionTask.dispose();
+
 				Borrower<POOLABLE> p;
 				while ((p = q.pollFirst()) != null) {
 					p.fail(new PoolShutdownException());
@@ -386,10 +444,21 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		for (; ; ) {
 			int currentPending = PENDING_COUNT.get(this);
 			if (maxPending >= 0 && currentPending == maxPending) {
-				pending.fail(new PoolAcquirePendingLimitException(maxPending));
-				return false;
+				//best effort: check for idle and capacity
+				Deque<QueuePooledRef<POOLABLE>> ir = this.idleResources;
+				if (ir.isEmpty() && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
+					//fail fast. differentiate slightly special case of maxPending == 0
+					if (maxPending == 0) {
+						pending.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+					}
+					else {
+						pending.fail(new PoolAcquirePendingLimitException(maxPending));
+					}
+					return false;
+				}
 			}
-			else if (PENDING_COUNT.compareAndSet(this,
+
+			if (PENDING_COUNT.compareAndSet(this,
 					currentPending,
 					currentPending + 1)) {
 				this.pending.offerLast(pending); //unbounded

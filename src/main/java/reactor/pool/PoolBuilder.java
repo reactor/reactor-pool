@@ -62,14 +62,16 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
     final Mono<T>                          allocator;
     final Function<PoolConfig<T>, CONF>    configModifier;
-    int                                    maxPending           = -1;
-    AllocationStrategy                     allocationStrategy   = null;
-    Function<T, ? extends Publisher<Void>> releaseHandler       = noopHandler();
-    Function<T, ? extends Publisher<Void>> destroyHandler       = noopHandler();
-    BiPredicate<T, PooledRefMetadata>      evictionPredicate    = neverPredicate();
-    Scheduler                              acquisitionScheduler = Schedulers.immediate();
-    Clock                                  clock                = Clock.systemUTC();
-    PoolMetricsRecorder                    metricsRecorder      = NoOpPoolMetricsRecorder.INSTANCE;
+    int                                    maxPending                  = -1;
+    AllocationStrategy                     allocationStrategy          = null;
+    Function<T, ? extends Publisher<Void>> releaseHandler              = noopHandler();
+    Function<T, ? extends Publisher<Void>> destroyHandler              = noopHandler();
+    BiPredicate<T, PooledRefMetadata>      evictionPredicate           = neverPredicate();
+    Duration                               evictionBackgroundInterval  = Duration.ZERO;
+    Scheduler                              evictionBackgroundScheduler = Schedulers.immediate();
+    Scheduler                              acquisitionScheduler        = Schedulers.immediate();
+    Clock                                  clock                       = Clock.systemUTC();
+    PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
     boolean                                idleLruOrder         = true;
 
     PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
@@ -86,6 +88,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
         this.releaseHandler = source.releaseHandler;
         this.destroyHandler = source.destroyHandler;
         this.evictionPredicate = source.evictionPredicate;
+        this.evictionBackgroundInterval = source.evictionBackgroundInterval;
+        this.evictionBackgroundScheduler = source.evictionBackgroundScheduler;
         this.acquisitionScheduler = source.acquisitionScheduler;
         this.metricsRecorder = source.metricsRecorder;
         this.clock = source.clock;
@@ -177,6 +181,63 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
      */
     public PoolBuilder<T, CONF> evictionPredicate(BiPredicate<T, PooledRefMetadata> evictionPredicate) {
         this.evictionPredicate = Objects.requireNonNull(evictionPredicate, "evictionPredicate");
+        return this;
+    }
+
+    /**
+     * Disable background eviction entirely, so that {@link #evictionPredicate(BiPredicate) evictionPredicate}
+     * is only checked upon {@link Pool#acquire() acquire} and {@link PooledRef#release() release} (ie only
+     * when there is pool activity).
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration)
+     */
+    public PoolBuilder<T, CONF> evictInBackgroundDisabled() {
+        return evictInBackground(Duration.ZERO);
+    }
+
+    /**
+     * Enable background eviction so that {@link #evictionPredicate(BiPredicate) evictionPredicate} is regularly
+     * applied to elements that are idle in the pool when there is no pool activity (i.e. {@link Pool#acquire() acquire}
+     * and {@link PooledRef#release() release}).
+     * <p>
+     * Providing an {@code evictionInterval} of {@link Duration#ZERO zero} is similar to {@link #evictInBackgroundDisabled() disabling}
+     * background eviction.
+     * <p>
+     * Background eviction support is optional: although all vanilla reactor-pool implementations DO support it,
+     * other implementations MAY ignore it.
+     * The background eviction process can be implemented in a best effort fashion, backing off if it detects any pool activity.
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration, Scheduler)
+     */
+    public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval) {
+        if (evictionInterval == Duration.ZERO) {
+            this.evictionBackgroundInterval = Duration.ZERO;
+            this.evictionBackgroundScheduler = Schedulers.immediate();
+            return this;
+        }
+        return this.evictInBackground(evictionInterval, Schedulers.parallel());
+    }
+
+    /**
+     * Enable background eviction so that {@link #evictionPredicate(BiPredicate) evictionPredicate} is regularly
+     * applied to elements that are idle in the pool when there is no pool activity (i.e. {@link Pool#acquire() acquire}
+     * and {@link PooledRef#release() release}).
+     * <p>
+     * Providing an {@code evictionInterval} of {@link Duration#ZERO zero} is similar to {@link #evictInBackgroundDisabled() disabling}
+     * background eviction.
+     * <p>
+     * Background eviction support is optional: although all vanilla reactor-pool implementations DO support it,
+     * other implementations MAY ignore it.
+     * The background eviction process can be implemented in a best effort fashion, backing off if it detects any pool activity.
+     *
+     * @return this {@link Pool} builder
+     * @see #evictInBackground(Duration)
+     */
+    public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval, Scheduler reaperTaskScheduler) {
+        this.evictionBackgroundInterval = evictionInterval;
+        this.evictionBackgroundScheduler = reaperTaskScheduler;
         return this;
     }
 
@@ -404,6 +465,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
                 releaseHandler,
                 destroyHandler,
                 evictionPredicate,
+                evictionBackgroundInterval,
+                evictionBackgroundScheduler,
                 acquisitionScheduler,
                 metricsRecorder,
                 clock,

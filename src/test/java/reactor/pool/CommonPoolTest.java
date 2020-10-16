@@ -2470,17 +2470,17 @@ public class CommonPoolTest {
 	@EnumSource
 	void acquireContextPropagatedToAllocator(PoolStyle style) {
 		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
-				.from(Mono.deferWithContext(c -> Mono.just(c.getOrDefault("ifNew", 0))))
+				.from(Mono.deferContextual(c -> Mono.just(c.getOrDefault("ifNew", 0))))
 				.sizeBetween(0, 2);
 
 		InstrumentedPool<Integer> pool = style.apply(configBuilder);
 
 		final PooledRef<Integer> ref1 = pool.acquire()
-		                                    .subscriberContext(Context.of("ifNew", 1))
+		                                    .contextWrite(Context.of("ifNew", 1))
 		                                    .block(Duration.ofSeconds(5));
 
 		final PooledRef<Integer> ref2 = pool.acquire()
-		                                    .subscriberContext(Context.of("ifNew", 2))
+		                                    .contextWrite(Context.of("ifNew", 2))
 		                                    .block(Duration.ofSeconds(5));
 
 		assertThat(ref1.poolable()).as("atomic 1 via ref1").isEqualTo(1);
@@ -2488,14 +2488,14 @@ public class CommonPoolTest {
 
 		ref1.release().block();
 		final PooledRef<Integer> ref3 = pool.acquire()
-		                                    .subscriberContext(Context.of("ifNew", 3))
+		                                    .contextWrite(Context.of("ifNew", 3))
 		                                    .block(Duration.ofSeconds(5));
 
 		assertThat(ref3.poolable()).as("atomic 1 via ref3").isEqualTo(1);
 
 		ref2.release().block();
 		final PooledRef<Integer> ref4 = pool.acquire()
-		                                    .subscriberContext(Context.of("ifNew", 4))
+		                                    .contextWrite(Context.of("ifNew", 4))
 		                                    .block(Duration.ofSeconds(5));
 
 		assertThat(ref4.poolable()).as("atomic 2 via ref4").isEqualTo(2);
@@ -2506,13 +2506,13 @@ public class CommonPoolTest {
 	void warmupContextPropagatedToAllocator(PoolStyle style) {
 		AtomicInteger differentiator = new AtomicInteger();
 		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
-				.from(Mono.deferWithContext(c -> Mono.just(differentiator.incrementAndGet() + c.getOrDefault("ifNew", "noContext"))))
+				.from(Mono.deferContextual(c -> Mono.just(differentiator.incrementAndGet() + c.getOrDefault("ifNew", "noContext"))))
 				.sizeBetween(2, 4);
 
 		InstrumentedPool<String> pool = style.apply(configBuilder);
 
 		pool.warmup()
-		    .subscriberContext(Context.of("ifNew", "warmup"))
+		    .contextWrite(Context.of("ifNew", "warmup"))
 		    .as(StepVerifier::create)
 		    .expectNext(2)
 		    .expectComplete()

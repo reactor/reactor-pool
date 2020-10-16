@@ -200,7 +200,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	public Mono<Integer> warmup() {
 		if (poolConfig.allocationStrategy()
 		              .permitMinimum() > 0) {
-			return Mono.deferWithContext(ctx -> {
+			return Mono.deferContextual(ctx -> {
 				int initSize = poolConfig.allocationStrategy()
 				                         .getPermits(0);
 				@SuppressWarnings({ "unchecked", "rawtypes" }) //rawtypes added since javac actually complains
@@ -208,7 +208,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				for (int i = 0; i < initSize; i++) {
 					long start = clock.millis();
 					allWarmups[i] = poolConfig.allocator()
-					                          .subscriberContext(ctx)
+					                          .contextWrite(ctx)
 					                          .doOnNext(p -> {
 						                          metricsRecorder.recordAllocationSuccessAndLatency(
 								                          clock.millis() - start);
@@ -311,7 +311,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								drain();
 							}
 						})
-								.subscriberContext(borrower.currentContext());
+								.contextWrite(borrower.currentContext());
 
 						int toWarmup = permits - 1;
 						if (toWarmup < 1) {

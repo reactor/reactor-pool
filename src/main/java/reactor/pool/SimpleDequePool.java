@@ -17,10 +17,8 @@
 package reactor.pool;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -202,7 +200,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	public Mono<Integer> warmup() {
 		if (poolConfig.allocationStrategy()
 		              .permitMinimum() > 0) {
-			return Mono.defer(() -> {
+			return Mono.deferWithContext(ctx -> {
 				int initSize = poolConfig.allocationStrategy()
 				                         .getPermits(0);
 				@SuppressWarnings({ "unchecked", "rawtypes" }) //rawtypes added since javac actually complains
@@ -210,6 +208,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				for (int i = 0; i < initSize; i++) {
 					long start = clock.millis();
 					allWarmups[i] = poolConfig.allocator()
+					                          .subscriberContext(ctx)
 					                          .doOnNext(p -> {
 						                          metricsRecorder.recordAllocationSuccessAndLatency(
 								                          clock.millis() - start);
@@ -311,7 +310,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								borrower.fail(sig.getThrowable());
 								drain();
 							}
-						});
+						})
+								.subscriberContext(borrower.currentContext());
 
 						int toWarmup = permits - 1;
 						if (toWarmup < 1) {

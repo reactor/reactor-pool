@@ -354,6 +354,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
             this.timeoutTask = TIMEOUT_DISPOSED;
         }
 
+        Context currentContext() {
+            return actual.currentContext();
+        }
+
         @Override
         public void run() {
             if (Borrower.this.compareAndSet(false, true)) {

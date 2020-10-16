@@ -29,7 +29,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,10 +43,9 @@ import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import reactor.core.Disposable;
@@ -65,6 +63,7 @@ import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.test.util.RaceTestUtils;
 import reactor.test.util.TestLogger;
 import reactor.util.Loggers;
+import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
@@ -74,6 +73,31 @@ import static org.awaitility.Awaitility.await;
  */
 public class CommonPoolTest {
 
+	enum PoolStyle {
+
+		IDLE_LRU_PENDING_FIFO(true, true),
+		IDLE_MRU_PENDING_FIFO(false, true),
+		IDLE_LRU_PENDING_LIFO(true, false),
+		IDLE_MRU_PENDING_LIFO(false, false);
+
+		private final boolean isLru;
+		private final boolean isFifo;
+
+		PoolStyle(boolean isLru, boolean isFifo) {
+			this.isLru = isLru;
+			this.isFifo = isFifo;
+		}
+
+		@SuppressWarnings("deprecation")
+		public <T, CONF extends PoolConfig<T>> InstrumentedPool<T> apply(PoolBuilder<T, CONF> builder) {
+			if (isFifo) {
+				return builder.idleResourceReuseOrder(isLru).buildPool();
+			}
+			return builder.idleResourceReuseOrder(isLru).lifo();
+		}
+	}
+
+	//TODO remove in favor of enums above
 	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> lruFifo() {
 		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
 			@Override
@@ -2440,5 +2464,69 @@ public class CommonPoolTest {
 		assertThatCode(pendingNumberOne::join)
 					.as("pending 1 was parked for 1s and then timed out")
 					.hasMessageStartingWith("java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 1000ms");
+	}
+
+	@ParameterizedTest
+	@EnumSource
+	void acquireContextPropagatedToAllocator(PoolStyle style) {
+		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
+				.from(Mono.deferWithContext(c -> Mono.just(c.getOrDefault("ifNew", 0))))
+				.sizeBetween(0, 2);
+
+		InstrumentedPool<Integer> pool = style.apply(configBuilder);
+
+		final PooledRef<Integer> ref1 = pool.acquire()
+		                                    .subscriberContext(Context.of("ifNew", 1))
+		                                    .block(Duration.ofSeconds(5));
+
+		final PooledRef<Integer> ref2 = pool.acquire()
+		                                    .subscriberContext(Context.of("ifNew", 2))
+		                                    .block(Duration.ofSeconds(5));
+
+		assertThat(ref1.poolable()).as("atomic 1 via ref1").isEqualTo(1);
+		assertThat(ref2.poolable()).as("atomic 2 via ref2").isEqualTo(2);
+
+		ref1.release().block();
+		final PooledRef<Integer> ref3 = pool.acquire()
+		                                    .subscriberContext(Context.of("ifNew", 3))
+		                                    .block(Duration.ofSeconds(5));
+
+		assertThat(ref3.poolable()).as("atomic 1 via ref3").isEqualTo(1);
+
+		ref2.release().block();
+		final PooledRef<Integer> ref4 = pool.acquire()
+		                                    .subscriberContext(Context.of("ifNew", 4))
+		                                    .block(Duration.ofSeconds(5));
+
+		assertThat(ref4.poolable()).as("atomic 2 via ref4").isEqualTo(2);
+	}
+
+	@ParameterizedTest(name = "{arguments}")
+	@EnumSource
+	void warmupContextPropagatedToAllocator(PoolStyle style) {
+		AtomicInteger differentiator = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.deferWithContext(c -> Mono.just(differentiator.incrementAndGet() + c.getOrDefault("ifNew", "noContext"))))
+				.sizeBetween(2, 4);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		pool.warmup()
+		    .subscriberContext(Context.of("ifNew", "warmup"))
+		    .as(StepVerifier::create)
+		    .expectNext(2)
+		    .expectComplete()
+		    .verify(Duration.ofSeconds(5));
+
+		final PooledRef<String> ref1 = pool.acquire().block(Duration.ofSeconds(5));
+		final PooledRef<String> ref2 = pool.acquire().block(Duration.ofSeconds(5));
+		final PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(5));
+		final PooledRef<String> ref4 = pool.acquire().block(Duration.ofSeconds(5));
+
+		//since values are warmed up in batches and put in the idle queue, LRU-MRU has consequences
+		assertThat(ref1.poolable()).as("ref1").isEqualTo(style.isLru ? "1warmup" : "2warmup");
+		assertThat(ref2.poolable()).as("ref2").isEqualTo(style.isLru ? "2warmup" : "1warmup");
+		assertThat(ref3.poolable()).as("ref3").isEqualTo("3noContext");
+		assertThat(ref4.poolable()).as("ref4").isEqualTo("4noContext");
 	}
 }

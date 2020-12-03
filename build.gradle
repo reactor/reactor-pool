@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 import me.champeau.gradle.japicmp.JapicmpTask
+import org.gradle.util.VersionNumber
+
+import java.text.SimpleDateFormat
 
 plugins {
   id "com.github.hierynomus.license" version "0.15.0"
@@ -36,6 +39,24 @@ ext {
       println "Building special snapshot ${project.version}"
     }
   }
+
+  versionNumber = VersionNumber.parse(version.toString())
+  if (versionNumber.qualifier == null || versionNumber.qualifier.size() == 0) {
+    osgiVersion = "${version}.RELEASE"
+    println "$version is a release, will use $osgiVersion for bnd"
+  }
+  else if (versionNumber.qualifier.equalsIgnoreCase("SNAPSHOT")) {
+    sdf = new SimpleDateFormat("yyyyMMddHHmm");
+    sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+    buildTimestamp = sdf.format(new Date())
+    osgiVersion = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.BUILD-$buildTimestamp"
+    println "$version is a snapshot, will use $osgiVersion for bnd"
+  }
+  else {
+    osgiVersion = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.${versionNumber.qualifier}"
+    println "$version is neither release nor snapshot, will use $osgiVersion for bnd"
+  }
+
 
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
@@ -64,14 +85,15 @@ ext {
   bndOptions = [
           "Export-Package": [
                   "!*internal*",
-                  "reactor.pool.*"
+                  "reactor.pool.*;version=$osgiVersion"
           ].join(","),
           "Import-Package": [
                   "!javax.annotation",
                   "*"
           ].join(","),
           "Bundle-Name" : "reactor-pool",
-          "Bundle-SymbolicName" : "io.projectreactor.addons.reactor-pool"
+          "Bundle-SymbolicName" : "io.projectreactor.addons.reactor-pool",
+          "Bundle-Version" : "$osgiVersion"
   ]
 }
 

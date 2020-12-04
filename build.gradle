@@ -182,10 +182,9 @@ configure(rootProject) { project ->
     mavenCentral()
     maven { url "https://oss.sonatype.org/content/repositories/releases/" }
     if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots
-      maven { url 'https://repo.spring.io/libs-snapshot' }
+      maven { url 'https://repo.spring.io/snapshot' }
     }
-    maven { url 'https://repo.spring.io/libs-milestone' }
-    maven { url 'https://repo.spring.io/libs-release' }
+    maven { url 'https://repo.spring.io/milestone' }
   }
 
   dependencies {

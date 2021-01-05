@@ -36,6 +36,8 @@ import reactor.pool.PoolBuilder;
  * <p>
  * The two types of calls are sampled separately. The reservoir sampling algorithm is used to instantiate a sampling decision
  * bitset over 100 slots, which are then applied to windows of 100 calls.
+ * Access to the {@link #delegate} field is possible, as well as {@link #gettingSamplingRate}/{@link #returningSamplingRate}
+ * configuration fields and {@link #gettingSamples}/{@link #returningSamples} collections.
  *
  * @author Simon Baslé
  */
@@ -63,7 +65,7 @@ public final class SamplingAllocationStrategy implements AllocationStrategy {
 	 * @param returnPermitsSamplingRate the sampling rate for {@link AllocationStrategy#returnPermits(int)} calls (0.0d to 1.0d)
 	 * @return a sampled {@link AllocationStrategy} that otherwise behaves like the {@link PoolBuilder#sizeBetween(int, int)} strategy
 	 */
-	public static AllocationStrategy sizeBetweenWithSampling(int min, int max, double getPermitsSamplingRate, double returnPermitsSamplingRate) {
+	public static SamplingAllocationStrategy sizeBetweenWithSampling(int min, int max, double getPermitsSamplingRate, double returnPermitsSamplingRate) {
 		return new SamplingAllocationStrategy(sizeBetweenHelper(min, max), getPermitsSamplingRate, returnPermitsSamplingRate);
 	}
 
@@ -81,19 +83,36 @@ public final class SamplingAllocationStrategy implements AllocationStrategy {
 	 * @param returnPermitsSamplingRate the sampling rate for {@link AllocationStrategy#returnPermits(int)} calls (0.0d to 1.0d)
 	 * @return a sampled {@link AllocationStrategy} that otherwise behaves like the {@code delegate}
 	 */
-	public static AllocationStrategy withSampling(AllocationStrategy delegate, double getPermitsSamplingRate, double returnPermitsSamplingRate) {
+	public static SamplingAllocationStrategy withSampling(AllocationStrategy delegate, double getPermitsSamplingRate, double returnPermitsSamplingRate) {
 		return new SamplingAllocationStrategy(delegate, getPermitsSamplingRate, returnPermitsSamplingRate);
 	}
 
-	final AllocationStrategy    delegate;
+	/**
+	 * The delegate {@link AllocationStrategy} backing this sampling strategy.
+	 */
+	public final AllocationStrategy    delegate;
 
-	final LinkedList<Throwable> gettingSamples;
-	final double                gettingSamplingRate;
-	final BitSet                gettingSampleDecisions;
+	/**
+	 * The list of samples for {@link #getPermits(int)} calls, as {@link Throwable} that trace back
+	 * to the callers of the sampled calls.
+	 */
+	public final LinkedList<Throwable> gettingSamples;
+	/**
+	 * The configured sampling rate for {@link #getPermits(int)} calls, as a double between 0d and 1d (percentage).
+	 */
+	public final double                gettingSamplingRate;
+	final        BitSet                gettingSampleDecisions;
 
-	final LinkedList<Throwable> returningSamples;
-	final double                returningSamplingRate;
-	final BitSet                returningSampleDecisions;
+	/**
+	 * The list of samples for {@link #returnPermits(int)} calls, as {@link Throwable} that trace back
+	 * to the callers of the sampled calls.
+	 */
+	public final LinkedList<Throwable> returningSamples;
+	/**
+	 * The configured sampling rate for {@link #returnPermits(int)} calls, as a double between 0d and 1d (percentage).
+	 */
+	public final double                returningSamplingRate;
+	final        BitSet                returningSampleDecisions;
 
 	long countGetting   = 0L;
 	long countReturning = 0L;

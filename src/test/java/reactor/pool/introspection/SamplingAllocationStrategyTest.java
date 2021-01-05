@@ -16,7 +16,9 @@
 
 package reactor.pool.introspection;
 
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import reactor.pool.AllocationStrategy;
 
@@ -145,9 +147,8 @@ class SamplingAllocationStrategyTest {
 	}
 
 	@Test
-	void smokeTest() {
-		AllocationStrategy
-				strategy = SamplingAllocationStrategy.sizeBetweenWithSampling(0, 100, 0.5d, 0.1d);
+	void smokeTestBusinessException() {
+		AllocationStrategy strategy = SamplingAllocationStrategy.sizeBetweenWithSampling(0, 100, 0.5d, 0.1d);
 
 		for (int i = 0; i < 100; i++) {
 			strategy.getPermits(1);
@@ -160,6 +161,39 @@ class SamplingAllocationStrategyTest {
 				.withMessage("Return permits failed, see cause for 50 getPermits samples (50% of 100 calls) and " +
 						"10 returnPermits samples (10% of 100 calls). Reason: Too many permits returned: " +
 						"returned=1, would bring to 101/100");
+	}
+
+	@Test
+	void smokeTestFieldAccess() {
+		AllocationStrategy delegate = Mockito.mock(AllocationStrategy.class);
+		SamplingAllocationStrategy strategy = SamplingAllocationStrategy.withSampling(delegate, 0.2, 0.8);
+
+		assertThat(strategy.delegate).as("delegate").isSameAs(delegate);
+		assertThat(strategy.gettingSamplingRate).as("gettingSamplingRate").isEqualTo(0.2);
+		assertThat(strategy.returningSamplingRate).as("returningSamplingRate").isEqualTo(0.8);
+	}
+
+	@Test
+	void smokeTestListFieldAccess() {
+		//this test is separated to use a more predictable sampling rate of 100%
+		AllocationStrategy delegate = Mockito.mock(AllocationStrategy.class);
+		SamplingAllocationStrategy strategy = SamplingAllocationStrategy.withSampling(delegate, 1d, 1d);
+
+		for (int i = 0; i < 10; i++) {
+			strategy.getPermits(1);
+			if (i % 2 == 0) { //we only return half, allowing to ensure each list is different
+				strategy.returnPermits(1);
+			}
+		}
+
+		assertThat(strategy.gettingSamples)
+				.as("gettingSamples")
+				.isNotEmpty()
+				.hasSize(10);
+		assertThat(strategy.returningSamples)
+				.as("returningSamples")
+				.isNotEmpty()
+				.hasSize(5);
 	}
 
 }

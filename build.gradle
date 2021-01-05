@@ -200,6 +200,7 @@ configure(rootProject) { project ->
     testImplementation "io.projectreactor:reactor-test:$reactorCoreVersion"
     testRuntimeOnly "org.slf4j:jcl-over-slf4j:$slf4jVersion"
     testRuntimeOnly "ch.qos.logback:logback-classic:$logbackVersion"
+    testImplementation "org.mockito:mockito-core:$mockitoVersion"
 
     testImplementation "io.reactivex.rxjava2:rxjava:$rxJava2Version"
 

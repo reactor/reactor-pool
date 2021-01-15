@@ -65,9 +65,9 @@ String getOrGenerateBuildNumber() {
 	if (project.hasProperty("buildNumber")) {
 		return project.findProperty("buildNumber")
 	}
-	def jenkinsNumber = System.getenv("BUILD_NUMBER")
-	if (jenkinsNumber != null) {
-		return jenkinsNumber
+	def ciNumber = System.getenv("GITHUB_RUN_ID")
+	if (ciNumber != null) {
+		return ciNumber
 	}
 	ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC)
 	long secondsInDay = now.toEpochSecond() - ZonedDateTime.now(ZoneOffset.UTC).withSecond(0).withHour(0).withMinute(0).toEpochSecond()
@@ -90,14 +90,36 @@ if (project.hasProperty("artifactory_publish_password")) {
 			contextUrl = "${artifactory_publish_contextUrl}"
 			publish {
 				repository {
-					repoKey = "${artifactory_publish_repoKey}"
+					repoKey = repoKeyFor(p)
 					username = "${artifactory_publish_username}"
 					password = "${artifactory_publish_password}"
 				}
 			}
 			clientConfig.setIncludeEnvVars(false)
-			clientConfig.info.setBuildName('Reactor - Releaser - Pool')
+			clientConfig.info.setBuildName('Reactor - GitHub Actions - Pool')
 			clientConfig.info.setBuildNumber(buildNumber)
+			if (System.getenv("GITHUB_ACTIONS") == "true") {
+				clientConfig.info.setBuildUrl(System.getenv("GITHUB_SERVER_URL") + "/" + System.getenv("GITHUB_REPOSITORY") + "/actions/runs/" + System.getenv("GITHUB_RUN_ID"))
+				clientConfig.info.setVcsRevision(System.getenv("GITHUB_SHA"))
+			}
 		}
+	}
+}
+
+static def repoKeyFor(p) {
+	switch (p.version) {
+	case (~/^\d+\.\d+\.\d+$/): // eg 1.2.3, new scheme
+	case (~/^\d+\.\d+\.\d+\.RELEASE$/): // eg 1.2.3.RELEASE, old scheme
+		return "libs-release-local";
+	case (~/^\d+\.\d+\.\d+-SNAPSHOT$/): // eg 1.2.3-SNAPSHOT, new scheme
+	case (~/^\d+\.\d+\.\d+\.BUILD-SNAPSHOT$/): // eg 1.2.3.BUILD-SNAPSHOT, old scheme
+		return "libs-snapshot-local";
+	case (~/^\d+\.\d+\.\d+-M\d+$/): // eg 1.2.3-M4, new scheme
+	case (~/^\d+\.\d+\.\d+-RC\d+$/): // eg 1.2.3-RC4, new scheme
+	case (~/^\d+\.\d+\.\d+\.M\d+$/): // eg 1.2.3.M4, old scheme
+	case (~/^\d+\.\d+\.\d+\.RC\d+$/): // eg 1.2.3.RC4, old scheme
+		return "libs-milestone-local";
+	default:
+		throw new IllegalStateException("Unknown pattern");
 	}
 }

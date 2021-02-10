@@ -34,6 +34,7 @@ import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.pool.TestUtils.ParameterizedTestWithName;
 import reactor.pool.TestUtils.PoolableTest;
 import reactor.test.util.RaceTestUtils;
 
@@ -237,7 +238,7 @@ class PendingAcquireLifoBehaviorTest {
 	//see https://github.com/reactor/reactor-pool/issues/65
 	@SuppressWarnings("FutureReturnValueIgnored")
 	@Tag("loops")
-	@ParameterizedTest
+	@ParameterizedTestWithName
 	@CsvSource({"4, 1", "4, 100000", "10, 1", "10, 100000"})
 	void concurrentAcquireCorrectlyAccountsAll(int parallelism, int loops) throws InterruptedException {
 		final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(parallelism);

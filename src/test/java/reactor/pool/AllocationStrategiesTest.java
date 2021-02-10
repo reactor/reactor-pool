@@ -44,10 +44,8 @@ class AllocationStrategiesTest {
 
 	private static final Logger LOG = Loggers.getLogger(AllocationStrategies.class);
 
-	@DisplayName("allocatingSize")
-	@SuppressWarnings("ClassCanBeStatic")
 	@Nested
-	class AllocatingSizeTest {
+	static class AllocatingSizeTest {
 
 		@Test
 		void negativeMaxThrows() {
@@ -216,7 +214,7 @@ class AllocationStrategiesTest {
 		}
 
 		@SuppressWarnings("FutureReturnValueIgnored")
-		@ParameterizedTest(name = "{0} workers")
+		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
 		@Tag("race")
 		void raceGetPermit(int workerCount) throws InterruptedException {
@@ -242,7 +240,7 @@ class AllocationStrategiesTest {
 		}
 
 		@SuppressWarnings("FutureReturnValueIgnored")
-		@ParameterizedTest(name = "{0} workers")
+		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
 		@Tag("race")
 		void racePermitsRandom(int workerCount, TestInfo testInfo) throws InterruptedException {
@@ -274,7 +272,7 @@ class AllocationStrategiesTest {
 		}
 
 		@SuppressWarnings("FutureReturnValueIgnored")
-		@ParameterizedTest(name = "{0} workers")
+		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
 		@Tag("race")
 		void raceMixGetPermitWithGetRandomPermits(int workerCount, TestInfo testInfo) throws InterruptedException {
@@ -321,7 +319,7 @@ class AllocationStrategiesTest {
 		}
 
 		@SuppressWarnings("FutureReturnValueIgnored")
-		@ParameterizedTest(name = "{0} workers")
+		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
 		@Tag("race")
 		void racePermitsRandomWithInnerLoop(int workerCount, TestInfo testInfo) throws InterruptedException {
@@ -356,10 +354,8 @@ class AllocationStrategiesTest {
 		//TODO race tests with a minimum
 	}
 
-	@DisplayName("unbounded")
 	@Nested
-	@SuppressWarnings("ClassCanBeStatic")
-	class UnboundedTest {
+	static class UnboundedTest {
 
 		@Test
 		void permitCountIsMaxValue() {

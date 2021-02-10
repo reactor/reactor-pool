@@ -29,6 +29,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 /**
  * A builder for {@link Pool} implementations, which tuning methods map
@@ -173,6 +174,13 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * this predicate and destroy them.
 	 * <p>
 	 * Defaults to never evicting (a {@link BiPredicate} that always returns false).
+	 * <p>
+	 * In case some asynchronous verification of the health of a resource is needed, one possible approach is
+	 * to rely on {@link Pool#acquire()} and {@link PooledRef#invalidate()} instead of the evictionPredicate:
+	 * performing the check in a flatMap after having acquired the resource, then further chain an invalidate call
+	 * if the resource is not healthy. The acquisition should then be retried, and a good way of doing so is by
+	 * continuing the invalidate call with a {@link Mono#error(Throwable)} with a custom exception which would trigger
+	 * an outer {@link Mono#retryWhen(Retry)}.
 	 *
 	 * @param evictionPredicate a {@link Predicate} that returns {@code true} if the resource is unfit for the pool and should
 	 * be destroyed, {@code false} if it should be put back into the pool

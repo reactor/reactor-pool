@@ -45,9 +45,8 @@ class AllocationStrategiesTest {
 	private static final Logger LOG = Loggers.getLogger(AllocationStrategies.class);
 
 	@DisplayName("allocatingSize")
-	@SuppressWarnings("ClassCanBeStatic")
 	@Nested
-	class AllocatingSizeTest {
+	static class AllocatingSizeTest {
 
 		@Test
 		void negativeMaxThrows() {
@@ -358,8 +357,7 @@ class AllocationStrategiesTest {
 
 	@DisplayName("unbounded")
 	@Nested
-	@SuppressWarnings("ClassCanBeStatic")
-	class UnboundedTest {
+	static class UnboundedTest {
 
 		@Test
 		void permitCountIsMaxValue() {

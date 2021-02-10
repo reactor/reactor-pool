@@ -144,8 +144,7 @@ class AcquireDefaultPoolTest {
 
 	@Nested
 	@DisplayName("Tests around the acquire() manual mode of acquiring")
-	@SuppressWarnings("ClassCanBeStatic")
-	class AcquireTest {
+	static class AcquireTest {
 
 		@Test
 		@Tag("loops")
@@ -519,8 +518,7 @@ class AcquireDefaultPoolTest {
 
 	@Nested
 	@DisplayName("Tests around the withPoolable(Function) mode of acquiring")
-	@SuppressWarnings("ClassCanBeStatic")
-	class AcquireInScopeTest {
+	static class AcquireInScopeTest {
 
 		@Test
 		@DisplayName("acquire delays instead of allocating past maxSize")

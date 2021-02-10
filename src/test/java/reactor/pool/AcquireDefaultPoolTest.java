@@ -926,7 +926,7 @@ class AcquireDefaultPoolTest {
 	}
 
 	@SuppressWarnings("FutureReturnValueIgnored")
-	@ParameterizedTest
+	@TestUtils.ParameterizedTestWithName
 	@CsvSource({"4, 1", "4, 100000", "10, 1", "10, 100000"})
 	//see https://github.com/reactor/reactor-pool/issues/65
 	void concurrentAcquireCorrectlyAccountsAll(int parallelism, int loops) throws InterruptedException {

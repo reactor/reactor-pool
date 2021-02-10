@@ -15,6 +15,10 @@
  */
 package reactor.pool;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +29,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.ShortCountsHistogram;
+import org.junit.jupiter.params.ParameterizedTest;
 
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
@@ -366,5 +371,15 @@ public class TestUtils {
 		public void setTimeTo(long timestampInMillis) {
 			now = Instant.ofEpochMilli(timestampInMillis);
 		}
+	}
+
+	/**
+	 * Meta-annotation that provides a better default for {@link ParameterizedTest} name.
+	 */
+	@ParameterizedTest(name="{displayName} [{index}]{arguments}")
+	@Target({ ElementType.ANNOTATION_TYPE, ElementType.METHOD })
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface ParameterizedTestWithName {
+
 	}
 }

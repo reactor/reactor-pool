@@ -33,7 +33,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.reactivestreams.Subscription;
 
@@ -143,9 +142,7 @@ class AcquireDefaultPoolTest {
 	}
 
 	@Nested
-	@DisplayName("Tests around the acquire() manual mode of acquiring")
-	@SuppressWarnings("ClassCanBeStatic")
-	class AcquireTest {
+	static class AcquireTest {
 
 		@Test
 		@Tag("loops")
@@ -518,9 +515,7 @@ class AcquireDefaultPoolTest {
 	}
 
 	@Nested
-	@DisplayName("Tests around the withPoolable(Function) mode of acquiring")
-	@SuppressWarnings("ClassCanBeStatic")
-	class AcquireInScopeTest {
+	static class AcquireInScopeTest {
 
 		@Test
 		@DisplayName("acquire delays instead of allocating past maxSize")
@@ -928,7 +923,7 @@ class AcquireDefaultPoolTest {
 	}
 
 	@SuppressWarnings("FutureReturnValueIgnored")
-	@ParameterizedTest
+	@TestUtils.ParameterizedTestWithName
 	@CsvSource({"4, 1", "4, 100000", "10, 1", "10, 100000"})
 	//see https://github.com/reactor/reactor-pool/issues/65
 	void concurrentAcquireCorrectlyAccountsAll(int parallelism, int loops) throws InterruptedException {

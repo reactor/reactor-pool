@@ -33,7 +33,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.reactivestreams.Subscription;
 
@@ -143,7 +142,6 @@ class AcquireDefaultPoolTest {
 	}
 
 	@Nested
-	@DisplayName("Tests around the acquire() manual mode of acquiring")
 	static class AcquireTest {
 
 		@Test
@@ -517,7 +515,6 @@ class AcquireDefaultPoolTest {
 	}
 
 	@Nested
-	@DisplayName("Tests around the withPoolable(Function) mode of acquiring")
 	static class AcquireInScopeTest {
 
 		@Test

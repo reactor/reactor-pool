@@ -151,7 +151,6 @@ configure(rootProject) { project ->
       events  "passed", "failed"
       showExceptions true
       exceptionFormat "full"
-      maxGranularity 3
       showStandardStreams true
     }
   }

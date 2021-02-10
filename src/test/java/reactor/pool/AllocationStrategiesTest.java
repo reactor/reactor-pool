@@ -44,7 +44,6 @@ class AllocationStrategiesTest {
 
 	private static final Logger LOG = Loggers.getLogger(AllocationStrategies.class);
 
-	@DisplayName("allocatingSize")
 	@Nested
 	static class AllocatingSizeTest {
 
@@ -355,7 +354,6 @@ class AllocationStrategiesTest {
 		//TODO race tests with a minimum
 	}
 
-	@DisplayName("unbounded")
 	@Nested
 	static class UnboundedTest {
 

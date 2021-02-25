@@ -262,42 +262,110 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	private void drainLoop() {
-		for (; ; ) {
-			@SuppressWarnings("unchecked")
-			Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
-			if (irq != null) {
-				int availableCount = irq.size();
-				int pendingCount = PENDING_COUNT.get(this);
-				int estimatedPermitCount = poolConfig.allocationStrategy()
-				                                     .estimatePermitCount();
+		int maxPending = poolConfig.maxPending();
 
-				if (availableCount == 0) {
-					if (pendingCount > 0 && estimatedPermitCount > 0) {
-						final Borrower<POOLABLE> borrower = pendingPoll(); //shouldn't be null
-						if (borrower == null) {
-							continue;
+		for (;;) {
+			@SuppressWarnings("unchecked")
+			Deque<QueuePooledRef<POOLABLE>> resources = IDLE_RESOURCES.get(this);
+			@SuppressWarnings("unchecked")
+			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
+			if (resources == null || borrowers == TERMINATED) {
+				//null queue indicates a terminated pool
+				WIP.lazySet(this, 0);
+				return;
+			}
+
+			int borrowersCount = borrowers.size();
+			int resourcesCount = resources.size();
+
+			if (borrowersCount == 0) {
+				/*=========================================*
+				 * No Pending: Nothing to do *
+				 *=========================================*/
+				//TODO in 0.2.x we might want to warm up here too
+			}
+			else {
+				if (resourcesCount > 0) {
+					/*===================================================*
+					 * MATCH: one PENDING Borrower can get IDLE resource *
+					 *===================================================*/
+					//get the resource
+					QueuePooledRef<POOLABLE> slot = idleResourceLeastRecentlyUsed ? resources.pollFirst() : resources.pollLast();
+					if (slot == null) {
+						continue;
+					}
+					//check it is still valid
+					if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
+						if (slot.markInvalidate()) {
+							destroyPoolable(slot).subscribe(null,
+									error -> drain(),
+									this::drain);
 						}
-						ACQUIRED.incrementAndGet(this);
-						int permits = poolConfig.allocationStrategy()
-						                        .getPermits(1);
-						if (borrower.get() || permits == 0) {
-							ACQUIRED.decrementAndGet(this);
-							continue;
+						continue;
+					}
+					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
+					//slot is valid. there MUST be a borrower since drainLoop is the only place we poll from the queue
+					assert borrower != null;
+					if (isDisposed()) {
+						WIP.lazySet(this, 0);
+						borrower.fail(new PoolShutdownException());
+						return;
+					}
+					borrower.stopPendingCountdown();
+					ACQUIRED.incrementAndGet(this);
+					poolConfig.acquisitionScheduler()
+					          .schedule(() -> borrower.deliver(slot));
+				}
+				else {
+					/*==================================*
+					 * One Borrower, but NO RESOURCE... *
+					 *==================================*/
+					// Can we allocate more?
+					int permits = poolConfig.allocationStrategy().getPermits(1);
+					if (permits <= 0) {
+						/*==========================*
+						 * ... and CANNOT ALLOCATE  => MAX PENDING ENFORCING *
+						 *==========================*/
+						//we don't have idle resource nor allocation permit
+						//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
+						if (maxPending >= 0) {
+							int toCull = PENDING_COUNT.get(this) - maxPending;
+							for (int i = 0; i < toCull; i++) {
+								Borrower<POOLABLE> inner = borrowers.pollLast();
+								if (inner != null) {
+									PENDING_COUNT.decrementAndGet(this);
+								}
+								//fail fast. differentiate slightly special case of maxPending == 0
+								if (maxPending == 0) {
+									inner.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+								}
+								else {
+									inner.fail(new PoolAcquirePendingLimitException(maxPending));
+								}
+							}
+						}
+					}
+					else {
+						/*=======================*
+						 * ... and CAN ALLOCATE  => Subscribe to allocator + Warmup *
+						 *=======================*/
+						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
+						//there MUST be a borrower since drainLoop is the only place we poll from the queue
+						assert borrower != null;
+						if (isDisposed()) {
+							WIP.lazySet(this, 0);
+							borrower.fail(new PoolShutdownException());
+							return;
 						}
 						borrower.stopPendingCountdown();
+						ACQUIRED.incrementAndGet(this);
 						long start = clock.millis();
-						Mono<POOLABLE> allocator;
-						Scheduler s = poolConfig.acquisitionScheduler();
-						if (s != Schedulers.immediate()) {
-							allocator = poolConfig.allocator()
-							                      .publishOn(s);
-						}
-						else {
-							allocator = poolConfig.allocator();
-						}
+						Mono<POOLABLE> allocator = allocatorWithScheduler();
+
 						Mono<POOLABLE> primary = allocator.doOnEach(sig -> {
 							if (sig.isOnNext()) {
 								POOLABLE newInstance = sig.get();
+								assert newInstance != null;
 								metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
 								borrower.deliver(createSlot(newInstance));
 							}
@@ -306,88 +374,32 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								ACQUIRED.decrementAndGet(this);
 								poolConfig.allocationStrategy()
 								          .returnPermits(1);
+								assert sig.getThrowable() != null;
 								borrower.fail(sig.getThrowable());
-								drain();
 							}
-						})
-								.subscriberContext(borrower.currentContext());
+						}).subscriberContext(borrower.currentContext());
 
-						int toWarmup = permits - 1;
-						if (toWarmup < 1) {
-							primary.subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> { });
+						if (permits == 1) {
+							//subscribe to the primary, which will directly feed to the borrower
+							primary.subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
 						}
 						else {
+							/*=============================================*
+							 * (warm up in sequence to primary allocation) *
+							 *=============================================*/
+							int toWarmup = permits - 1;
 							logger.debug("should warm up {} extra resources", toWarmup);
+
 							final long startWarmupIteration = clock.millis();
-							final Mono<Void> warmup = Flux
-									.range(1, toWarmup)
-									.flatMap(i -> allocator
-											.doOnNext(
-													poolable -> {
-														logger.debug("warmed up extra resource {}/{}", i, toWarmup);
-														metricsRecorder.recordAllocationSuccessAndLatency(
-																clock.millis() - startWarmupIteration);
-														irq.offer(new QueuePooledRef<>(this, poolable));
-														drain();
-													})
-											.onErrorResume(
-													warmupError -> {
-														logger.debug("failed to warm up extra resource {}/{}: {}", i, toWarmup,
-																warmupError.toString());
-														metricsRecorder.recordAllocationFailureAndLatency(
-																clock.millis() - startWarmupIteration);
-														//we return permits in case of warmup failure, but shouldn't further decrement ACQUIRED
-														poolConfig.allocationStrategy().returnPermits(1);
-														drain();
-														return Mono.empty();
-													}))
-									.then();
+							Flux<Void> warmupFlux = Flux.range(1, toWarmup)
+							    //individual warmup failures decrement the permit and are logged
+							    .flatMap(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator));
 
-							//we ignore errors from primary (already propagated), which allows us to attempt
-							// the warmup in all cases. individual warmup failures decrement the permit and are logged
-							primary.onErrorResume(ignore -> Mono.empty())
-							       .thenMany(warmup)
-							       //all errors and values are either propagated or logged, nothing to do
-							       .subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> { });
+							primary.onErrorResume(e -> Mono.empty())
+							       .thenMany(warmupFlux)
+							       .subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
 						}
 					}
-				}
-				else if (pendingCount > 0) {
-					if (isDisposed()) {
-						continue;
-					}
-					//there are objects ready and unclaimed in the pool + a pending
-					QueuePooledRef<POOLABLE> slot = idleResourceLeastRecentlyUsed ? irq.pollFirst() : irq.pollLast();
-					if (slot == null) {
-						continue;
-					}
-
-					if (poolConfig.evictionPredicate()
-					              .test(slot.poolable, slot) && slot.markInvalidate()) {
-						destroyPoolable(slot).subscribe(null,
-								error -> drain(),
-								this::drain);
-						continue;
-					}
-
-					//there is a party currently pending acquiring
-					Borrower<POOLABLE> inner = pendingPoll();
-					if (inner == null) {
-						if (!isDisposed()) {
-							//put back at the same end
-							if (idleResourceLeastRecentlyUsed) {
-								irq.offerFirst(slot);
-							}
-							else {
-								irq.offerLast(slot);
-							}
-						}
-						continue;
-					}
-					inner.stopPendingCountdown();
-					ACQUIRED.incrementAndGet(this);
-					poolConfig.acquisitionScheduler()
-					          .schedule(() -> inner.deliver(slot));
 				}
 			}
 
@@ -395,6 +407,39 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				break;
 			}
 		}
+	}
+
+	private Mono<POOLABLE> allocatorWithScheduler() {
+		Scheduler s = poolConfig.acquisitionScheduler();
+		if (s != Schedulers.immediate()) {
+			return poolConfig.allocator().publishOn(s);
+		}
+		return poolConfig.allocator();
+	}
+
+	Mono<Void> warmupMono(int index, int max, long startWarmupIteration, Mono<POOLABLE> allocator) {
+		return allocator.flatMap(poolable -> {
+			logger.debug("warmed up extra resource {}/{}", index, max);
+			metricsRecorder.recordAllocationSuccessAndLatency(
+					clock.millis() - startWarmupIteration);
+			if (!elementOffer(poolable)) {
+				//destroyPoolable will correctly return permit and won't decrement ACQUIRED, unlike invalidate
+				//BUT: it requires a PoolRef that is marked as invalidated
+				QueuePooledRef<POOLABLE> tempRef = createSlot(poolable);
+				tempRef.markInvalidate();
+				return destroyPoolable(tempRef);
+			}
+			return Mono.empty();
+		}).onErrorResume(warmupError -> {
+			logger.debug("failed to warm up extra resource {}/{}: {}", index, max,
+					warmupError.toString());
+			metricsRecorder.recordAllocationFailureAndLatency(
+					clock.millis() - startWarmupIteration);
+			//we return permits in case of warmup failure, but shouldn't further decrement ACQUIRED
+			poolConfig.allocationStrategy().returnPermits(1);
+			return Mono.empty();
+		});
+		//draining will be triggered again at the end of the warmup execution
 	}
 
 	@Override
@@ -439,42 +484,19 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	 * @return true if the pool had capacity to register this new pending
 	 */
 	boolean pendingOffer(Borrower<POOLABLE> pending) {
-		int maxPending = poolConfig.maxPending();
-		for (; ; ) {
-			int currentPending = PENDING_COUNT.get(this);
-			if (maxPending >= 0 && currentPending == maxPending) {
-				//best effort: check for idle and capacity
-				Deque<QueuePooledRef<POOLABLE>> ir = this.idleResources;
-				if (ir.isEmpty() && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
-					//fail fast. differentiate slightly special case of maxPending == 0
-					if (maxPending == 0) {
-						pending.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
-					}
-					else {
-						pending.fail(new PoolAcquirePendingLimitException(maxPending));
-					}
-					return false;
-				}
-			}
-
-			if (PENDING_COUNT.compareAndSet(this,
-					currentPending,
-					currentPending + 1)) {
-				this.pending.offerLast(pending); //unbounded
-				return true;
-			}
-		}
+		int nowPending = PENDING_COUNT.incrementAndGet(this);
+		this.pending.offerLast(pending);
+		return true;
 	}
 
 	/**
 	 * @return the next {@link reactor.pool.AbstractPool.Borrower} to serve
 	 */
 	@Nullable
-	Borrower<POOLABLE> pendingPoll() {
-		Deque<Borrower<POOLABLE>> pq = pending;
+	Borrower<POOLABLE> pendingPoll(Deque<Borrower<POOLABLE>> borrowers) {
 		Borrower<POOLABLE> b = this.pendingBorrowerFirstInFirstServed ?
-				pq.pollFirst() :
-				pq.pollLast();
+				borrowers.pollFirst() :
+				borrowers.pollLast();
 		if (b != null) {
 			PENDING_COUNT.decrementAndGet(this);
 		}

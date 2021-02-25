@@ -354,9 +354,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						 * ... and CAN ALLOCATE  => Subscribe to allocator + Warmup *
 						 *=======================*/
 						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
-						//there MUST be a borrower since drainLoop is the only place we poll from the queue
 						if (borrower == null) {
-							continue;
+							continue; //we expect to detect pool is shut down in next round
 						}
 						if (isDisposed()) {
 							WIP.lazySet(this, 0);

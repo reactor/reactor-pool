@@ -334,13 +334,13 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								Borrower<POOLABLE> inner = borrowers.pollLast();
 								if (inner != null) {
 									PENDING_COUNT.decrementAndGet(this);
-								}
-								//fail fast. differentiate slightly special case of maxPending == 0
-								if (maxPending == 0) {
-									inner.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
-								}
-								else {
-									inner.fail(new PoolAcquirePendingLimitException(maxPending));
+									//fail fast. differentiate slightly special case of maxPending == 0
+									if (maxPending == 0) {
+										inner.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+									}
+									else {
+										inner.fail(new PoolAcquirePendingLimitException(maxPending));
+									}
 								}
 							}
 						}
@@ -351,7 +351,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						 *=======================*/
 						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
 						//there MUST be a borrower since drainLoop is the only place we poll from the queue
-						assert borrower != null;
+						if (borrower == null) {
+							continue;
+						}
 						if (isDisposed()) {
 							WIP.lazySet(this, 0);
 							borrower.fail(new PoolShutdownException());
@@ -370,12 +372,13 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								borrower.deliver(createSlot(newInstance));
 							}
 							else if (sig.isOnError()) {
+								Throwable error = sig.getThrowable();
+								assert error != null;
 								metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
 								ACQUIRED.decrementAndGet(this);
 								poolConfig.allocationStrategy()
 								          .returnPermits(1);
-								assert sig.getThrowable() != null;
-								borrower.fail(sig.getThrowable());
+								borrower.fail(error);
 							}
 						}).subscriberContext(borrower.currentContext());
 

@@ -133,7 +133,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		if (WIP.getAndIncrement(this) == 0) {
-			if (PENDING_COUNT.get(this) == 0) {
+			if (pending.isEmpty()) {
 				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
 				//only one evictInBackground can enter here, and it won vs `drain` calls
 				//let's "purge" the pool
@@ -235,7 +235,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (!isDisposed()) { //ignore pool disposed
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> q = this.pending;
 			if (q.remove(borrower)) {
-				PENDING_COUNT.decrementAndGet(this);
+				PENDING_COUNT.lazySet(this, q.size());
 			}
 		}
 	}
@@ -304,8 +304,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						continue;
 					}
 					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
-					//slot is valid. there MUST be a borrower since drainLoop is the only place we poll from the queue
-					assert borrower != null;
+					if (borrower == null) {
+						//we expect to detect a disposed pool in the next round
+						continue;
+					}
 					if (isDisposed()) {
 						WIP.lazySet(this, 0);
 						borrower.fail(new PoolShutdownException());
@@ -329,21 +331,23 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						//we don't have idle resource nor allocation permit
 						//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
 						if (maxPending >= 0) {
-							int toCull = PENDING_COUNT.get(this) - maxPending;
+							int toCull = borrowersCount - maxPending;
 							for (int i = 0; i < toCull; i++) {
-								Borrower<POOLABLE> inner = borrowers.pollLast();
-								if (inner != null) {
-									PENDING_COUNT.decrementAndGet(this);
+								Borrower<POOLABLE> extraneous = borrowers.pollLast();
+								if (extraneous != null) {
 									//fail fast. differentiate slightly special case of maxPending == 0
 									if (maxPending == 0) {
-										inner.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+										extraneous.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
 									}
 									else {
-										inner.fail(new PoolAcquirePendingLimitException(maxPending));
+										extraneous.fail(new PoolAcquirePendingLimitException(maxPending));
 									}
 								}
 							}
 						}
+						//PENDING_COUNT is now only used for stats, so we defer the update so that
+						//watchers don't see the intermediate state where this.pending has a larger than maxPending size
+						PENDING_COUNT.lazySet(this, borrowers.size());
 					}
 					else {
 						/*=======================*
@@ -482,14 +486,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	/**
-	 * @param pending a new {@link reactor.pool.AbstractPool.Borrower} to register as pending
-	 *
-	 * @return true if the pool had capacity to register this new pending
+	 * @param pending a new {@link reactor.pool.AbstractPool.Borrower} to add to the queue and later either serve or consider pending
 	 */
-	boolean pendingOffer(Borrower<POOLABLE> pending) {
-		int nowPending = PENDING_COUNT.incrementAndGet(this);
+	void pendingOffer(Borrower<POOLABLE> pending) {
 		this.pending.offerLast(pending);
-		return true;
 	}
 
 	/**
@@ -501,7 +501,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				borrowers.pollFirst() :
 				borrowers.pollLast();
 		if (b != null) {
-			PENDING_COUNT.decrementAndGet(this);
+			PENDING_COUNT.lazySet(this, borrowers.size());
 		}
 		return b;
 	}

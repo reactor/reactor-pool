@@ -137,4 +137,88 @@ public class SimpleDequePoolStressTest {
 		}
 	}
 
+	@JCStressTest
+	@Outcome(id = "1, 3, 1, 1", expect = ACCEPTABLE,  desc = "1 obtained, 3 rejected, 1 pending")
+	@Outcome(id = "1, 4, 0, 0", expect = ACCEPTABLE_INTERESTING,  desc = "1 obtained, all overeagerly rejected")
+	@Outcome(id = "1, 0, 4, 4", expect = FORBIDDEN, desc = "1 obtained and all others pending")
+	@Outcome(id = "1, 1, 3, 3", expect = FORBIDDEN, desc = "1 obtained but 3 pending")
+	@Outcome(id = "1, 2, 2, 2", expect = FORBIDDEN, desc = "1 obtained but 2 pending")
+	@State
+	public static class MaxPendingAcquireHammeredWithOnePermit {
+
+		final AtomicBoolean firstResourceCreated = new AtomicBoolean();
+
+		final AtomicInteger obtained = new AtomicInteger();
+		final AtomicInteger rejected = new AtomicInteger();
+
+		final SimpleDequePool<AtomicInteger> pool = PoolBuilder
+				.from(Mono.fromCallable(() -> new AtomicInteger(firstResourceCreated.getAndSet(true) ? 2 : 1)))
+				.sizeBetween(0, 1)
+				.maxPendingAcquire(1)
+				.build(conf -> new SimpleDequePool<>(conf, true));
+
+		@Actor
+		public void acquisition1() {
+			pool.acquire().subscribe(
+					v -> obtained.incrementAndGet(),
+					e -> {
+						if (e instanceof PoolAcquirePendingLimitException) {
+							rejected.incrementAndGet();
+						}
+					});
+		}
+
+		@Actor
+		public void acquisition2() {
+			pool.acquire().subscribe(
+					v -> obtained.incrementAndGet(),
+					e -> {
+						if (e instanceof PoolAcquirePendingLimitException) {
+							rejected.incrementAndGet();
+						}
+					});
+		}
+
+		@Actor
+		public void acquisition3() {
+			pool.acquire().subscribe(
+					v -> obtained.incrementAndGet(),
+					e -> {
+						if (e instanceof PoolAcquirePendingLimitException) {
+							rejected.incrementAndGet();
+						}
+					});
+		}
+
+		@Actor
+		public void acquisition4() {
+			pool.acquire().subscribe(
+					v -> obtained.incrementAndGet(),
+					e -> {
+						if (e instanceof PoolAcquirePendingLimitException) {
+							rejected.incrementAndGet();
+						}
+					});
+		}
+
+		@Actor
+		public void acquisition5() {
+			pool.acquire().subscribe(
+					v -> obtained.incrementAndGet(),
+					e -> {
+						if (e instanceof PoolAcquirePendingLimitException) {
+							rejected.incrementAndGet();
+						}
+					});
+		}
+
+		@Arbiter
+		public void arbiter(IIII_Result r) {
+			r.r1 = obtained.get();
+			r.r2 = rejected.get();
+			r.r3 = pool.pending.size();
+			r.r4 = SimpleDequePool.PENDING_COUNT.get(pool);
+		}
+	}
+
 }

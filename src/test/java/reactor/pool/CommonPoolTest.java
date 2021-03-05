@@ -1788,7 +1788,7 @@ public class CommonPoolTest {
 		assertThat(recorder.getDestroyCount()).as("destroy before 500ms").isEqualTo(1);
 
 		await().pollDelay(500, TimeUnit.MILLISECONDS)
-		       .atMost(600, TimeUnit.MILLISECONDS)
+		       .atMost(1, TimeUnit.SECONDS)
 		       .untilAsserted(() -> assertThat(recorder.getDestroyCount()).as("destroy after 500ms").isEqualTo(2));
 
 		long min = recorder.getDestroyHistogram().getMinValue();

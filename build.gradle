@@ -177,7 +177,6 @@ configure(rootProject) { project ->
   }
 
   repositories {
-    jcenter()
     mavenCentral()
     maven { url "https://oss.sonatype.org/content/repositories/releases/" }
     if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots

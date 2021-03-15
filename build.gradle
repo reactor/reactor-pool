@@ -241,7 +241,7 @@ task downloadBaseline(type: Download) {
   onlyIfNewer true
   compress true
 
-  src "${repositories.jcenter().url}io/projectreactor/addons/reactor-pool/$compatibleVersion/reactor-pool-${compatibleVersion}.jar"
+  src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/$compatibleVersion/reactor-pool-${compatibleVersion}.jar"
   dest "${buildDir}/baselineLibs/reactor-pool-${compatibleVersion}.jar"
 }
 

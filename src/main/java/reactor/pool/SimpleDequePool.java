@@ -309,12 +309,17 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
 					if (borrower == null) {
-						//FIXME slot is dangling here, return it to the Deque
+						if (idleResourceLeastRecentlyUsed) {
+							resources.offerFirst(slot);
+						}
+						else {
+							resources.offerLast(slot);
+						}
 						//we expect to detect a disposed pool in the next round
 						continue;
 					}
 					if (isDisposed()) {
-						//FIXME slot should be destroyed at that point, right?
+						slot.invalidate().subscribe(); //TODO double check this is enough
 						borrower.fail(new PoolShutdownException());
 						return;
 					}

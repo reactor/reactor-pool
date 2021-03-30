@@ -276,7 +276,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
 			if (resources == null || borrowers == TERMINATED) {
 				//null queue indicates a terminated pool
-				WIP.lazySet(this, 0); //TODO leave it at current value to prevent re-entry, terminal state anyway
 				return;
 			}
 
@@ -316,7 +315,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					if (isDisposed()) {
 						//FIXME slot should be destroyed at that point, right?
-						WIP.lazySet(this, 0);
 						borrower.fail(new PoolShutdownException());
 						return;
 					}
@@ -363,7 +361,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							continue; //we expect to detect pool is shut down in next round
 						}
 						if (isDisposed()) {
-							WIP.lazySet(this, 0);
 							borrower.fail(new PoolShutdownException());
 							return;
 						}

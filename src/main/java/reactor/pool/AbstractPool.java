@@ -249,7 +249,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		boolean markInvalidate() {
 			for(;;) {
 				int s = state;
-				if (s == STATE_INVALIDATED) {
+				if (s == STATE_INVALIDATED) { //TODO should it account for STATE_RELEASED as well?
 					return false;
 				}
 				else if (STATE.compareAndSet(this, s, STATE_INVALIDATED)) {

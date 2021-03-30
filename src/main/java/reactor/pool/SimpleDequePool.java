@@ -74,6 +74,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final AtomicIntegerFieldUpdater<SimpleDequePool> ACQUIRED =
 			AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "acquired");
 
+	//TODO rework into a STATE that uses 31 bits for wip guard and 1 bit for TERMINATED, make queues final and not volatile
 	volatile             int                                        wip;
 	@SuppressWarnings("rawtypes")
 	private static final AtomicIntegerFieldUpdater<SimpleDequePool> WIP =
@@ -160,6 +161,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
+			//FIXME mark the termination differently and handle Borrower.fail inside drainLoop
+			//FIXME also IDLE_RESOURCE
+			//to make it truly MPSC
+
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =
 					PENDING.getAndSet(this, TERMINATED);
 			if (q != TERMINATED) {
@@ -185,7 +190,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					return destroyMonos;
 				}
 			}
-			return Mono.empty();
+			return Mono.empty(); //TODO subsequent calls misleading: destroying might still be in progress yet second subscriber sees immediate termination
 		});
 	}
 
@@ -271,7 +276,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
 			if (resources == null || borrowers == TERMINATED) {
 				//null queue indicates a terminated pool
-				WIP.lazySet(this, 0);
+				WIP.lazySet(this, 0); //TODO leave it at current value to prevent re-entry, terminal state anyway
 				return;
 			}
 
@@ -305,10 +310,12 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
 					if (borrower == null) {
+						//FIXME slot is dangling here, return it to the Deque
 						//we expect to detect a disposed pool in the next round
 						continue;
 					}
 					if (isDisposed()) {
+						//FIXME slot should be destroyed at that point, right?
 						WIP.lazySet(this, 0);
 						borrower.fail(new PoolShutdownException());
 						return;
@@ -552,6 +559,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	static final class QueuePooledRef<T> extends AbstractPooledRef<T> {
 
 		final SimpleDequePool<T> pool;
+
+		//TODO we can probably have a Mono<Void> field to always return the same mono to invalidate/release calls
+		//TODO we should also be able to collapse QueuePoolRecyclerMono and QueuePoolRecyclerInner (since it is intended to be idempotent)
 
 		QueuePooledRef(SimpleDequePool<T> pool, T poolable) {
 			super(poolable, pool.metricsRecorder, pool.clock);

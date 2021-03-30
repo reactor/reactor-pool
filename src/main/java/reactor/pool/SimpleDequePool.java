@@ -551,7 +551,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	@Override
 	public boolean isDisposed() {
-		return PENDING.get(this) == TERMINATED;
+		return PENDING.get(this) == TERMINATED || IDLE_RESOURCES.get(this) == null;
 	}
 
 

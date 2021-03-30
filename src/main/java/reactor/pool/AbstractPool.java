@@ -58,10 +58,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	final PoolMetricsRecorder metricsRecorder;
 	final Clock clock;
 
-	volatile     int                                     pendingCount;
-	@SuppressWarnings("rawtypes")
-	static final AtomicIntegerFieldUpdater<AbstractPool> PENDING_COUNT = AtomicIntegerFieldUpdater.newUpdater(AbstractPool.class, "pendingCount");
-
 	AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
 		this.poolConfig = poolConfig;
 		this.logger = logger;
@@ -74,11 +70,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	@Override
 	public PoolMetrics metrics() {
 		return this;
-	}
-
-	@Override
-	public int pendingAcquireSize() {
-		return PENDING_COUNT.get(this);
 	}
 
 	@Override

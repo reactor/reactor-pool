@@ -43,7 +43,6 @@ import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -931,7 +930,7 @@ public class CommonPoolTest {
 				);
 			}
 
-			assertThat(AbstractPool.PENDING_COUNT.get(pool)).as("pending counter limited to 1").isEqualTo(1);
+			assertThat(pool.pendingAcquireSize()).as("pending counter limited to 1").isEqualTo(1);
 
 			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
 			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);
@@ -978,7 +977,7 @@ public class CommonPoolTest {
 			);
 			RaceTestUtils.race(runnable, runnable);
 
-			assertThat(AbstractPool.PENDING_COUNT.get(pool)).as("pending counter limited to 1").isEqualTo(1);
+			assertThat(pool.pendingAcquireSize()).as("pending counter limited to 1").isEqualTo(1);
 
 			assertThat(errorCount).as("immediate error of extraneous pending").hasValue(1);
 			assertThat(otherTerminationCount).as("no other immediate termination").hasValue(0);

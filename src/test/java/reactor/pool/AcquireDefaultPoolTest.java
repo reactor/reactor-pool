@@ -501,9 +501,9 @@ class AcquireDefaultPoolTest {
 						.buildPool();
 
 				for (int i = 0; i < 100; i++) {
-					RaceTestUtils.race(() -> pool.acquire().block().release().block(),
+					RaceTestUtils.race(racer,
 							() -> pool.acquire().block().release().block(),
-							racer);
+							() -> pool.acquire().block().release().block());
 				}
 				//we expect that only 3 element was created
 				assertThat(newCount).as("elements created in total").hasValue(4);

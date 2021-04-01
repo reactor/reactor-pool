@@ -43,7 +43,6 @@ import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -67,6 +66,7 @@ import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.is;
 
 /**
  * @author Simon Baslé
@@ -2528,5 +2528,35 @@ public class CommonPoolTest {
 		assertThat(ref2.poolable()).as("ref2").isEqualTo(style.isLru ? "2warmup" : "1warmup");
 		assertThat(ref3.poolable()).as("ref3").isEqualTo("3noContext");
 		assertThat(ref4.poolable()).as("ref4").isEqualTo("4noContext");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void longAllocationDoesntUpdateAcquired(PoolStyle style) {
+		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
+				.from(Mono.just(1).delayElement(Duration.ofSeconds(1)))
+				.sizeBetween(0, 1);
+
+		InstrumentedPool<Integer> pool = style.apply(configBuilder);
+
+		AtomicBoolean next = new AtomicBoolean();
+		AtomicBoolean error = new AtomicBoolean();
+		AtomicBoolean complete = new AtomicBoolean();
+
+		pool.acquire().subscribe(
+				stringPooledRef -> next.set(true),
+				throwable -> error.set(true),
+				() -> complete.set(true)
+		);
+
+		assertThat(next).as("hasn't received value yet").isFalse();
+		assertThat(pool.metrics().acquiredSize()).as("acquired size before allocator done").isZero();
+
+		Awaitility.await().untilAtomic(complete, is(true));
+
+		assertThat(error).as("error").isFalse();
+		assertThat(next).as("next").isTrue();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired size after allocator done").isOne();
 	}
 }

@@ -40,7 +40,10 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 
 		/**
 		 * Measure the current number of resources that have been successfully
-		 * {@link Pool#acquire() acquired} and are in active use.
+		 * {@link Pool#acquire() acquired} and are in active use, outside of the
+		 * control of the pool until they're released back to it. This number is
+		 * only incremented after the resource has been successfully allocated and
+		 * is about to be handed off to the subscriber of {@link Pool#acquire()}.
 		 *
 		 * @return the number of acquired resources
 		 */

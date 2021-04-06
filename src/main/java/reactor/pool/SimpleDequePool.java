@@ -370,7 +370,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							return;
 						}
 						borrower.stopPendingCountdown();
-						ACQUIRED.incrementAndGet(this);
 						long start = clock.millis();
 						Mono<POOLABLE> allocator = allocatorWithScheduler();
 
@@ -378,6 +377,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							if (sig.isOnNext()) {
 								POOLABLE newInstance = sig.get();
 								assert newInstance != null;
+								ACQUIRED.incrementAndGet(this);
 								metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
 								borrower.deliver(createSlot(newInstance));
 							}
@@ -385,7 +385,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								Throwable error = sig.getThrowable();
 								assert error != null;
 								metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
-								ACQUIRED.decrementAndGet(this);
 								poolConfig.allocationStrategy()
 								          .returnPermits(1);
 								borrower.fail(error);

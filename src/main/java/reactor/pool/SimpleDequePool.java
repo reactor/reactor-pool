@@ -163,8 +163,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
-			//FIXME mark the termination differently and handle Borrower.fail inside drainLoop
-			//FIXME also IDLE_RESOURCE
+			//TODO mark the termination differently and handle Borrower.fail inside drainLoop
+			//TODO also IDLE_RESOURCE
 			//to make it truly MPSC
 
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =

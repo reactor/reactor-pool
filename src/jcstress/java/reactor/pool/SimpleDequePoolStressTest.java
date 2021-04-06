@@ -25,6 +25,7 @@ import org.openjdk.jcstress.annotations.JCStressTest;
 import org.openjdk.jcstress.annotations.Outcome;
 import org.openjdk.jcstress.annotations.State;
 import org.openjdk.jcstress.infra.results.IIII_Result;
+import org.openjdk.jcstress.infra.results.III_Result;
 import org.openjdk.jcstress.infra.results.II_Result;
 
 import reactor.core.publisher.Mono;
@@ -138,11 +139,11 @@ public class SimpleDequePoolStressTest {
 	}
 
 	@JCStressTest
-	@Outcome(id = "1, 3, 1, 1", expect = ACCEPTABLE,  desc = "1 obtained, 3 rejected, 1 pending")
-	@Outcome(id = "1, 4, 0, 0", expect = ACCEPTABLE_INTERESTING,  desc = "1 obtained, all overeagerly rejected")
-	@Outcome(id = "1, 0, 4, 4", expect = FORBIDDEN, desc = "1 obtained and all others pending")
-	@Outcome(id = "1, 1, 3, 3", expect = FORBIDDEN, desc = "1 obtained but 3 pending")
-	@Outcome(id = "1, 2, 2, 2", expect = FORBIDDEN, desc = "1 obtained but 2 pending")
+	@Outcome(id = "1, 3, 1", expect = ACCEPTABLE,  desc = "1 obtained, 3 rejected, 1 pending")
+	@Outcome(id = "1, 4, 0", expect = ACCEPTABLE_INTERESTING,  desc = "1 obtained, all overeagerly rejected")
+	@Outcome(id = "1, 0, 4", expect = FORBIDDEN, desc = "1 obtained and all others pending")
+	@Outcome(id = "1, 1, 3", expect = FORBIDDEN, desc = "1 obtained but 3 pending")
+	@Outcome(id = "1, 2, 2", expect = FORBIDDEN, desc = "1 obtained but 2 pending")
 	@State
 	public static class MaxPendingAcquireHammeredWithOnePermit {
 
@@ -213,11 +214,10 @@ public class SimpleDequePoolStressTest {
 		}
 
 		@Arbiter
-		public void arbiter(IIII_Result r) {
+		public void arbiter(III_Result r) {
 			r.r1 = obtained.get();
 			r.r2 = rejected.get();
 			r.r3 = pool.pending.size();
-			r.r4 = SimpleDequePool.PENDING_COUNT.get(pool);
 		}
 	}
 

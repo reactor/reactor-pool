@@ -123,10 +123,10 @@ class PendingAcquireLifoBehaviorTest {
 		//we expect the release might sometimes win, which would mean acquire 1 would get served. mostly we want to verify delivery thread though
 		acquire1Scheduler.schedule(() -> firstBorrower.subscribe(v -> threadName.compareAndSet(null, Thread.currentThread().getName())
 				, e -> latch.countDown(), latch::countDown));
-		RaceTestUtils.race(() -> secondBorrower.subscribe(v -> threadName.compareAndSet(null, Thread.currentThread().getName())
+		RaceTestUtils.race(racerScheduler,
+				() -> secondBorrower.subscribe(v -> threadName.compareAndSet(null, Thread.currentThread().getName())
 				, e -> latch.countDown(), latch::countDown),
-				uniqueSlot.release()::block,
-				racerScheduler);
+				uniqueSlot.release()::block);
 
 		latch.await(1, TimeUnit.SECONDS);
 
@@ -189,14 +189,13 @@ class PendingAcquireLifoBehaviorTest {
 
 		//in parallel, we'll race a second acquire AND release the unique element (each on their dedicated threads)
 		//since LIFO we expect that if the release loses, it will server acquire1
-		RaceTestUtils.race(
+		RaceTestUtils.race(racerScheduler,
 				() -> otherBorrower.subscribe(v -> threadName.set(Thread.currentThread().getName())
 						, e -> latch.countDown(), latch::countDown),
 				() -> {
 					uniqueSlot.release().block();
 					latch.countDown();
-				},
-				racerScheduler);
+				});
 		latch.await(1, TimeUnit.SECONDS);
 
 		//we expect that, consistently, the poolable is delivered on a `delivery` thread

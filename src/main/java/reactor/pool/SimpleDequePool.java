@@ -74,6 +74,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final AtomicIntegerFieldUpdater<SimpleDequePool> ACQUIRED =
 			AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "acquired");
 
+	//TODO rework into a STATE that uses 31 bits for wip guard and 1 bit for TERMINATED, make queues final and not volatile
 	volatile             int                                        wip;
 	@SuppressWarnings("rawtypes")
 	private static final AtomicIntegerFieldUpdater<SimpleDequePool> WIP =
@@ -133,7 +134,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		if (WIP.getAndIncrement(this) == 0) {
-			if (PENDING_COUNT.get(this) == 0) {
+			@SuppressWarnings("unchecked")
+			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
+			if (borrowers.size() == 0) {
 				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
 				//only one evictInBackground can enter here, and it won vs `drain` calls
 				//let's "purge" the pool
@@ -160,6 +163,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
+			//TODO mark the termination differently and handle Borrower.fail inside drainLoop
+			//TODO also IDLE_RESOURCE
+			//to make it truly MPSC
+
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =
 					PENDING.getAndSet(this, TERMINATED);
 			if (q != TERMINATED) {
@@ -185,7 +192,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					return destroyMonos;
 				}
 			}
-			return Mono.empty();
+			return Mono.empty(); //TODO subsequent calls misleading: destroying might still be in progress yet second subscriber sees immediate termination
 		});
 	}
 
@@ -234,9 +241,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	void cancelAcquire(Borrower<POOLABLE> borrower) {
 		if (!isDisposed()) { //ignore pool disposed
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> q = this.pending;
-			if (q.remove(borrower)) {
-				PENDING_COUNT.decrementAndGet(this);
-			}
+			q.remove(borrower);
 		}
 	}
 
@@ -271,11 +276,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
 			if (resources == null || borrowers == TERMINATED) {
 				//null queue indicates a terminated pool
-				WIP.lazySet(this, 0);
 				return;
 			}
 
-			int borrowersCount = PENDING_COUNT.get(this);
+			int borrowersCount = borrowers.size();
 			int resourcesCount = resources.size();
 
 			if (borrowersCount == 0) {
@@ -305,11 +309,17 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
 					if (borrower == null) {
+						if (idleResourceLeastRecentlyUsed) {
+							resources.offerFirst(slot);
+						}
+						else {
+							resources.offerLast(slot);
+						}
 						//we expect to detect a disposed pool in the next round
 						continue;
 					}
 					if (isDisposed()) {
-						WIP.lazySet(this, 0);
+						slot.invalidate().subscribe(); //TODO double check this is enough
 						borrower.fail(new PoolShutdownException());
 						return;
 					}
@@ -331,7 +341,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						//we don't have idle resource nor allocation permit
 						//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
 						if (maxPending >= 0) {
-							borrowersCount = PENDING_COUNT.get(this);
+							borrowersCount = borrowers.size();
 							int toCull = borrowersCount - maxPending;
 							for (int i = 0; i < toCull; i++) {
 								Borrower<POOLABLE> extraneous = pendingPoll(borrowers);
@@ -356,7 +366,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							continue; //we expect to detect pool is shut down in next round
 						}
 						if (isDisposed()) {
-							WIP.lazySet(this, 0);
 							borrower.fail(new PoolShutdownException());
 							return;
 						}
@@ -447,6 +456,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	@Override
+	public int pendingAcquireSize() {
+		return PENDING.get(this).size();
+	}
+
+	@Override
 	boolean elementOffer(POOLABLE element) {
 		@SuppressWarnings("unchecked")
 		Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
@@ -492,7 +506,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			return;
 		}
 		pendingQueue.offerLast(pending);
-		int postOffer = PENDING_COUNT.incrementAndGet(this);
+		int postOffer = pendingQueue.size();
 
 		if (WIP.getAndIncrement(this) == 0) {
 			Deque<QueuePooledRef<POOLABLE>> ir = this.idleResources;
@@ -500,7 +514,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				//fail fast. differentiate slightly special case of maxPending == 0
 				Borrower<POOLABLE> toCull = pendingQueue.pollLast();
 				if (toCull != null) {
-					PENDING_COUNT.decrementAndGet(this);
 					if (maxPending == 0) {
 						toCull.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
 					}
@@ -530,9 +543,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		Borrower<POOLABLE> b = this.pendingBorrowerFirstInFirstServed ?
 				borrowers.pollFirst() :
 				borrowers.pollLast();
-		if (b != null) {
-			PENDING_COUNT.decrementAndGet(this);
-		}
 		return b;
 	}
 
@@ -543,7 +553,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	@Override
 	public boolean isDisposed() {
-		return PENDING.get(this) == TERMINATED;
+		return PENDING.get(this) == TERMINATED || IDLE_RESOURCES.get(this) == null;
 	}
 
 
@@ -552,6 +562,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	static final class QueuePooledRef<T> extends AbstractPooledRef<T> {
 
 		final SimpleDequePool<T> pool;
+
+		//TODO we can probably have a Mono<Void> field to always return the same mono to invalidate/release calls
+		//TODO we should also be able to collapse QueuePoolRecyclerMono and QueuePoolRecyclerInner (since it is intended to be idempotent)
 
 		QueuePooledRef(SimpleDequePool<T> pool, T poolable) {
 			super(poolable, pool.metricsRecorder, pool.clock);

@@ -973,7 +973,7 @@ public class CommonPoolTest {
 					    	else otherTerminationCount.incrementAndGet();
 					    })
 					    .doOnError(error::set)
-					    .subscribe()
+					    .subscribe(v -> {}, e -> {})
 			);
 			RaceTestUtils.race(runnable, runnable);
 

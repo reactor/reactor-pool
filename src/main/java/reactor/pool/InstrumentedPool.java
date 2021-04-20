@@ -15,6 +15,8 @@
  */
 package reactor.pool;
 
+import java.time.Duration;
+
 /**
  * An {@link InstrumentedPool} is a {@link Pool} that exposes a few additional methods
  * around metrics.
@@ -78,6 +80,40 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 * @return the number of pending acquire
 		 */
 		int pendingAcquireSize();
+
+		/**
+		 * Measure the duration in seconds since the pool was last interacted with in a meaningful way.
+		 * This is a best effort indicator of pool inactivity, provided the pool counters
+		 * ({@link #acquiredSize()}, {@link #idleSize()}, {@link #pendingAcquireSize()} and {@link #allocatedSize()})
+		 * are also at zero.
+		 * <p>
+		 * The lower the duration, the greater the chances that an interaction could be occurring in parallel to this call.
+		 * This is why the duration is truncated to the second.
+		 * A pool implementation that cannot yet support this measurement MAY choose to return {@literal -1} seconds instead.
+		 * <p>
+		 * Interactions include background eviction, disposal of the pool, explicit pool warmup, resource acquisition
+		 * and release (in the default implementation, any interaction triggering the drain loop)...
+		 *
+		 * @return a number of seconds indicative of the time elapsed since last pool interaction
+		 * @see #isInactiveForMoreThan(Duration)
+		 */
+		default long secondsSinceLastInteraction() {
+			return -1L;
+		}
+
+		/**
+		 * A convenience way to check the pool is inactive, in the sense that {@link #acquiredSize()},
+		 * {@link #idleSize()}, {@link #pendingAcquireSize()} and {@link #allocatedSize()} are all at zero
+		 * and that the last recorded interaction with the pool ({@link #secondsSinceLastInteraction()})
+		 * was more than or exactly {@code duration} ago.
+		 *
+		 * @return true if the pool can be considered inactive (see above), false otherwise
+		 * @see #secondsSinceLastInteraction()
+		 */
+		default boolean isInactiveForMoreThan(Duration duration) {
+			return acquiredSize() == 0 && idleSize() == 0 && pendingAcquireSize() == 0 && allocatedSize() == 0
+					&& secondsSinceLastInteraction() >= duration.toMillis();
+		}
 
 		/**
 		 * Get the maximum number of live resources this {@link Pool} will allow.

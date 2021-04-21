@@ -93,6 +93,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		this.pendingBorrowerFirstInFirstServed = pendingBorrowerFirstInFirstServed;
 		this.pending = new ConcurrentLinkedDeque<>(); //unbounded
 		this.idleResources = new ConcurrentLinkedDeque<>();
+		recordInteractionTimestamp();
 
 		scheduleEviction();
 	}
@@ -136,6 +137,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (WIP.getAndIncrement(this) == 0) {
 			@SuppressWarnings("unchecked")
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
+			recordInteractionTimestamp();
 			if (borrowers.size() == 0) {
 				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
 				//only one evictInBackground can enter here, and it won vs `drain` calls
@@ -163,6 +165,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
+			recordInteractionTimestamp();
+
 			//TODO mark the termination differently and handle Borrower.fail inside drainLoop
 			//TODO also IDLE_RESOURCE
 			//to make it truly MPSC
@@ -207,6 +211,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (poolConfig.allocationStrategy()
 		              .permitMinimum() > 0) {
 			return Mono.deferContextual(ctx -> {
+				recordInteractionTimestamp();
 				int initSize = poolConfig.allocationStrategy()
 				                         .getPermits(0);
 				@SuppressWarnings({ "unchecked", "rawtypes" }) //rawtypes added since javac actually complains
@@ -267,6 +272,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	private void drainLoop() {
+		//we mark the interaction timestamp twice (beginning and end) rather than continuously on each iteration
+		recordInteractionTimestamp();
 		int maxPending = poolConfig.maxPending();
 
 		for (;;) {
@@ -416,6 +423,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			}
 
 			if (WIP.decrementAndGet(this) == 0) {
+				recordInteractionTimestamp();
 				break;
 			}
 		}
@@ -472,6 +480,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	@SuppressWarnings("WeakerAccess")
 	final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
 		if (!isDisposed()) {
+			recordInteractionTimestamp();
 			if (!poolConfig.evictionPredicate()
 			               .test(poolSlot.poolable, poolSlot)) {
 				metricsRecorder.recordRecycled();

@@ -58,11 +58,14 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	final PoolMetricsRecorder metricsRecorder;
 	final Clock clock;
 
+	long lastInteractionTimestamp;
+
 	AbstractPool(PoolConfig<POOLABLE> poolConfig, Logger logger) {
 		this.poolConfig = poolConfig;
 		this.logger = logger;
 		this.metricsRecorder = poolConfig.metricsRecorder();
 		this.clock = poolConfig.clock();
+		this.lastInteractionTimestamp = clock.millis();
 	}
 
 	// == pool introspection methods ==
@@ -93,6 +96,23 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	@Override
 	public int getMaxPendingAcquireSize() {
 		return poolConfig.maxPending() < 0 ? Integer.MAX_VALUE : poolConfig.maxPending();
+	}
+
+	void recordInteractionTimestamp() {
+		this.lastInteractionTimestamp = clock.millis();
+	}
+
+	@Override
+	public long secondsSinceLastInteraction() {
+		long sinceMs = clock.millis() - this.lastInteractionTimestamp;
+		return sinceMs / 1000;
+	}
+
+	@Override
+	public boolean isInactiveForMoreThan(Duration duration) {
+		//since acquiredSize() is computed from idleSize and allocatedSize, no need to involve it
+		return idleSize() == 0 && pendingAcquireSize() == 0 && allocatedSize() == 0
+				&& secondsSinceLastInteraction() >= duration.toMillis();
 	}
 
 	// == common methods to interact with idle/pending queues ==

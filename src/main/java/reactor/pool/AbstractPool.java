@@ -112,7 +112,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	public boolean isInactiveForMoreThan(Duration duration) {
 		//since acquiredSize() is computed from idleSize and allocatedSize, no need to involve it
 		return idleSize() == 0 && pendingAcquireSize() == 0 && allocatedSize() == 0
-				&& secondsSinceLastInteraction() >= duration.toMillis();
+				&& secondsSinceLastInteraction() >= duration.getSeconds();
 	}
 
 	// == common methods to interact with idle/pending queues ==

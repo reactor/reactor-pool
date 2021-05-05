@@ -137,7 +137,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (WIP.getAndIncrement(this) == 0) {
 			@SuppressWarnings("unchecked")
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> borrowers = PENDING.get(this);
-			recordInteractionTimestamp();
 			if (borrowers.size() == 0) {
 				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
 				//only one evictInBackground can enter here, and it won vs `drain` calls
@@ -147,6 +146,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					QueuePooledRef<POOLABLE> pooledRef = iterator.next();
 					if (evictionPredicate.test(pooledRef.poolable, pooledRef)) {
 						if (pooledRef.markInvalidate()) {
+							recordInteractionTimestamp();
 							iterator.remove();
 							destroyPoolable(pooledRef).subscribe();
 						}

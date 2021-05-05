@@ -312,7 +312,28 @@ class SimpleDequePoolInstrumentationTest {
 		//if 123ms was truncated to seconds to, we'd get inactive(0s) == duration(0s)
 		assertThat(pool.isInactiveForMoreThan(Duration.ofMillis(123)))
 				.as("isInactiveForMoreThan(123ms)")
-				.isFalse();
+				.isTrue();
+	}
+
+	@Test
+	void testIsInactiveForMoreThan() {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
+		SimpleDequePool<String> pool = new SimpleDequePool<>(
+				PoolBuilder.from(Mono.just("example"))
+				           .clock(SchedulerClock.of(vts))
+				           .buildConfig(), true);
+
+		pool.recordInteractionTimestamp();
+
+		vts.advanceTimeBy(Duration.ofMinutes(3).plusMillis(543));
+
+		assertThat(pool.acquiredSize() + pool.idleSize() + pool.pendingAcquireSize() + pool.allocatedSize())
+				.as("smoke test counters == 0")
+				.isZero();
+
+		assertThat(pool.isInactiveForMoreThan(Duration.ofSeconds(5)))
+				.as("isInactiveForMoreThan(5s)")
+				.isTrue();
 	}
 
 }

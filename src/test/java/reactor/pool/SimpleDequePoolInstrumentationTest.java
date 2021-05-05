@@ -21,7 +21,6 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.scheduler.clock.SchedulerClock;
 import reactor.test.scheduler.VirtualTimeScheduler;
 
@@ -33,18 +32,57 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SimpleDequePoolInstrumentationTest {
 
 	@Test
-	void backgroundEvictionMarksInteraction() {
+	void backgroundEvictionDoesntMarkInteractionWhenNothingToEvict() {
 		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
-				.evictInBackground(Duration.ofSeconds(10), vts)
-				.clock(SchedulerClock.of(vts))
-				.buildConfig(), true);
+				           .evictInBackground(Duration.ofSeconds(10), vts)
+				           .clock(SchedulerClock.of(vts))
+				           .buildConfig(), true);
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
 				.as("initial secondsSinceLastInteraction")
 				.isZero();
+
+		vts.advanceTimeBy(Duration.ofSeconds(5));
+
+		assertThat(pool.lastInteractionTimestamp)
+				.as("pre-eviction timestamp hasn't moved")
+				.isEqualTo(0L);
+		assertThat(pool.secondsSinceLastInteraction())
+				.as("pre-eviction secondsSinceLastInteraction")
+				.isEqualTo(5L);
+
+		vts.advanceTimeBy(Duration.ofSeconds(5));
+
+		assertThat(pool.lastInteractionTimestamp)
+				.as("post-eviction timestamp hasn't moved")
+				.isEqualTo(0L);
+		assertThat(pool.secondsSinceLastInteraction())
+				.as("post-eviction secondsSinceLastInteraction")
+				.isEqualTo(10L);
+	}
+
+	@Test
+	void backgroundEvictionMarksInteraction() {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
+		SimpleDequePool<String> pool = new SimpleDequePool<>(
+				PoolBuilder.from(Mono.just("example"))
+				           .evictionPredicate((s, metadata) -> metadata.idleTime() > 1000)
+				           .evictInBackground(Duration.ofSeconds(10), vts)
+				           .clock(SchedulerClock.of(vts))
+				           .buildConfig(), true);
+
+		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
+		assertThat(pool.secondsSinceLastInteraction())
+				.as("initial secondsSinceLastInteraction")
+				.isZero();
+
+		PooledRef<String> pooledRef = pool.acquire().block();
+		assertThat(pooledRef).isNotNull();
+
+		pooledRef.release().block();
 
 		vts.advanceTimeBy(Duration.ofSeconds(5));
 

@@ -166,8 +166,14 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 			});
 		}
 		else {
-			return Mono.from(factory.apply(poolable))
-					   .doFinally(fin -> metricsRecorder.recordDestroyLatency(clock.millis() - start));
+			Mono<Void> userProvidedDestroy;
+			try {
+				userProvidedDestroy = Mono.from(factory.apply(poolable));
+			}
+			catch (Throwable destroyFunctionError) {
+				userProvidedDestroy = Mono.error(destroyFunctionError);
+			}
+			return userProvidedDestroy.doFinally(fin -> metricsRecorder.recordDestroyLatency(clock.millis() - start));
 		}
 	}
 

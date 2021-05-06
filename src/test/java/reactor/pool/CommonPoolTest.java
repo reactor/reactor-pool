@@ -2599,6 +2599,7 @@ public class CommonPoolTest {
 
 		//assert that next acquire will work
 		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
 		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("releaseHandlerCase3");
 	}
 
@@ -2632,6 +2633,7 @@ public class CommonPoolTest {
 
 		//assert that next acquire will work
 		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
 		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("destroyHandlerInvalidateCase3");
 	}
 
@@ -2666,6 +2668,7 @@ public class CommonPoolTest {
 
 		//assert that next acquire will work
 		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
 		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("destroyHandlerReleaseCase3");
 	}
 
@@ -2686,7 +2689,9 @@ public class CommonPoolTest {
 		InstrumentedPool<String> pool = style.apply(configBuilder);
 
 		//generate a first value and immediately release it back to the pool
-		pool.acquire().block(Duration.ofMillis(100)).release().block(Duration.ofMillis(500));
+		PooledRef<String> initialRef = pool.acquire().block(Duration.ofMillis(100));
+		assert initialRef != null;
+		initialRef.release().block(Duration.ofMillis(500));
 
 		//trigger background eviction
 		assertThatCode(() -> vts.advanceTimeBy(Duration.ofSeconds(10))).doesNotThrowAnyException();
@@ -2694,10 +2699,9 @@ public class CommonPoolTest {
 
 		//assert that next acquire will work
 		PooledRef<String> ref2 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref2 != null;
 		assertThat(ref2.poolable()).as("poolable 2").isEqualTo("destroyHandlerBackgroundCase2");
 	}
-
-
 
 	@ParameterizedTestWithName
 	@EnumSource
@@ -2736,8 +2740,7 @@ public class CommonPoolTest {
 
 		//assert that next acquire will work
 		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
 		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("bothReleaseHandlerAndDestroyHandlerFail3");
 	}
-
-
 }

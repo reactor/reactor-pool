@@ -33,6 +33,7 @@ import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
+import reactor.core.Exceptions;
 import reactor.core.Scannable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -148,7 +149,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						if (pooledRef.markInvalidate()) {
 							recordInteractionTimestamp();
 							iterator.remove();
-							destroyPoolable(pooledRef).subscribe();
+							destroyPoolable(pooledRef).subscribe(v -> {},
+									destroyError -> this.logger.warn("Error while destroying resource in background eviction:", destroyError));
 						}
 					}
 				}
@@ -478,7 +480,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	@SuppressWarnings("WeakerAccess")
-	final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot) {
+	final void maybeRecycleAndDrain(QueuePooledRef<POOLABLE> poolSlot, CoreSubscriber<? super Void> actual) {
 		if (!isDisposed()) {
 			recordInteractionTimestamp();
 			if (!poolConfig.evictionPredicate()
@@ -489,6 +491,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				if (irq != null) {
 					QueuePooledRef<POOLABLE> slot = recycleSlot(poolSlot);
 					irq.offerLast(slot);
+					actual.onComplete();
 					drain();
 					if (isDisposed() && slot.markInvalidate()) {
 						destroyPoolable(slot).subscribe(); //TODO manage errors?
@@ -497,10 +500,21 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				}
 			}
 		}
+		//if we destroy instead of recycle, be sure to propagate destroy handler errors
+		//to the release() subscriber
 		if (poolSlot.markInvalidate()) {
 			destroyPoolable(poolSlot).subscribe(null,
-					e -> drain(),
-					this::drain); //TODO manage errors?
+					e -> {
+						actual.onError(e);
+						this.drain();
+					},
+					() -> {
+						actual.onComplete();
+						this.drain();
+					}); //TODO manage errors?
+		}
+		else {
+			actual.onComplete(); //already invalidated
 		}
 	}
 
@@ -591,7 +605,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					//immediately clean up state
 					ACQUIRED.decrementAndGet(pool);
 					return pool.destroyPoolable(this)
-					           .then(Mono.fromRunnable(pool::drain));
+							//when invalidating, be sure to trigger drain even if there was an error
+							.doFinally(st -> pool.drain());
 				}
 				else {
 					return Mono.empty();
@@ -621,12 +636,18 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					cleaner = pool.poolConfig.releaseHandler()
 					                         .apply(poolable);
 				}
-				catch (Throwable e) {
+				catch (Throwable releaseError) {
 					ACQUIRED.decrementAndGet(pool); //immediately clean up state
-					markReleased();
-					return Mono.error(new IllegalStateException(
-							"Couldn't apply cleaner function",
-							e));
+					if (markInvalidate()) {
+						return pool.destroyPoolable(this)
+								.onErrorResume(destroyError ->
+									Mono.error(new IllegalStateException("Couldn't apply releaseHandler nor destroyHandler",
+											Exceptions.multiple(releaseError, destroyError)))
+								)
+								.then(Mono.<Void>error(new IllegalStateException("Couldn't apply releaseHandler, resource destroyed", releaseError)))
+								.doFinally(st -> pool.drain());
+					}
+					return Mono.error(new IllegalStateException("Couldn't apply releaseHandler", releaseError)); //should be a very rare corner case
 				}
 				//the PoolRecyclerMono will wrap the cleaning Mono returned by the Function and perform state updates
 				return new QueuePoolRecyclerMono<>(cleaner, this);
@@ -695,8 +716,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 			pool.metricsRecorder.recordResetLatency(pool.clock.millis() - start);
 
-			pool.maybeRecycleAndDrain(slot);
-			actual.onComplete();
+			pool.maybeRecycleAndDrain(slot, actual);
 		}
 
 		@Override
@@ -733,9 +753,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		@Override
 		public void onSubscribe(Subscription s) {
 			if (Operators.validate(upstream, s)) {
+				this.start = pool.clock.millis();
 				this.upstream = s;
 				actual.onSubscribe(this);
-				this.start = pool.clock.millis();
 			}
 		}
 

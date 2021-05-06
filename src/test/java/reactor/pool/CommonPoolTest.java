@@ -48,6 +48,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import reactor.core.Disposable;
 import reactor.core.Disposables;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -56,6 +57,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.pool.InstrumentedPool.PoolMetrics;
 import reactor.pool.TestUtils.ParameterizedTestWithName;
 import reactor.pool.TestUtils.PoolableTest;
+import reactor.scheduler.clock.SchedulerClock;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.scheduler.VirtualTimeScheduler;
@@ -1784,9 +1786,6 @@ public class CommonPoolTest {
 		pool.acquire().flatMap(PooledRef::release).block();
 		pool.acquire().flatMap(PooledRef::release).block();
 
-		//destroy is fire-and-forget so the 500ms one will not have finished
-		assertThat(recorder.getDestroyCount()).as("destroy before 500ms").isEqualTo(1);
-
 		await().pollDelay(500, TimeUnit.MILLISECONDS)
 		       .atMost(1, TimeUnit.SECONDS)
 		       .untilAsserted(() -> assertThat(recorder.getDestroyCount()).as("destroy after 500ms").isEqualTo(2));
@@ -2558,5 +2557,190 @@ public class CommonPoolTest {
 		assertThat(next).as("next").isTrue();
 
 		assertThat(pool.metrics().acquiredSize()).as("acquired size after allocator done").isOne();
+	}
+
+	private static Mono<Void> throwingFunction(String poolable) {
+		if (poolable.endsWith("1")) {
+			IllegalStateException e = new IllegalStateException("(expected) throwing instead of producing a Mono for " + poolable);
+			StackTraceElement[] traceElements = e.getStackTrace();
+			e.setStackTrace(Arrays.copyOf(traceElements, 5)); //don't fill the logs with too much stack trace
+			throw e;
+		}
+		return Mono.empty();
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void releaseHandlerProtectedAgainstThrowingFunction(PoolStyle style) {
+		AtomicInteger count = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "releaseHandlerCase" + count.incrementAndGet()))
+				.sizeBetween(0, 1)
+				.releaseHandler(CommonPoolTest::throwingFunction);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+
+		//set up a concurrent acquire (blocked for now)
+		AtomicReference<PooledRef<String>> acquire2 = new AtomicReference<>();
+		pool.acquire().subscribe(acquire2::set);
+
+		StepVerifier.create(ref1.release())
+				.expectErrorSatisfies(t -> assertThat(t)
+						.hasMessage("Couldn't apply releaseHandler, resource destroyed")
+						.hasCause(new IllegalStateException("(expected) throwing instead of producing a Mono for releaseHandlerCase1")))
+				.verify(Duration.ofSeconds(1));
+
+		//assert that concurrent acquire has been unstuck, then destroy it
+		assertThat(acquire2.get()).as("concurrent acquire2").isNotNull();
+		acquire2.get().invalidate().block();
+
+		//assert that next acquire will work
+		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
+		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("releaseHandlerCase3");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void destroyHandlerProtectedAgainstThrowingFunction_invalidate(PoolStyle style) {
+		AtomicInteger count = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "destroyHandlerInvalidateCase" + count.incrementAndGet()))
+				.sizeBetween(0, 1)
+				.destroyHandler(CommonPoolTest::throwingFunction);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+
+		//set up a concurrent acquire (blocked for now)
+		AtomicReference<PooledRef<String>> acquire2 = new AtomicReference<>();
+		pool.acquire().subscribe(acquire2::set);
+
+		StepVerifier.create(ref1.invalidate())
+				.expectErrorSatisfies(t -> assertThat(t)
+						.hasMessage("(expected) throwing instead of producing a Mono for destroyHandlerInvalidateCase1")
+						.hasNoCause())
+				.verify(Duration.ofSeconds(1));
+
+		//assert that concurrent acquire has been unstuck, then destroy it
+		assertThat(acquire2.get()).as("concurrent acquire2").isNotNull();
+		acquire2.get().invalidate().block();
+
+		//assert that next acquire will work
+		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
+		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("destroyHandlerInvalidateCase3");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void destroyHandlerProtectedAgainstThrowingFunction_releaseWithEviction(PoolStyle style) {
+		AtomicInteger count = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "destroyHandlerReleaseCase" + count.incrementAndGet()))
+				.sizeBetween(0, 1)
+				.evictionPredicate((s, ref) -> ref.acquireCount() == 1 && s.endsWith("1"))
+				.destroyHandler(CommonPoolTest::throwingFunction);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+
+		//set up a concurrent acquire (blocked for now)
+		AtomicReference<PooledRef<String>> acquire2 = new AtomicReference<>();
+		pool.acquire().subscribe(acquire2::set, Throwable::printStackTrace);
+
+		StepVerifier.create(ref1.release())
+				.expectErrorSatisfies(t -> assertThat(t)
+						.hasMessage("(expected) throwing instead of producing a Mono for destroyHandlerReleaseCase1")
+						.hasNoCause())
+				.verify(Duration.ofSeconds(1));
+
+		//assert that concurrent acquire has been unstuck, then destroy it
+		assertThat(acquire2.get()).as("concurrent acquire2").isNotNull();
+		acquire2.get().invalidate().block();
+
+		//assert that next acquire will work
+		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
+		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("destroyHandlerReleaseCase3");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void destroyHandlerProtectedAgainstThrowingFunction_evictInBackground(PoolStyle style) {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
+		AtomicInteger count = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "destroyHandlerBackgroundCase" + count.incrementAndGet()))
+				.sizeBetween(0, 1)
+				.clock(SchedulerClock.of(vts))
+				.evictInBackground(Duration.ofSeconds(4), vts)
+				//we need to assert lifetime, which is precise thanks to VTS, otherwise acquire().release() would trip eviction
+				.evictionPredicate((s, ref) -> ref.acquireCount() == 1 && ref.lifeTime() >= 4000)
+				.destroyHandler(CommonPoolTest::throwingFunction);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		//generate a first value and immediately release it back to the pool
+		PooledRef<String> initialRef = pool.acquire().block(Duration.ofMillis(100));
+		assert initialRef != null;
+		initialRef.release().block(Duration.ofMillis(500));
+
+		//trigger background eviction
+		assertThatCode(() -> vts.advanceTimeBy(Duration.ofSeconds(10))).doesNotThrowAnyException();
+		assertThat(pool.metrics().idleSize()).as("background eviction ran").isZero();
+
+		//assert that next acquire will work
+		PooledRef<String> ref2 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref2 != null;
+		assertThat(ref2.poolable()).as("poolable 2").isEqualTo("destroyHandlerBackgroundCase2");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void releaseHandlerFailsThenDestroyHandlerAlsoFails(PoolStyle style) {
+		AtomicInteger count = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "bothReleaseHandlerAndDestroyHandlerFail" + count.incrementAndGet()))
+				.sizeBetween(0, 1)
+				.evictionPredicate((s, ref) -> ref.acquireCount() == 1)
+				.releaseHandler(CommonPoolTest::throwingFunction)
+				.destroyHandler(CommonPoolTest::throwingFunction);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+
+		//set up a concurrent acquire (blocked for now)
+		AtomicReference<PooledRef<String>> acquire2 = new AtomicReference<>();
+		pool.acquire().subscribe(acquire2::set, Throwable::printStackTrace);
+
+		StepVerifier.create(ref1.release())
+				.expectErrorSatisfies(t -> {
+					assertThat(t)
+							.isInstanceOf(IllegalStateException.class)
+							.hasMessage("Couldn't apply releaseHandler nor destroyHandler");
+					assertThat(Exceptions.unwrapMultiple(t.getCause()).stream().map(Throwable::getMessage))
+							.containsExactly("(expected) throwing instead of producing a Mono for bothReleaseHandlerAndDestroyHandlerFail1",
+									"(expected) throwing instead of producing a Mono for bothReleaseHandlerAndDestroyHandlerFail1");
+				})
+				.verify(Duration.ofSeconds(1));
+
+		//assert that concurrent acquire has been unstuck, then destroy it
+		assertThat(acquire2.get()).as("concurrent acquire2").isNotNull();
+		acquire2.get().invalidate().block();
+
+		//assert that next acquire will work
+		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
+		assert ref3 != null;
+		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("bothReleaseHandlerAndDestroyHandlerFail3");
 	}
 }

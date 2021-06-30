@@ -12,9 +12,18 @@ jobs:
       with:
         github_token: ${{ github.token }}
     - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0 # for spotless
     - uses: actions/setup-java@v1
       with:
         java-version: 8
+    - uses: eskatos/gradle-command-action@v1
+      name: license header check
+      with:
+        arguments: spotlessCheck -PspotlessFrom=origin/${{ github.base_ref }}
+        wrapper-cache-enabled: true
+        dependencies-cache-enabled: true
+        configuration-cache-enabled: true
     - uses: eskatos/gradle-command-action@v1
       name: gradle
       with:

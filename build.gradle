@@ -17,13 +17,13 @@
 import me.champeau.gradle.japicmp.JapicmpTask
 
 plugins {
-  id "com.github.hierynomus.license" version "0.15.0"
   id "com.jfrog.artifactory" version "4.15.2" apply false
   id 'biz.aQute.bnd.builder' version '5.0.1' apply false
   id "me.champeau.gradle.japicmp" version "0.2.6"
   id "de.undercouch.download" version "3.4.3"
   id "com.github.erizo.gradle.jcstress" version "0.8.4"
   id "idea"
+  id "com.diffplug.spotless" version "5.14.0"
 }
 
 description = 'Reactive Object Pool'
@@ -37,6 +37,8 @@ ext {
       println "Building special snapshot ${project.version}"
     }
   }
+
+  isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo, but eh
 
   gradleScriptDir = "${rootProject.projectDir}/gradle"
 
@@ -146,6 +148,26 @@ configure(rootProject) { project ->
     exclude '**/*Abstract*.*'
   }
 
+  spotless {
+    if (project.hasProperty("spotlessFrom")) {
+      println "[Spotless] Ratchet from $project.spotlessFrom"
+      ratchetFrom project.spotlessFrom
+    }
+    else if (isCiServer) {
+      println "[Spotless] CI detected without explicit branch, not enforcing check"
+      enforceCheck false
+    }
+    else {
+      String spotlessBranch = "origin/0.1.x"
+      println "[Spotless] Local run detected, ratchet from $spotlessBranch"
+      ratchetFrom spotlessBranch
+    }
+    java {
+      target '**/*.java'
+      licenseHeaderFile('codequality/spotless/licenseSlashstarStyle.txt')
+    }
+  }
+
   test {
     useJUnitPlatform()
     testLogging {
@@ -207,15 +229,6 @@ configure(rootProject) { project ->
 configurations.all {
   // check for updates every build
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-
-  license {
-    header rootProject.file('codequality/HEADER')
-    includes(["**/*.java"])
-    strictCheck true
-    mapping {
-      java = 'SLASHSTAR_STYLE'
-    }
-  }
 }
 
 

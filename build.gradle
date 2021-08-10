@@ -194,7 +194,17 @@ configure(rootProject) { project ->
   }
 
   test {
-    useJUnitPlatform()
+    //configure tag support for the core test task
+    def tags = rootProject.findProperty("junit-tags")
+    if (tags != null) {
+      println "junit5 tags: $tags"
+      useJUnitPlatform() {
+        includeTags "$tags"
+      }
+    }
+    else {
+      useJUnitPlatform()
+    }
     testLogging {
       events  "passed", "failed"
       showExceptions true

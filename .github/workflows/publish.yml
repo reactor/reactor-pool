@@ -32,9 +32,37 @@ jobs:
         id: checks
         run: ./gradlew check -Pjunit-tags=!slow -x jcstress
 
-  slowerChecks:
+  racesChecks:
     # similar limitations as in prepare, but we parallelize slower tests here
-    name: slowerChecks
+    name: racesChecks
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: 8
+      - name: run racing tests
+        id: racesTests
+        run: ./gradlew test -Pjunit-tags=races
+
+  loopsChecks:
+    # similar limitations as in prepare, but we parallelize slower tests here
+    name: loopsChecks
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: 8
+      - name: run loop tests
+        id: loopsTests
+        run: ./gradlew test -Pjunit-tags=loops
+
+  jcstress:
+    # similar limitations as in prepare, but we parallelize slower tests here
+    name: jcstress
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -44,13 +72,13 @@ jobs:
           java-version: 8
       - name: run slower tests
         id: slowerTests
-        run: ./gradlew test -Pjunit-tags=slow jcstress
+        run: ./gradlew jcstress
 
   #deploy the snapshot artifacts to Artifactory
   deploySnapshot:
     name: deploySnapshot
     runs-on: ubuntu-20.04
-    needs: [ prepare, slowerChecks ]
+    needs: [ prepare, racesChecks, loopsChecks, jcstress ]
     if: needs.prepare.outputs.versionType == 'SNAPSHOT' && false #TEMP to check the impact on build
     environment: snapshots
     steps:
@@ -69,7 +97,7 @@ jobs:
   deployMilestone:
     name: deployMilestone
     runs-on: ubuntu-20.04
-    needs: [ prepare, slowerChecks ]
+    needs: [ prepare, racesChecks, loopsChecks, jcstress ]
     if: needs.prepare.outputs.versionType == 'MILESTONE'
     environment: releases
     steps:
@@ -96,7 +124,7 @@ jobs:
   deployRelease:
     name: deployRelease
     runs-on: ubuntu-20.04
-    needs: [ prepare, slowerChecks ]
+    needs: [ prepare, racesChecks, loopsChecks, jcstress ]
     if: needs.prepare.outputs.versionType == 'RELEASE'
     environment: releases
     steps:

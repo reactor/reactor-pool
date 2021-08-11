@@ -4,7 +4,7 @@ on:
     branches: # For branches, better to list them explicitly than regexp include
       - main
       - 0.1.x
-      - splitSlowTestCi #TEMP
+      - splitSlowTestCi
 jobs:
   # General job notes: we DON'T want to cancel any previous runs, especially in the case of a "back to snapshots" build right after a release push
   # We specify the ubuntu version to minimize the chances we have to deal with a migration during a release
@@ -51,7 +51,7 @@ jobs:
     name: deploySnapshot
     runs-on: ubuntu-20.04
     needs: [ prepare, slowChecks ]
-    if: needs.prepare.outputs.versionType == 'SNAPSHOT' || false #TEMP
+    if: needs.prepare.outputs.versionType == 'SNAPSHOT'
     environment: snapshots
     steps:
       - uses: actions/checkout@v2

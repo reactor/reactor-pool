@@ -2264,6 +2264,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
+	@Tag("slow")
 	void raceShutdownAndAcquireInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
@@ -2308,6 +2309,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
+	@Tag("slow")
 	void raceShutdownAndPreAcquiredInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
@@ -2351,6 +2353,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
+	@Tag("slow")
 	void raceShutdownAndPreAcquiredReleaseWithEviction(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder

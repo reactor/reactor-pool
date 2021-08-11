@@ -29,7 +29,7 @@ jobs:
         run: ./gradlew qualifyVersionGha
       - name: run checks
         id: checks
-        run: ./gradlew check -Pjunit-tags=!slow -x jcstress
+        run: ./gradlew check -Pjunit-tags=!races
 
   racesChecks:
     # similar limitations as in prepare, but we parallelize the slowest tests here (races)
@@ -45,25 +45,11 @@ jobs:
         id: racesTests
         run: ./gradlew test -Pjunit-tags=races
 
-  loopsAndStressChecks:
-    # similar limitations as in prepare, but we parallelize slower loops tests + jcstress here
-    name: loopsAndStressChecks
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: setup java
-        uses: actions/setup-java@v1
-        with:
-          java-version: 8
-      - name: run loop and stress tests
-        id: loopsTests
-        run: ./gradlew test -Pjunit-tags=loops jcstress
-
   #deploy the snapshot artifacts to Artifactory
   deploySnapshot:
     name: deploySnapshot
     runs-on: ubuntu-20.04
-    needs: [ prepare, racesChecks, loopsAndStressChecks ]
+    needs: [ prepare, racesChecks ]
     if: needs.prepare.outputs.versionType == 'SNAPSHOT'
     environment: snapshots
     steps:
@@ -82,7 +68,7 @@ jobs:
   deployMilestone:
     name: deployMilestone
     runs-on: ubuntu-20.04
-    needs: [ prepare, racesChecks, loopsAndStressChecks ]
+    needs: [ prepare, racesChecks ]
     if: needs.prepare.outputs.versionType == 'MILESTONE'
     environment: releases
     steps:
@@ -109,7 +95,7 @@ jobs:
   deployRelease:
     name: deployRelease
     runs-on: ubuntu-20.04
-    needs: [ prepare, racesChecks, loopsAndStressChecks ]
+    needs: [ prepare, racesChecks ]
     if: needs.prepare.outputs.versionType == 'RELEASE'
     environment: releases
     steps:

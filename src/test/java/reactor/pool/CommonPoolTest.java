@@ -1307,7 +1307,6 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("loops")
-	@Tag("slow")
 	void loopAllocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		TestLogger testLogger = new TestLogger();
 		Loggers.useCustomLoggers(s -> testLogger);
@@ -1351,7 +1350,6 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("loops")
-	@Tag("slow")
 	void loopAllocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
 		TestLogger testLogger = new TestLogger();
 		Loggers.useCustomLoggers(s -> testLogger);
@@ -2266,7 +2264,6 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	@Tag("races")
 	@Tag("slow")
 	void raceShutdownAndAcquireInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
@@ -2312,7 +2309,6 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	@Tag("races")
 	@Tag("slow")
 	void raceShutdownAndPreAcquiredInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
@@ -2357,7 +2353,6 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	@Tag("races")
 	@Tag("slow")
 	void raceShutdownAndPreAcquiredReleaseWithEviction(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();

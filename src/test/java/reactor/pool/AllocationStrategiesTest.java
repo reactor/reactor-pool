@@ -217,7 +217,7 @@ class AllocationStrategiesTest {
 		@SuppressWarnings("FutureReturnValueIgnored")
 		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
-		@Tag("races")
+		@Tag("race")
 		void raceGetPermit(int workerCount) throws InterruptedException {
 			final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 10);
 
@@ -243,7 +243,7 @@ class AllocationStrategiesTest {
 		@SuppressWarnings("FutureReturnValueIgnored")
 		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
-		@Tag("races")
+		@Tag("race")
 		void racePermitsRandom(int workerCount, TestInfo testInfo) throws InterruptedException {
 			final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 10);
 
@@ -275,7 +275,7 @@ class AllocationStrategiesTest {
 		@SuppressWarnings("FutureReturnValueIgnored")
 		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
-		@Tag("races")
+		@Tag("race")
 		void raceMixGetPermitWithGetRandomPermits(int workerCount, TestInfo testInfo) throws InterruptedException {
 			final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 10);
 
@@ -322,7 +322,7 @@ class AllocationStrategiesTest {
 		@SuppressWarnings("FutureReturnValueIgnored")
 		@ParameterizedTest(name = "{displayName} {0} workers")
 		@ValueSource(ints = {5, 10, 20})
-		@Tag("races")
+		@Tag("race")
 		void racePermitsRandomWithInnerLoop(int workerCount, TestInfo testInfo) throws InterruptedException {
 			final AllocationStrategy test = new SizeBasedAllocationStrategy(0, 10);
 

@@ -264,10 +264,37 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 			}
 		}
 
-		boolean markInvalidate() {
+		/**
+		 * Mark the ref for destruction in reaction to a user command (the {@link PooledRef#invalidate()} method).
+		 * This method rejects state change if the ref has previously been {@link PooledRef#release() released},
+		 * preventing users to retain references and act on it post-release.
+		 *
+		 * @return true if the ref could be marked as invalidated, false if it was already either released or invalidated
+		 */
+		boolean markSoftInvalidate() {
 			for(;;) {
 				int s = state;
-				if (s == STATE_INVALIDATED) { //TODO should it account for STATE_RELEASED as well?
+				//this is the main difference with markDestroy, which does consider released resources
+				if (s == STATE_INVALIDATED || s == STATE_RELEASED) {
+					return false;
+				}
+				else if (STATE.compareAndSet(this, s, STATE_INVALIDATED)) {
+					return true;
+				}
+			}
+		}
+
+		/**
+		 * Mark the ref for immediate destruction, even if it is released. To be used by internals that run
+		 * on released references, eg. when detecting the pool is terminated.
+		 *
+		 * @return true if the ref could be marked as invalidated and tagged for destruction
+		 */
+		boolean markDestroy() {
+			for(;;) {
+				int s = state;
+				//this is the main difference with markSoftInvalidate, which skips released resources
+				if (s == STATE_INVALIDATED) {
 					return false;
 				}
 				else if (STATE.compareAndSet(this, s, STATE_INVALIDATED)) {

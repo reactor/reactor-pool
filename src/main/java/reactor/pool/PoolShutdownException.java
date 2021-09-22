@@ -28,4 +28,8 @@ public class PoolShutdownException extends RuntimeException {
 		super("Pool has been shut down");
 	}
 
+	public PoolShutdownException(String reason) {
+		super(reason);
+	}
+
 }

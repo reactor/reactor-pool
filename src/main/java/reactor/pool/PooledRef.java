@@ -47,7 +47,9 @@ public interface PooledRef<POOLABLE> {
 
     /**
      * Returns a {@link PooledRefMetadata} object that holds more information about the <strong>reference</strong> (rather
-     * than the {@link #poolable()}), like how many time it was acquired, its age (time since allocation), etc...
+     * than the {@link #poolable()}), like how many times it was acquired, its age (time since allocation), etc...
+     * <p>
+     * Note that if {@link #release()} or {@link #invalidate()} have been invoked, this method might return stale information.
      *
      * @return the {@link PooledRefMetadata} for this {@link PooledRef}
      */
@@ -61,14 +63,19 @@ public interface PooledRef<POOLABLE> {
      * <p>
      * This is useful when the unhealthy state of the resource (or lack of re-usability) is detected through the usage of
      * the resource, as opposed to its exposed state.
+     * <p>
+     * Note that if {@link #release()} has been invoked, this method should be no-op.
      */
     Mono<Void> invalidate();
 
     /**
      * Return a {@link Mono} that, once subscribed, will release the {@code POOLABLE} back to the pool asynchronously.
+     * Once released, a reference is considered out of the control of the user and shouldn't be usable anymore.
+     * It is discouraged to use the underlying {@link #poolable()} at this point, {@link #metadata()} might become stale,
+     * and usage of both {@link #invalidate()} and release() should be no-op.
      * <p>
      * This method is idempotent (subsequent subscriptions to the same Mono, or re-invocations of the method
-     * are NO-OP).
+     * are NO-OP). It is also no-op if {@link #invalidate()} has previously been invoked.
      *
      * @return a {@link Mono} that will complete empty when the object has been released. In case of an error the object
      * is always discarded

@@ -39,6 +39,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Assumptions;
 import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
@@ -2743,5 +2744,109 @@ public class CommonPoolTest {
 		PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(1));
 		assert ref3 != null;
 		assertThat(ref3.poolable()).as("poolable 3").isEqualTo("bothReleaseHandlerAndDestroyHandlerFail3");
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void invalidateIgnoredAfterReleasedDoesntAffectMetrics(PoolStyle style) {
+		AtomicInteger releaseCount = new AtomicInteger();
+		AtomicInteger destroyCount = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "invalidateIgnoredAfterReleased"))
+				.sizeBetween(0, 1)
+				.releaseHandler(it -> Mono.fromRunnable(releaseCount::incrementAndGet))
+				.destroyHandler(it -> Mono.fromRunnable(destroyCount::incrementAndGet));
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric pre-release").isOne();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric pre-release").isOne();
+		assertThat(pool.metrics().idleSize()).as("idle metric pre-release").isZero();
+		assertThat(releaseCount).as("released pre-release").hasValue(0);
+		assertThat(destroyCount).as("destroyed pre-release").hasValue(0);
+
+		ref1.release().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-release").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-release").isOne();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-release").isOne();
+		assertThat(releaseCount).as("released post-release").hasValue(1);
+		assertThat(destroyCount).as("destroyed post-release").hasValue(0);
+
+		ref1.invalidate().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-invalidate").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-invalidate").isOne();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-invalidate").isOne();
+		assertThat(releaseCount).as("released post-invalidate").hasValue(1);
+		assertThat(destroyCount).as("destroyed post-invalidate").hasValue(0);
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void releaseIgnoredAfterInvalidatedDoesntAffectMetrics(PoolStyle style) {
+		AtomicInteger releaseCount = new AtomicInteger();
+		AtomicInteger destroyCount = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "releaseIgnoredAfterInvalidated"))
+				.sizeBetween(0, 1)
+				.releaseHandler(it -> Mono.fromRunnable(releaseCount::incrementAndGet))
+				.destroyHandler(it -> Mono.fromRunnable(destroyCount::incrementAndGet));
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric pre-invalidate").isOne();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric pre-invalidate").isOne();
+		assertThat(pool.metrics().idleSize()).as("idle metric pre-invalidate").isZero();
+		assertThat(releaseCount).as("released pre-invalidate").hasValue(0);
+		assertThat(destroyCount).as("destroyed pre-invalidate").hasValue(0);
+
+		ref1.invalidate().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-invalidate").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-invalidate").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-invalidate").isZero();
+		assertThat(releaseCount).as("released post-invalidate").hasValue(0);
+		assertThat(destroyCount).as("destroyed post-invalidate").hasValue(1);
+
+		ref1.release().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-release").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-release").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-release").isZero();
+		assertThat(releaseCount).as("released post-release").hasValue(0);
+		assertThat(destroyCount).as("destroyed post-release").hasValue(1);
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void evictingReleasedResourcesImpactsResource(PoolStyle style) {
+		AtomicInteger releaseCount = new AtomicInteger();
+		AtomicBoolean canEvict = new AtomicBoolean();
+		PoolBuilder<AtomicBoolean, PoolConfig<AtomicBoolean>> configBuilder = PoolBuilder
+			.from(Mono.fromCallable(AtomicBoolean::new))
+			.sizeBetween(0, 1)
+			.evictionPredicate((it, meta) -> canEvict.get())
+			.releaseHandler(it -> Mono.fromRunnable(releaseCount::incrementAndGet))
+			.destroyHandler(it -> Mono.fromRunnable(() -> it.set(true)));
+
+		InstrumentedPool<AtomicBoolean> pool = style.apply(configBuilder);
+
+		PooledRef<AtomicBoolean> ref1 = pool.acquire().block();
+		ref1.release().block();
+
+		Assumptions.assumeThat(pool).isInstanceOf(SimpleDequePool.class);
+		canEvict.set(true);
+		((SimpleDequePool<?>) pool).evictInBackground();
+
+		assertThat(ref1.poolable()).as("poolable impacted by eviction").isTrue();
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-eviction").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-eviction").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-eviction").isZero();
+		assertThat(releaseCount).as("released post-eviction").hasValue(1);
 	}
 }

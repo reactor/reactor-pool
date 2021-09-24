@@ -2786,6 +2786,44 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@EnumSource
+	void releaseIgnoredAfterInvalidatedDoesntAffectMetrics(PoolStyle style) {
+		AtomicInteger releaseCount = new AtomicInteger();
+		AtomicInteger destroyCount = new AtomicInteger();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+				.from(Mono.fromCallable(() -> "releaseIgnoredAfterInvalidated"))
+				.sizeBetween(0, 1)
+				.releaseHandler(it -> Mono.fromRunnable(releaseCount::incrementAndGet))
+				.destroyHandler(it -> Mono.fromRunnable(destroyCount::incrementAndGet));
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		PooledRef<String> ref1 = pool.acquire().block();
+		assert ref1 != null;
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric pre-invalidate").isOne();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric pre-invalidate").isOne();
+		assertThat(pool.metrics().idleSize()).as("idle metric pre-invalidate").isZero();
+		assertThat(releaseCount).as("released pre-invalidate").hasValue(0);
+		assertThat(destroyCount).as("destroyed pre-invalidate").hasValue(0);
+
+		ref1.invalidate().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-invalidate").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-invalidate").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-invalidate").isZero();
+		assertThat(releaseCount).as("released post-invalidate").hasValue(0);
+		assertThat(destroyCount).as("destroyed post-invalidate").hasValue(1);
+
+		ref1.release().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired metric post-release").isZero();
+		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-release").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle metric post-release").isZero();
+		assertThat(releaseCount).as("released post-release").hasValue(0);
+		assertThat(destroyCount).as("destroyed post-release").hasValue(1);
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
 	void evictingReleasedResourcesImpactsResource(PoolStyle style) {
 		AtomicInteger releaseCount = new AtomicInteger();
 		AtomicBoolean canEvict = new AtomicBoolean();

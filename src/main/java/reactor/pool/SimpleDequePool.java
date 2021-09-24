@@ -147,7 +147,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				while (iterator.hasNext()) {
 					QueuePooledRef<POOLABLE> pooledRef = iterator.next();
 					if (evictionPredicate.test(pooledRef.poolable, pooledRef)) {
-						if (pooledRef.markInvalidate()) {
+						//note that usually a manually released ref will put a new ref in the queue, so we expect refs to be pristine here
+						if (pooledRef.markDestroy()) {
 							recordInteractionTimestamp();
 							iterator.remove();
 							destroyPoolable(pooledRef).subscribe(v -> {},
@@ -192,7 +193,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					Mono<Void> destroyMonos = Mono.empty();
 					while (!e.isEmpty()) {
 						QueuePooledRef<POOLABLE> ref = e.poll();
-						if (ref.markInvalidate()) {
+						if (ref.markDestroy()) {
 							destroyMonos = destroyMonos.and(destroyPoolable(ref));
 						}
 					}
@@ -310,7 +311,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					//check it is still valid
 					if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
-						if (slot.markInvalidate()) {
+						if (slot.markDestroy()) {
 							destroyPoolable(slot).subscribe(null,
 									error -> drain(),
 									this::drain);
@@ -449,7 +450,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				//destroyPoolable will correctly return permit and won't decrement ACQUIRED, unlike invalidate
 				//BUT: it requires a PoolRef that is marked as invalidated
 				QueuePooledRef<POOLABLE> tempRef = createSlot(poolable);
-				tempRef.markInvalidate();
+				tempRef.markDestroy();
 				return destroyPoolable(tempRef);
 			}
 			return Mono.empty();
@@ -494,7 +495,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					irq.offerLast(slot);
 					actual.onComplete();
 					drain();
-					if (isDisposed() && slot.markInvalidate()) {
+					if (isDisposed() && slot.markDestroy()) {
 						destroyPoolable(slot).subscribe(); //TODO manage errors?
 					}
 					return;
@@ -503,7 +504,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 		//if we destroy instead of recycle, be sure to propagate destroy handler errors
 		//to the release() subscriber
-		if (poolSlot.markInvalidate()) {
+		if (poolSlot.markDestroy()) {
 			destroyPoolable(poolSlot).subscribe(null,
 					e -> {
 						actual.onError(e);
@@ -602,7 +603,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		@Override
 		public Mono<Void> invalidate() {
 			return Mono.defer(() -> {
-				if (markInvalidate()) {
+				if (markSoftInvalidate()) {
 					//immediately clean up state
 					ACQUIRED.decrementAndGet(pool);
 					return pool.destroyPoolable(this)
@@ -624,7 +625,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 				if (pool.isDisposed()) {
 					ACQUIRED.decrementAndGet(pool); //immediately clean up state
-					if (markInvalidate()) {
+					if (markDestroy()) {
 						return pool.destroyPoolable(this);
 					}
 					else {
@@ -639,7 +640,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				}
 				catch (Throwable releaseError) {
 					ACQUIRED.decrementAndGet(pool); //immediately clean up state
-					if (markInvalidate()) {
+					if (markDestroy()) {
 						return pool.destroyPoolable(this)
 								.onErrorResume(destroyError ->
 									Mono.error(new IllegalStateException("Couldn't apply releaseHandler nor destroyHandler",
@@ -738,7 +739,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			//TODO should we separate reset errors?
 			pool.metricsRecorder.recordResetLatency(pool.clock.millis() - start);
 
-			if (slot.markInvalidate()) {
+			if (slot.markDestroy()) {
 				pool.destroyPoolable(slot)
 				    .subscribe(null, null, pool::drain); //TODO manage errors?
 			}

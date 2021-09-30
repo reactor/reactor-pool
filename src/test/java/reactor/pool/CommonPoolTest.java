@@ -18,6 +18,7 @@ package reactor.pool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -2851,5 +2852,21 @@ public class CommonPoolTest {
 		assertThat(pool.metrics().allocatedSize()).as("allocated metric post-eviction").isZero();
 		assertThat(pool.metrics().idleSize()).as("idle metric post-eviction").isZero();
 		assertThat(releaseCount).as("released post-eviction").hasValue(1);
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void poolExposesConfig(PoolStyle style) {
+		final Clock clock = Clock.systemUTC();
+		PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+			.from(Mono.just("test"))
+			.sizeBetween(0, 123)
+			.clock(clock);
+
+		InstrumentedPool<String> pool = style.apply(configBuilder);
+		PoolConfig<String> config = pool.config();
+
+		assertThat(config.allocationStrategy().estimatePermitCount()).as("maxSize").isEqualTo(123);
+		assertThat(config.clock()).as("clock").isSameAs(clock);
 	}
 }

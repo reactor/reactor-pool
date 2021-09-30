@@ -72,6 +72,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	// == pool introspection methods ==
 
 	@Override
+	public PoolConfig<POOLABLE> config() {
+		return this.poolConfig;
+	}
+
+	@Override
 	public PoolMetrics metrics() {
 		return this;
 	}

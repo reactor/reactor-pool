@@ -132,7 +132,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		return this;
 	}
 
-
 	/**
 	 * Provide a {@link Function handler} that will derive a destroy {@link Publisher} whenever a resource isn't fit for
 	 * usage anymore (either through eviction, manual invalidation, or because something went wrong with it).
@@ -419,6 +418,19 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	public InstrumentedPool<T> buildPool() {
 		return new SimpleDequePool<>(this.buildConfig(), true);
 	}
+
+	/**
+	 * Construct a default reactor pool with the builder's configuration, then wrap it
+	 * into a decorator implementation using the provided {@link Function}.
+	 *
+	 * @param decorator a decorator {@link Function} returning a decorated version of the {@link InstrumentedPool}
+	 * @param <P> the type of decorated pool, must extend {@link InstrumentedPool} (with same type of resource)
+	 * @return the built-then-decorated pool
+	 */
+	public <P extends InstrumentedPool<T>> P buildPoolAndDecorateWith(Function<? super InstrumentedPool<T>, P> decorator) {
+		return decorator.apply(buildPool());
+	}
+
 
 	/**
 	 * Build a LIFO flavor of {@link Pool}, that is to say a flavor where the last

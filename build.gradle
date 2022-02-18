@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,18 @@ import org.gradle.util.VersionNumber
 import java.text.SimpleDateFormat
 
 plugins {
-  id "com.jfrog.artifactory" version "4.15.2" apply false
-  id 'biz.aQute.bnd.builder' version '5.0.1' apply false
-  id "me.champeau.gradle.japicmp" version "0.2.6"
-  id "de.undercouch.download" version "3.4.3"
-  id "io.github.reyerizo.gradle.jcstress" version "0.8.11"
   id "idea"
+//  alias(libs.plugins.artifactory) apply false
+  id "com.jfrog.artifactory" version "4.15.2" apply false
+//  alias(libs.plugins.bnd) apply false
+  id 'biz.aQute.bnd.builder' version '5.0.1' apply false
+//  alias(libs.plugins.japicmp)
+  id "me.champeau.gradle.japicmp" version "0.2.6"
+//  alias(libs.plugins.download)
+  id "de.undercouch.download" version "3.4.3"
+//  alias(libs.plugins.jcstress)
+  id "io.github.reyerizo.gradle.jcstress" version "0.8.11"
+//  alias(libs.plugins.spotless)
   id "com.diffplug.spotless" version "5.14.0"
 }
 
@@ -60,8 +66,6 @@ ext {
 
   isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo, but eh
 
-  gradleScriptDir = "${rootProject.projectDir}/gradle"
-
   //Note that reactor-core version is now defined in `gradle.properties`
   hdrHistogramVersion = "2.1.11"
 
@@ -80,9 +84,19 @@ ext {
 
   rxJava2Version = '2.2.7'
 
-  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
-                  "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
-                  "https://projectreactor.io/docs/core/release/api/"] as String[]
+  jdk = JavaVersion.current().majorVersion
+  jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
+  if (JavaVersion.current().isJava11Compatible()) {
+    jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
+  }
+  println "JDK Javadoc link for this build is ${rootProject.jdkJavadoc}"
+  javadocLinks = [
+//    "https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+    "https://projectreactor.io/docs/core/${reactorCoreVersion}/api/",
+    jdkJavadoc,
+//    "https://www.reactive-streams.org/reactive-streams-${libs.versions.reactiveStreams.get()}-javadoc/"
+    "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
+  ] as String[]
 
   bndOptions = [
           "Export-Package": [
@@ -106,9 +120,9 @@ configure(rootProject) { project ->
   apply plugin: 'java-library'
   apply plugin: 'jacoco'
   apply plugin: 'biz.aQute.bnd.builder'
-  apply from: "$gradleScriptDir/doc.gradle"
-  apply from: "$gradleScriptDir/setup.gradle"
-  apply from: "${gradleScriptDir}/releaser.gradle"
+  apply from: "${rootDir}/gradle/doc.gradle"
+  apply from: "${rootDir}/gradle/setup.gradle"
+  apply from: "${rootDir}/gradle/releaser.gradle"
 
   jacocoTestReport {
     reports {
@@ -149,22 +163,15 @@ configure(rootProject) { project ->
 
   if (JavaVersion.current().isJava8Compatible()) {
     compileTestJava.options.compilerArgs += "-parameters"
-    tasks.withType(Javadoc) {
-      options.addStringOption('Xdoclint:none', '-quiet')
-      options.addStringOption('encoding', 'UTF-8')
-    }
   }
 
   [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
   sourceSets.test.resources.srcDirs = ["src/test/resources", "src/test/java"]
 
   project.tasks.withType(Test).all {
-    systemProperty("java.awt.headless", "true")
-    systemProperty("testGroups", project.properties.get("testGroups"))
     scanForTestClasses = false
     include '**/*Tests.*'
     include '**/*Test.*'
-    include '**/*Spec.*'
     exclude '**/*Abstract*.*'
   }
 
@@ -271,7 +278,9 @@ task downloadBaseline(type: Download) {
   onlyIfNewer true
   compress true
 
+//  src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/${libs.versions.baseline.pool.api.get()}/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
   src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/$compatibleVersion/reactor-pool-${compatibleVersion}.jar"
+//  dest "${buildDir}/baselineLibs/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
   dest "${buildDir}/baselineLibs/reactor-pool-${compatibleVersion}.jar"
 }
 
@@ -280,11 +289,13 @@ task japicmp(type: JapicmpTask) {
     println "Offline: skipping downloading of baseline and JAPICMP"
     enabled = false
   }
+//  else if ("${libs.versions.baseline.pool.api.get()}" == "SKIP") {
   else if ("$compatibleVersion" == "SKIP") {
     println "SKIP: Instructed to skip the baseline comparison"
     enabled = false
   }
   else {
+//    println "Will download and perform baseline comparison with ${libs.versions.baseline.pool.api.get()}"
     println "Will download and perform baseline comparison with ${compatibleVersion}"
     dependsOn(downloadBaseline)
   }

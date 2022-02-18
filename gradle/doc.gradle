@@ -15,7 +15,6 @@
  */
 
 configure(rootProject) {
-	apply plugin: "java"
 
 	javadoc {
 		dependsOn jar
@@ -25,12 +24,8 @@ configure(rootProject) {
 		title = "Reactor Pool ${version}"
 
 		if (JavaVersion.current().isJava8Compatible()) {
-			compileTestJava.options.compilerArgs += "-parameters"
-			tasks.withType(Javadoc) {
 				options.addStringOption('Xdoclint:none', '-quiet')
-			}
 		}
-
 		options.addStringOption('charSet', 'UTF-8')
 		options.tags = [ "apiNote:a:API Note:"]
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,13 @@ import org.gradle.util.VersionNumber
 import java.text.SimpleDateFormat
 
 plugins {
-  id "com.jfrog.artifactory" version "4.15.2" apply false
-  id 'biz.aQute.bnd.builder' version '5.0.1' apply false
-  id "me.champeau.gradle.japicmp" version "0.2.6"
-  id "de.undercouch.download" version "3.4.3"
-  id "io.github.reyerizo.gradle.jcstress" version "0.8.11"
   id "idea"
-  id "com.diffplug.spotless" version "5.14.0"
+  alias(libs.plugins.artifactory) apply false
+  alias(libs.plugins.bnd) apply false
+  alias(libs.plugins.japicmp)
+  alias(libs.plugins.download)
+  alias(libs.plugins.jcstress)
+  alias(libs.plugins.spotless)
 }
 
 description = 'Reactive Object Pool'
@@ -60,29 +60,17 @@ ext {
 
   isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo, but eh
 
-  gradleScriptDir = "${rootProject.projectDir}/gradle"
-
-  //Note that reactor-core version is now defined in `gradle.properties`
-  hdrHistogramVersion = "2.1.11"
-
-  // Languages
-  groovyVersion = '2.4.1'
-
-  // Logging
-  slf4jVersion = '1.7.12'
-  logbackVersion = '1.1.2'
-
-  // Testing
-  jUnitPlatformVersion = '5.7.1'
-  mockitoVersion = '1.10.19'
-  assertJVersion = '3.9.0'
-  awaitilityVersion = '3.1.3'
-
-  rxJava2Version = '2.2.7'
-
-  javadocLinks = ["https://docs.oracle.com/javase/8/docs/api/",
-                  "https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
-                  "https://projectreactor.io/docs/core/release/api/"] as String[]
+  jdk = JavaVersion.current().majorVersion
+  jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
+  if (JavaVersion.current().isJava11Compatible()) {
+    jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
+  }
+  println "JDK Javadoc link for this build is ${rootProject.jdkJavadoc}"
+  javadocLinks = [
+    "https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+    jdkJavadoc,
+    "https://www.reactive-streams.org/reactive-streams-${libs.versions.reactiveStreams.get()}-javadoc/"
+  ] as String[]
 
   bndOptions = [
           "Export-Package": [
@@ -106,9 +94,9 @@ configure(rootProject) { project ->
   apply plugin: 'java-library'
   apply plugin: 'jacoco'
   apply plugin: 'biz.aQute.bnd.builder'
-  apply from: "$gradleScriptDir/doc.gradle"
-  apply from: "$gradleScriptDir/setup.gradle"
-  apply from: "${gradleScriptDir}/releaser.gradle"
+  apply from: "${rootDir}/gradle/doc.gradle"
+  apply from: "${rootDir}/gradle/setup.gradle"
+  apply from: "${rootDir}/gradle/releaser.gradle"
 
   jacocoTestReport {
     reports {
@@ -149,22 +137,15 @@ configure(rootProject) { project ->
 
   if (JavaVersion.current().isJava8Compatible()) {
     compileTestJava.options.compilerArgs += "-parameters"
-    tasks.withType(Javadoc) {
-      options.addStringOption('Xdoclint:none', '-quiet')
-      options.addStringOption('encoding', 'UTF-8')
-    }
   }
 
   [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
   sourceSets.test.resources.srcDirs = ["src/test/resources", "src/test/java"]
 
   project.tasks.withType(Test).all {
-    systemProperty("java.awt.headless", "true")
-    systemProperty("testGroups", project.properties.get("testGroups"))
     scanForTestClasses = false
     include '**/*Tests.*'
     include '**/*Test.*'
-    include '**/*Spec.*'
     exclude '**/*Abstract*.*'
   }
 
@@ -223,25 +204,25 @@ configure(rootProject) { project ->
   }
 
   dependencies {
-    api "io.projectreactor:reactor-core:$reactorCoreVersion"
+    api libs.reactor.core
 
     // JSR-305 annotations
-    compileOnly "com.google.code.findbugs:jsr305:3.0.2"
+    compileOnly libs.jsr305
 
     // Testing
-    testImplementation "org.assertj:assertj-core:$assertJVersion"
-    testImplementation "org.awaitility:awaitility:$awaitilityVersion"
-    testImplementation "org.hdrhistogram:HdrHistogram:$hdrHistogramVersion"
-    testRuntimeOnly "org.slf4j:jcl-over-slf4j:$slf4jVersion"
-    testRuntimeOnly "ch.qos.logback:logback-classic:$logbackVersion"
-    testImplementation "org.mockito:mockito-core:$mockitoVersion"
+    testImplementation libs.assertj
+    testImplementation libs.awaitility
+    testImplementation libs.hdrHistogram
+    testRuntimeOnly libs.slf4j.jcl
+    testRuntimeOnly libs.logback
+    testImplementation libs.mockito
 
-    testImplementation "io.projectreactor:reactor-test:$reactorCoreVersion"
-    testImplementation "io.projectreactor.addons:reactor-extra:$reactorAddonsVersion"
+    testImplementation libs.reactor.test
+    testImplementation libs.reactor.extra
 
-    testImplementation "io.reactivex.rxjava2:rxjava:$rxJava2Version"
+    testImplementation libs.rxjava2
 
-    testImplementation platform("org.junit:junit-bom:${jUnitPlatformVersion}")
+    testImplementation platform(libs.junit.bom)
     testImplementation "org.junit.jupiter:junit-jupiter-api"
     testImplementation "org.junit.jupiter:junit-jupiter-params"
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
@@ -271,8 +252,8 @@ task downloadBaseline(type: Download) {
   onlyIfNewer true
   compress true
 
-  src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/$compatibleVersion/reactor-pool-${compatibleVersion}.jar"
-  dest "${buildDir}/baselineLibs/reactor-pool-${compatibleVersion}.jar"
+  src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/${libs.versions.baseline.pool.api.get()}/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
+  dest "${buildDir}/baselineLibs/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
 }
 
 task japicmp(type: JapicmpTask) {
@@ -280,12 +261,12 @@ task japicmp(type: JapicmpTask) {
     println "Offline: skipping downloading of baseline and JAPICMP"
     enabled = false
   }
-  else if ("$compatibleVersion" == "SKIP") {
+  else if ("${libs.versions.baseline.pool.api.get()}" == "SKIP") {
     println "SKIP: Instructed to skip the baseline comparison"
     enabled = false
   }
   else {
-    println "Will download and perform baseline comparison with ${compatibleVersion}"
+    println "Will download and perform baseline comparison with ${libs.versions.baseline.pool.api.get()}"
     dependsOn(downloadBaseline)
   }
 

@@ -164,7 +164,7 @@ configure(rootProject) { project ->
       enforceCheck false
     }
     else {
-      String spotlessBranch = "origin/0.2.x"
+      String spotlessBranch = "origin/main"
       println "[Spotless] Local run detected, ratchet from $spotlessBranch"
       ratchetFrom spotlessBranch
     }

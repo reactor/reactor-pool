@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -245,7 +245,7 @@ class GracefulShutdownInstrumentedPoolTest {
 
 		final boolean[] timedOut = new boolean[2];
 		final Mono<Void>[] disposeMonos = new Mono[2];
-		//dispose the pool with grace period, twice: 2s and 10s (the later should be ignored)
+		//dispose the pool with grace period, twice: 2s and 10s (the later duration should be ignored)
 		disposeMonos[0] = gsPool.disposeGracefully(Duration.ofSeconds(2));
 		disposeMonos[1] = gsPool.disposeGracefully(Duration.ofSeconds(10));
 
@@ -258,7 +258,7 @@ class GracefulShutdownInstrumentedPoolTest {
 
 		assertThat(disposeMonos[0]).as("same dispose monos").isSameAs(disposeMonos[1]);
 		assertThat(duration.toMillis()).as("2s takes precedence").isCloseTo(2000, Offset.offset(200L));
-		assertThat(timedOut).as("both disposeMonos errored with a TimeoutException").containsOnly(true, true);
+		assertThat(timedOut).as("both disposeMonos errored with a TimeoutException").containsExactly(true, true);
 	}
 
 	@Test

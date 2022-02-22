@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -243,23 +243,22 @@ class GracefulShutdownInstrumentedPoolTest {
 		//this will cause graceful shutdown to block
 		PooledRef<String> ref1 = gsPool.acquire().block();
 
-		final long[] durations = new long[2];
-		final Mono<?>[] disposeMonos = new Mono[2];
-		//dispose the pool with grace period, twice
-		Schedulers.boundedElastic().schedule(() -> {
-			disposeMonos[0] = gsPool.disposeGracefully(Duration.ofSeconds(5));
-			durations[0] = StepVerifier.create(disposeMonos[0])
-				.verifyError(TimeoutException.class)
-				.toMillis();
-		});
+		final boolean[] timedOut = new boolean[2];
+		final Mono<Void>[] disposeMonos = new Mono[2];
+		//dispose the pool with grace period, twice: 2s and 10s (the later duration should be ignored)
+		disposeMonos[0] = gsPool.disposeGracefully(Duration.ofSeconds(2));
+		disposeMonos[1] = gsPool.disposeGracefully(Duration.ofSeconds(10));
 
-		disposeMonos[1] = gsPool.disposeGracefully(Duration.ofSeconds(2));
-		durations[1] = StepVerifier.create(disposeMonos[1])
-			.verifyError(TimeoutException.class)
-			.toMillis();
+		Duration duration = StepVerifier.create(Mono.when(
+				disposeMonos[0].onErrorResume(TimeoutException.class, e -> { timedOut[0] = true; return Mono.empty();} ),
+				disposeMonos[1].onErrorResume(TimeoutException.class, e -> { timedOut[1] = true; return Mono.empty();} )
+			))
+			.expectComplete()
+			.verify(Duration.ofSeconds(15));
 
 		assertThat(disposeMonos[0]).as("same dispose monos").isSameAs(disposeMonos[1]);
-		assertThat(durations[0]).as("similar durations +- 100ms").isCloseTo(durations[1], Offset.offset(100L));
+		assertThat(duration.toMillis()).as("2s takes precedence").isCloseTo(2000, Offset.offset(200L));
+		assertThat(timedOut).as("both disposeMonos errored with a TimeoutException").containsExactly(true, true);
 	}
 
 	@Test

@@ -931,8 +931,7 @@ public class CommonPoolTest {
 							    if (SignalType.ON_ERROR == fin) errorCount.incrementAndGet();
 							    else otherTerminationCount.incrementAndGet();
 						    })
-						    .doOnError(error::set)
-						    .subscribe()
+						    .subscribe(v -> {}, error::set)
 				);
 			}
 
@@ -2216,8 +2215,8 @@ public class CommonPoolTest {
 			final CountDownLatch latch = new CountDownLatch(2);
 			//acquire-and-release, vs pool disposal
 			RaceTestUtils.race(
-					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe(),
-					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe()
+					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe(v -> {}, e -> {}),
+					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe(v -> {}, e -> {})
 			);
 
 			assertThat(latch.await(30, TimeUnit.SECONDS)).as("latch counted down").isTrue();
@@ -2253,8 +2252,8 @@ public class CommonPoolTest {
 			final CountDownLatch latch = new CountDownLatch(2);
 			//acquire-and-release, vs pool disposal
 			RaceTestUtils.race(
-					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe(),
-					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe()
+					() -> pool.disposeLater().doFinally(__ -> latch.countDown()).subscribe(v -> {}, e -> {}),
+					() -> ref.release().doFinally(__ -> latch.countDown()).subscribe(v -> {}, e -> {})
 			);
 
 			assertThat(latch.await(30, TimeUnit.SECONDS)).as("latch counted down").isTrue();

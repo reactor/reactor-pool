@@ -348,7 +348,7 @@ class GracefulShutdownInstrumentedPoolTest {
 		gsPool.disposeGracefully(Duration.ofSeconds(200))
 			.doFinally(termination::set)
 			.log()
-			.subscribe();
+			.subscribe(v -> {}, e -> {});
 
 		AtomicInteger refCompleteCount = new AtomicInteger();
 		AtomicInteger refErrorCount = new AtomicInteger();

@@ -24,7 +24,6 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiPredicate;
@@ -88,13 +87,15 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final AtomicReferenceFieldUpdater<SimpleDequePool, ConcurrentLinkedDeque> PENDING =
 			AtomicReferenceFieldUpdater.newUpdater(SimpleDequePool.class, ConcurrentLinkedDeque.class, "pending");
 
-	volatile             long                                    queueSizes;
+	volatile int pendingSize;
 	@SuppressWarnings("rawtypes")
-	private static final AtomicLongFieldUpdater<SimpleDequePool> QUEUE_SIZES =
-		AtomicLongFieldUpdater.newUpdater(SimpleDequePool.class, "queueSizes");
+	private static final AtomicIntegerFieldUpdater<SimpleDequePool> PENDING_SIZE =
+		AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "pendingSize");
 
-	private static final long MASK_IDLE = 0b11111111_11111111_11111111_11111111_00000000_00000000_00000000_00000000L;
-	private static final int OFFSET_IDLE = 32;
+	volatile int idleSize;
+	@SuppressWarnings("rawtypes")
+	private static final AtomicIntegerFieldUpdater<SimpleDequePool> IDLE_SIZE =
+		AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "idleSize");
 
 	Disposable evictionTask;
 
@@ -127,87 +128,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 
-	@Override
-	public int idleSize() {
-		return (int) ((queueSizes & MASK_IDLE) >> OFFSET_IDLE);
-	}
-
-	@Override
-	public int pendingAcquireSize() {
-		return (int) (queueSizes & ~MASK_IDLE);
-	}
-
-	void decrementIdle() {
-		for (;;) {
-			long qs = QUEUE_SIZES.get(this);
-			int unchangedPending = (int) (qs & ~MASK_IDLE);
-			int idle = (int) ((qs & MASK_IDLE) >> OFFSET_IDLE);
-			int newIdle = idle - 1;
-
-			if (newIdle < 0) {
-				System.err.println("unexpected decrement Idle below 0");
-				return;
-			}
-
-			long qsUpdate = ((long) newIdle) << OFFSET_IDLE | unchangedPending;
-			if (QUEUE_SIZES.compareAndSet(this, qs, qsUpdate)) {
-				return;
-			}
-		}
-	}
-
-	void incrementIdle() {
-		for (;;) {
-			long qs = QUEUE_SIZES.get(this);
-			int unchangedPending = (int) (qs & ~MASK_IDLE);
-			int idle = (int) ((qs & MASK_IDLE) >> OFFSET_IDLE);
-
-			if (idle == Integer.MAX_VALUE) {
-				return;
-			}
-			int newIdle = idle + 1;
-			long qsUpdate = ((long) newIdle) << OFFSET_IDLE | unchangedPending;
-			if (QUEUE_SIZES.compareAndSet(this, qs, qsUpdate)) {
-				return;
-			}
-		}
-	}
-
-	void decrementPending() {
-		for (;;) {
-			long qs = QUEUE_SIZES.get(this);
-			long unchangedIdlePart = qs & MASK_IDLE;
-			int pending = (int) (qs & ~MASK_IDLE);
-			int newPending = pending - 1;
-
-			if (newPending < 0) {
-				System.err.println("unexpected decrement Pending below 0");
-				return;
-			}
-
-			long qsUpdate = unchangedIdlePart | newPending;
-			if (QUEUE_SIZES.compareAndSet(this, qs, qsUpdate)) {
-				return;
-			}
-		}
-	}
-
-	int incrementPendingAndGet() {
-		for (;;) {
-			long qs = QUEUE_SIZES.get(this);
-			long unchangedIdlePart = qs & MASK_IDLE;
-			int pending = (int) (qs & ~MASK_IDLE);
-			if (pending == Integer.MAX_VALUE) {
-				return Integer.MAX_VALUE;
-			}
-			int newPending = pending + 1;
-			long qsUpdate = unchangedIdlePart | newPending;
-			if (QUEUE_SIZES.compareAndSet(this, qs, qsUpdate)) {
-				return newPending;
-			}
-		}
-	}
-
 	void scheduleEviction() {
 		if (!poolConfig.evictInBackgroundInterval().isZero()) {
 			long nanosEvictionInterval = poolConfig.evictInBackgroundInterval().toNanos();
@@ -227,7 +147,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		if (WIP.getAndIncrement(this) == 0) {
-			if (pendingAcquireSize() == 0) {
+			if (pendingSize == 0) {
 				BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate = poolConfig.evictionPredicate();
 				//only one evictInBackground can enter here, and it won vs `drain` calls
 				//let's "purge" the pool
@@ -261,7 +181,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			recordInteractionTimestamp();
 
 			//TODO mark the termination differently and handle Borrower.fail inside drainLoop
-			//TODO also IDLE_RESOURCE to make it truly MPSC
+			//TODO also IDLE_RESOURCE
+			//to make it truly MPSC
 
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =
 					PENDING.getAndSet(this, TERMINATED);
@@ -271,11 +192,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 				Borrower<POOLABLE> p;
 				while ((p = q.pollFirst()) != null) {
-					//since PENDING and IDLE are stored in the same long, there could be a competing decrement of IDLE influencing this PENDING
-					//we ensure we decrement PENDING one by one
-					decrementPending();
 					p.fail(new PoolShutdownException());
 				}
+				//unlike IDLE_SIZE below, there should be no competing decrementAndGet, so safe to set to 0 in one go
+				PENDING_SIZE.set(this, 0);
 
 				@SuppressWarnings("unchecked")
 				Queue<QueuePooledRef<POOLABLE>> e =
@@ -296,6 +216,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			}
 			return Mono.empty(); //TODO subsequent calls misleading: destroying might still be in progress yet second subscriber sees immediate termination
 		});
+	}
+
+	@Override
+	public int idleSize() {
+		return idleSize;
 	}
 
 	@Override
@@ -335,12 +260,24 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 	}
 
+	void decrementIdle() {
+		if (IDLE_SIZE.decrementAndGet(this) < 0) {
+			System.err.println("unexpected decrement below 0");
+		}
+	}
+
+	void incrementIdle() {
+		if (IDLE_SIZE.incrementAndGet(this) == 0) {
+			System.err.println("unexpected increment from below 0");
+		}
+	}
+
 	@Override
 	void cancelAcquire(Borrower<POOLABLE> borrower) {
 		if (!isDisposed()) { //ignore pool disposed
 			ConcurrentLinkedDeque<Borrower<POOLABLE>> q = this.pending;
 			if (q.remove(borrower)) {
-				decrementPending();
+				PENDING_SIZE.decrementAndGet(this);
 			}
 		}
 	}
@@ -381,8 +318,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				return;
 			}
 
-			int borrowersCount = pendingAcquireSize();
-			int resourcesCount = idleSize();
+			int borrowersCount = pendingSize;
+			int resourcesCount = idleSize;
 
 			if (borrowersCount == 0) {
 				/*=========================================*
@@ -445,7 +382,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						//we don't have idle resource nor allocation permit
 						//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
 						if (maxPending >= 0) {
-							borrowersCount = pendingAcquireSize();
+							borrowersCount = pendingSize;
 							int toCull = borrowersCount - maxPending;
 							for (int i = 0; i < toCull; i++) {
 								Borrower<POOLABLE> extraneous = pendingPoll(borrowers);
@@ -560,6 +497,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	@Override
+	public int pendingAcquireSize() {
+		return pendingSize;
+	}
+
+	@Override
 	boolean elementOffer(POOLABLE element) {
 		@SuppressWarnings("unchecked")
 		Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
@@ -627,17 +569,17 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (pendingQueue == TERMINATED) {
 			return;
 		}
-		int postOffer = pendingAcquireSize();
+		int postOffer = pendingSize;
 		if (pendingQueue.offerLast(pending)) {
-			postOffer = incrementPendingAndGet();
+			postOffer = PENDING_SIZE.incrementAndGet(this);
 		}
 
 		if (WIP.getAndIncrement(this) == 0) {
-			if (maxPending >= 0 && postOffer > maxPending && idleSize() == 0 && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
+			if (maxPending >= 0 && postOffer > maxPending && idleSize == 0 && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
 				//fail fast. differentiate slightly special case of maxPending == 0
 				Borrower<POOLABLE> toCull = pendingQueue.pollLast();
 				if (toCull != null) {
-					decrementPending();
+					PENDING_SIZE.decrementAndGet(this);
 					if (maxPending == 0) {
 						toCull.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
 					}
@@ -668,7 +610,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				borrowers.pollFirst() :
 				borrowers.pollLast();
 		if (b != null) {
-			decrementPending();
+			PENDING_SIZE.decrementAndGet(this);
 		}
 		return b;
 	}

@@ -38,7 +38,7 @@ class SimpleDequePoolInstrumentationTest {
 				PoolBuilder.from(Mono.just("example"))
 				           .evictInBackground(Duration.ofSeconds(10), vts)
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
@@ -72,7 +72,7 @@ class SimpleDequePoolInstrumentationTest {
 				           .evictionPredicate((s, metadata) -> metadata.idleTime() > 1000)
 				           .evictInBackground(Duration.ofSeconds(10), vts)
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
@@ -110,7 +110,7 @@ class SimpleDequePoolInstrumentationTest {
 				PoolBuilder.from(Mono.just("example"))
 				           .sizeBetween(5, 10)
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
@@ -144,7 +144,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
@@ -178,7 +178,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		PooledRef<String> ref = pool.acquire().block();
 		assert ref != null;
@@ -215,7 +215,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		PooledRef<String> ref = pool.acquire().block();
 		assert ref != null;
@@ -252,7 +252,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		assertThat(pool.lastInteractionTimestamp).as("initial timestamp").isZero();
 		assertThat(pool.secondsSinceLastInteraction())
@@ -286,7 +286,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		vts.advanceTimeBy(Duration.ofMinutes(3).plusMillis(543));
 
@@ -301,7 +301,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		vts.advanceTimeBy(Duration.ofMinutes(3).plusMillis(543));
 		pool.recordInteractionTimestamp();
@@ -317,7 +317,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		pool.acquire().block();
 
@@ -338,7 +338,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		vts.advanceTimeBy(Duration.ofMinutes(3).plusMillis(543));
 		pool.recordInteractionTimestamp();
@@ -359,7 +359,7 @@ class SimpleDequePoolInstrumentationTest {
 		SimpleDequePool<String> pool = new SimpleDequePool<>(
 				PoolBuilder.from(Mono.just("example"))
 				           .clock(SchedulerClock.of(vts))
-				           .buildConfig(), true);
+				           .buildConfig());
 
 		pool.recordInteractionTimestamp();
 

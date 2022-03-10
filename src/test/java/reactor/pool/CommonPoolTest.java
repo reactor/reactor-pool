@@ -22,6 +22,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Formatter;
 import java.util.FormatterClosedException;
 import java.util.List;
@@ -80,110 +81,37 @@ public class CommonPoolTest {
 
 	enum PoolStyle {
 
-		IDLE_LRU_PENDING_FIFO(true, true),
-		IDLE_MRU_PENDING_FIFO(false, true),
-		IDLE_LRU_PENDING_LIFO(true, false),
-		IDLE_MRU_PENDING_LIFO(false, false);
+		IDLE_LRU(true),
+		IDLE_MRU(false);
 
 		private final boolean isLru;
-		private final boolean isFifo;
 
-		PoolStyle(boolean isLru, boolean isFifo) {
+		PoolStyle(boolean isLru) {
 			this.isLru = isLru;
-			this.isFifo = isFifo;
 		}
 
-		@SuppressWarnings("deprecation")
-		public <T, CONF extends PoolConfig<T>> InstrumentedPool<T> apply(PoolBuilder<T, CONF> builder) {
-			if (isFifo) {
-				return builder.idleResourceReuseOrder(isLru).buildPool();
-			}
-			return builder.idleResourceReuseOrder(isLru).lifo();
+		public <T, CONF extends PoolConfig<T>> AbstractPool<T> apply(PoolBuilder<T, CONF> builder) {
+			return (AbstractPool<T>) builder.idleResourceReuseOrder(isLru).buildPool();
 		}
 	}
+	
+	//keeping the methods below in case more flavors need to be added to CommonPoolTest
 
-	//TODO remove in favor of enums above
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> lruFifo() {
-		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
-				return (AbstractPool<T>) builder.buildPool();
-			}
-
-			@Override
-			public String toString() {
-				return "LRU & FIFO";
-			}
-		};
+	static List<PoolStyle> allPools() {
+		return Arrays.asList(PoolStyle.IDLE_LRU, PoolStyle.IDLE_MRU);
 	}
 
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> lruLifo() {
-		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
-			@SuppressWarnings("deprecation")
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
-				return (AbstractPool<T>) builder.lifo();
-			}
-
-			@Override
-			public String toString() {
-				return "LRU & LIFO";
-			}
-		};
+	static List<PoolStyle> mruPools() {
+		return Collections.singletonList(PoolStyle.IDLE_MRU);
 	}
 
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> mruFifo() {
-		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
-				return (AbstractPool<T>) builder.idleResourceReuseMruOrder().buildPool();
-			}
-
-			@Override
-			public String toString() {
-				return "MRU & FIFO";
-			}
-		};
-	}
-
-	static final <T> Function<PoolBuilder<T, ?>, AbstractPool<T>> mruLifo() {
-		return new Function<PoolBuilder<T, ?>, AbstractPool<T>>() {
-			@SuppressWarnings("deprecation")
-			@Override
-			public AbstractPool<T> apply(PoolBuilder<T, ?> builder) {
-				return (AbstractPool<T>) builder.idleResourceReuseMruOrder().lifo();
-			}
-
-			@Override
-			public String toString() {
-				return "MRU & LIFO";
-			}
-		};
-	}
-
-	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> allPools() {
-		return Arrays.asList(lruFifo(), lruLifo(), mruFifo(), mruLifo());
-	}
-
-	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> fifoPools() {
-		return Arrays.asList(lruFifo(), mruFifo());
-	}
-
-	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> lifoPools() {
-		return Arrays.asList(lruLifo(), mruLifo());
-	}
-
-	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> mruPools() {
-		return Arrays.asList(mruFifo(), mruLifo());
-	}
-
-	static <T> List<Function<PoolBuilder<T, ?>, AbstractPool<T>>> lruPools() {
-		return Arrays.asList(lruFifo(), lruLifo());
+	static List<PoolStyle> lruPools() {
+		return Collections.singletonList(PoolStyle.IDLE_LRU);
 	}
 
 	@ParameterizedTestWithName
-	@MethodSource("fifoPools")
-	void smokeTestFifo(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) throws InterruptedException {
+	@MethodSource("allPools")
+	void smokeTestFifo(PoolStyle configAdjuster) throws InterruptedException {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
@@ -239,8 +167,8 @@ public class CommonPoolTest {
 	}
 
 	@ParameterizedTestWithName
-	@MethodSource("fifoPools")
-	void smokeTestInScopeFifo(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	@MethodSource("allPools")
+	void smokeTestInScopeFifo(PoolStyle configAdjuster) {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
@@ -302,8 +230,8 @@ public class CommonPoolTest {
 	}
 
 	@ParameterizedTestWithName
-	@MethodSource("fifoPools")
-	void smokeTestAsyncFifo(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) throws InterruptedException {
+	@MethodSource("allPools")
+	void smokeTestAsyncFifo(PoolStyle configAdjuster) throws InterruptedException {
 		AtomicInteger newCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
@@ -379,247 +307,8 @@ public class CommonPoolTest {
 	}
 
 	@ParameterizedTestWithName
-	@MethodSource("lifoPools")
-	void simpleLifo(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster)
-			throws InterruptedException {
-		CountDownLatch latch = new CountDownLatch(2);
-		AtomicInteger verif = new AtomicInteger();
-		AtomicInteger newCount = new AtomicInteger();
-
-		PoolBuilder<PoolableTest, ?> builder =
-				PoolBuilder.from(Mono.defer(() ->
-						Mono.just(new PoolableTest(newCount.incrementAndGet()))))
-				           .sizeBetween(0, 1)
-				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean));
-
-		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
-
-		PooledRef<PoolableTest> ref = pool.acquire().block();
-
-		pool.acquire()
-		    .doOnNext(v -> {
-			    verif.compareAndSet(1, 2);
-			    System.out.println("first in got " + v);
-		    })
-		    .flatMap(PooledRef::release)
-		    .subscribe(v -> {}, e -> latch.countDown(), latch::countDown);
-
-		pool.acquire()
-		    .doOnNext(v -> {
-			    verif.compareAndSet(0, 1);
-			    System.out.println("second in got " + v);
-		    })
-		    .flatMap(PooledRef::release)
-		    .subscribe(v -> {}, e -> latch.countDown(), latch::countDown);
-
-		ref.release().block();
-		latch.await(1, TimeUnit.SECONDS);
-
-		assertThat(verif).as("second in, first out").hasValue(2);
-		assertThat(newCount).as("created one").hasValue(1);
-	}
-
-	@ParameterizedTestWithName
-	@MethodSource("lifoPools")
-	void smokeTestLifo(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) throws InterruptedException {
-		AtomicInteger newCount = new AtomicInteger();
-		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
-				//default maxUse is 5, but this test relies on it being 2
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
-				.sizeBetween(2, 3)
-				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate((value, metadata) -> !value.isHealthy());
-		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
-		pool.warmup().block();
-
-		List<PooledRef<PoolableTest>> acquired1 = new ArrayList<>();
-		pool.acquire().subscribe(acquired1::add);
-		pool.acquire().subscribe(acquired1::add);
-		pool.acquire().subscribe(acquired1::add);
-		List<PooledRef<PoolableTest>> acquired2 = new ArrayList<>();
-		pool.acquire().subscribe(acquired2::add);
-		pool.acquire().subscribe(acquired2::add);
-		pool.acquire().subscribe(acquired2::add);
-		List<PooledRef<PoolableTest>> acquired3 = new ArrayList<>();
-		pool.acquire().subscribe(acquired3::add);
-		pool.acquire().subscribe(acquired3::add);
-		pool.acquire().subscribe(acquired3::add);
-
-		assertThat(acquired1).hasSize(3);
-		assertThat(acquired2).isEmpty();
-		assertThat(acquired3).isEmpty();
-
-		Thread.sleep(1000);
-		for (PooledRef<PoolableTest> slot : acquired1) {
-			slot.release().block();
-		}
-		assertThat(acquired3).hasSize(3);
-		assertThat(acquired2).isEmpty();
-
-		Thread.sleep(1000);
-		for (PooledRef<PoolableTest> slot : acquired3) {
-			slot.release().block();
-		}
-		assertThat(acquired2).hasSize(3);
-
-		List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
-		List<PoolableTest> poolables3 = acquired3.stream().map(PooledRef::poolable).collect(Collectors.toList());
-
-		assertThat(poolables1)
-				.as("poolable 1 and 3 all used up")
-				.hasSameElementsAs(poolables3)
-				.allSatisfy(poolable -> assertThat(poolable.usedUp).isEqualTo(2));
-
-		assertThat(acquired2)
-				.as("acquired2 all new")
-				.allSatisfy(slot -> assertThat(slot.poolable().usedUp).isZero());
-	}
-
-	@ParameterizedTestWithName
-	@MethodSource("lifoPools")
-	void smokeTestInScopeLifo(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
-		AtomicInteger newCount = new AtomicInteger();
-		PoolBuilder<PoolableTest, ?> builder =
-				//default maxUse is 5, but this test relies on it being 2
-				PoolBuilder.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2))))
-				           .sizeBetween(2, 3)
-				           .releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				           .evictionPredicate((value, metadata) -> !value.isHealthy());
-		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
-		pool.warmup().block();
-
-		TestPublisher<Integer> trigger1 = TestPublisher.create();
-		TestPublisher<Integer> trigger2 = TestPublisher.create();
-		TestPublisher<Integer> cleanupTrigger = TestPublisher.create();
-
-		List<PoolableTest> acquired1 = new ArrayList<>();
-
-		Mono.when(
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired1::add).delayUntil(__ -> trigger1)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired1::add).delayUntil(__ -> trigger1))
-		).subscribe();
-
-		List<PoolableTest> acquired2 = new ArrayList<>();
-		Mono.when(
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired2::add).delayUntil(__ -> cleanupTrigger))
-		).subscribe();
-
-		List<PoolableTest> acquired3 = new ArrayList<>();
-		Mono.when(
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired3::add).delayUntil(__ -> trigger2)),
-				pool.withPoolable(poolable -> Mono.just(poolable).doOnNext(acquired3::add).delayUntil(__ -> trigger2))
-		).subscribe();
-
-		assertThat(acquired1).as("first batch not pending").hasSize(3);
-		assertThat(acquired2).as("second and third pending").hasSameSizeAs(acquired3).isEmpty();
-
-		trigger1.emit(1);
-
-		assertThat(acquired3).as("batch3 after trigger1").hasSize(3);
-		assertThat(acquired2).as("batch2 after trigger1").isEmpty();
-
-		trigger2.emit(1);
-		assertThat(acquired2).as("batch2 after trigger2").hasSize(3);
-
-		assertThat(newCount).as("allocated total").hasValue(6);
-
-		cleanupTrigger.emit(1); //release the objects
-
-		assertThat(acquired1)
-				.as("acquired1/3 all used up")
-				.hasSameElementsAs(acquired3)
-				.allSatisfy(elem -> assertThat(elem.usedUp).isEqualTo(2));
-
-		assertThat(acquired2)
-				.as("acquired2 all new (released once)")
-				.allSatisfy(elem -> assertThat(elem.usedUp).isOne());
-	}
-
-	@ParameterizedTestWithName
-	@MethodSource("lifoPools")
-	void smokeTestAsyncLifo(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) throws InterruptedException {
-		AtomicInteger newCount = new AtomicInteger();
-
-		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
-				//default maxUse is 5, but this test relies on it being 2
-				.from(Mono.defer(() -> Mono.just(new PoolableTest(newCount.incrementAndGet(), 2)))
-				          .subscribeOn(Schedulers.newParallel(
-						          "poolable test allocator")))
-				.sizeBetween(2, 3)
-				.releaseHandler(pt -> Mono.fromRunnable(pt::clean))
-				.evictionPredicate((value, metadata) -> !value.isHealthy());
-		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
-		pool.warmup().block();
-
-
-		List<PooledRef<PoolableTest>> acquired1 = new CopyOnWriteArrayList<>();
-		CountDownLatch latch1 = new CountDownLatch(3);
-		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
-		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
-		pool.acquire().subscribe(acquired1::add, Throwable::printStackTrace, latch1::countDown);
-
-		List<PooledRef<PoolableTest>> acquired2 = new CopyOnWriteArrayList<>();
-		CountDownLatch latch2 = new CountDownLatch(3);
-		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
-		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
-		pool.acquire().subscribe(acquired2::add, Throwable::printStackTrace, latch2::countDown);
-
-		List<PooledRef<PoolableTest>> acquired3 = new CopyOnWriteArrayList<>();
-		pool.acquire().subscribe(acquired3::add);
-		pool.acquire().subscribe(acquired3::add);
-		pool.acquire().subscribe(acquired3::add);
-
-		if (!latch1.await(15, TimeUnit.SECONDS)) { //wait for creation of max elements
-			fail("not enough elements created initially, missing " + latch1.getCount());
-		}
-		assertThat(acquired1).hasSize(3);
-		assertThat(acquired2).isEmpty();
-		assertThat(acquired3).isEmpty();
-
-		Thread.sleep(1000);
-		for (PooledRef<PoolableTest> slot : acquired1) {
-			slot.release().block();
-		}
-		assertThat(acquired3).hasSize(3);
-		assertThat(acquired2).isEmpty();
-
-		Thread.sleep(1000);
-		for (PooledRef<PoolableTest> slot : acquired3) {
-			slot.release().block();
-		}
-
-		if (latch2.await(15, TimeUnit.SECONDS)) { //wait for the re-creation of max elements
-
-			assertThat(acquired2).as("acquired2 size").hasSize(3);
-
-			List<PoolableTest> poolables1 = acquired1.stream().map(PooledRef::poolable).collect(Collectors.toList());
-			List<PoolableTest> poolables3 = acquired3.stream().map(PooledRef::poolable).collect(Collectors.toList());
-
-			assertThat(poolables1)
-					.as("poolables 1 and 3 all used up")
-					.hasSameElementsAs(poolables3)
-					.allSatisfy(poolable -> assertThat(poolable.usedUp).isEqualTo(2));
-
-			assertThat(acquired2)
-					.as("acquired2 all new")
-					.allSatisfy(slot -> {
-						assertThat(slot).as("acquire2 slot").isNotNull();
-						assertThat(slot.poolable()).as("acquire2 poolable").isNotNull();
-						assertThat(slot.poolable().usedUp).as("acquire2 usedUp").isZero();
-					});
-		}
-		else {
-			fail("not enough new elements generated, missing " + latch2.getCount());
-		}
-	}
-
-	@ParameterizedTestWithName
 	@MethodSource("mruPools")
-	void smokeTestMruIdle(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void smokeTestMruIdle(PoolStyle configAdjuster) {
 		AtomicInteger newCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder =
 				PoolBuilder.from(Mono.fromSupplier(() -> new PoolableTest(newCount.incrementAndGet())))
@@ -648,12 +337,12 @@ public class CommonPoolTest {
 		    .assertNext(ref -> assertThat(ref.poolable().id).as("MRU second call returns ref1").isEqualTo(1))
 		    .verifyComplete();
 
-		assertThat(pool.idleSize()).as("idleSize after 2 MRU calls").isOne();
+		assertThat(pool.metrics().idleSize()).as("idleSize after 2 MRU calls").isOne();
 	}
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void firstAcquireCausesWarmupWithMinSize(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
+	void firstAcquireCausesWarmupWithMinSize(PoolStyle configAdjuster)
 			throws InterruptedException {
 		AtomicInteger allocationCount = new AtomicInteger();
 
@@ -691,7 +380,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void destroyBelowMinSizeThreshold(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster)
+	void destroyBelowMinSizeThreshold(PoolStyle configAdjuster)
 			throws InterruptedException {
 		AtomicInteger allocationCount = new AtomicInteger();
 
@@ -735,7 +424,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void returnedNotReleasedIfBorrowerCancelledEarly(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void returnedNotReleasedIfBorrowerCancelledEarly(PoolStyle configAdjuster) {
 		AtomicInteger releasedCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
@@ -766,7 +455,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void fixedPoolReplenishOnDestroy(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) throws Exception{
+	void fixedPoolReplenishOnDestroy(PoolStyle configAdjuster) throws Exception{
 		AtomicInteger releasedCount = new AtomicInteger();
 		AtomicInteger destroyedCount = new AtomicInteger();
 
@@ -814,7 +503,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void returnedNotReleasedIfBorrowerInScopeCancelledEarly(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void returnedNotReleasedIfBorrowerInScopeCancelledEarly(PoolStyle configAdjuster) {
 		AtomicInteger releasedCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder =
 				PoolBuilder.from(Mono.fromCallable(PoolableTest::new))
@@ -844,7 +533,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatedReleasedIfBorrowerCancelled(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void allocatedReleasedIfBorrowerCancelled(PoolStyle configAdjuster) {
 		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 		AtomicInteger newCount = new AtomicInteger();
 		AtomicInteger releasedCount = new AtomicInteger();
@@ -877,7 +566,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatedReleasedIfBorrowerInScopeCancelled(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void allocatedReleasedIfBorrowerInScopeCancelled(PoolStyle configAdjuster) {
 		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 		AtomicInteger newCount = new AtomicInteger();
 		AtomicInteger releasedCount = new AtomicInteger();
@@ -908,7 +597,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void pendingLimitSync(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void pendingLimitSync(PoolStyle configAdjuster) {
 		AtomicInteger allocatorCount = new AtomicInteger();
 		Disposable.Composite composite = Disposables.composite();
 
@@ -956,7 +645,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void pendingLimitAsync(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void pendingLimitAsync(PoolStyle configAdjuster) {
 		AtomicInteger allocatorCount = new AtomicInteger();
 		final Disposable.Composite composite = Disposables.composite();
 
@@ -1003,7 +692,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void cleanerFunctionError(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void cleanerFunctionError(PoolStyle configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeBetween(0, 1)
@@ -1025,7 +714,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void cleanerFunctionErrorDiscards(Function<PoolBuilder<PoolableTest, ?>, Pool<PoolableTest>> configAdjuster) {
+	void cleanerFunctionErrorDiscards(PoolStyle configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeBetween(0, 1)
@@ -1050,7 +739,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposingPoolDisposesElements(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void disposingPoolDisposesElements(PoolStyle configAdjuster) {
 		AtomicInteger cleanerCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
@@ -1084,7 +773,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposingPoolFailsPendingBorrowers(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void disposingPoolFailsPendingBorrowers(PoolStyle configAdjuster) {
 		AtomicInteger cleanerCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
@@ -1124,7 +813,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void releasingToDisposedPoolDisposesElement(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void releasingToDisposedPoolDisposesElement(PoolStyle configAdjuster) {
 		AtomicInteger cleanerCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
@@ -1158,7 +847,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void acquiringFromDisposedPoolFailsBorrower(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void acquiringFromDisposedPoolFailsBorrower(PoolStyle configAdjuster) {
 		AtomicInteger cleanerCount = new AtomicInteger();
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
@@ -1179,7 +868,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void poolIsDisposed(Function<PoolBuilder<PoolableTest, ?>, AbstractPool<PoolableTest>> configAdjuster) {
+	void poolIsDisposed(PoolStyle configAdjuster) {
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
 				.from(Mono.fromCallable(PoolableTest::new))
 				.sizeBetween(0, 3)
@@ -1195,7 +884,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposingPoolClosesCloseable(Function<PoolBuilder<Formatter, ?>, AbstractPool<Formatter>> configAdjuster) {
+	void disposingPoolClosesCloseable(PoolStyle configAdjuster) {
 		Formatter uniqueElement = new Formatter();
 
 		PoolBuilder<Formatter, ?> builder = PoolBuilder
@@ -1213,7 +902,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposeLaterIsLazy(Function<PoolBuilder<Formatter, ?>, AbstractPool<Formatter>> configAdjuster) {
+	void disposeLaterIsLazy(PoolStyle configAdjuster) {
 		Formatter uniqueElement = new Formatter();
 
 		PoolBuilder<Formatter, ?> builder = PoolBuilder
@@ -1235,7 +924,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposeLaterCompletesWhenAllReleased(Function<PoolBuilder<AtomicBoolean, ?>, AbstractPool<AtomicBoolean>> configAdjuster) {
+	void disposeLaterCompletesWhenAllReleased(PoolStyle configAdjuster) {
 		List<AtomicBoolean> elements = Arrays.asList(new AtomicBoolean(), new AtomicBoolean(), new AtomicBoolean());
 		AtomicInteger index = new AtomicInteger(0);
 
@@ -1258,7 +947,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void disposeLaterReleasedConcurrently(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void disposeLaterReleasedConcurrently(PoolStyle configAdjuster) {
 		AtomicInteger live = new AtomicInteger(0);
 
 		PoolBuilder<Integer, ?> builder = PoolBuilder
@@ -1283,7 +972,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void allocatorErrorInAcquireDrains_NoMinSize(PoolStyle configAdjuster) {
 		AtomicInteger errorThrown = new AtomicInteger();
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.delay(Duration.ofMillis(50))
@@ -1309,7 +998,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("loops")
-	void loopAllocatorErrorInAcquireDrains_NoMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void loopAllocatorErrorInAcquireDrains_NoMinSize(PoolStyle configAdjuster) {
 		TestLogger testLogger = new TestLogger();
 		Loggers.useCustomLoggers(s -> testLogger);
 		try {
@@ -1331,7 +1020,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void allocatorErrorInAcquireDrains_WithMinSize(PoolStyle configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.delay(Duration.ofMillis(50))
 						.flatMap(l -> Mono.<String>error(new IllegalStateException("boom"))))
@@ -1352,7 +1041,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("loops")
-	void loopAllocatorErrorInAcquireDrains_WithMinSize(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void loopAllocatorErrorInAcquireDrains_WithMinSize(PoolStyle configAdjuster) {
 		TestLogger testLogger = new TestLogger();
 		Loggers.useCustomLoggers(s -> testLogger);
 		try {
@@ -1374,7 +1063,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatorErrorInAcquireIsPropagated(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void allocatorErrorInAcquireIsPropagated(PoolStyle configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.<String>error(new IllegalStateException("boom")))
 				.sizeBetween(0, 1)
@@ -1388,7 +1077,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatorErrorInWarmupIsPropagated(Function<PoolBuilder<Object, ?>, AbstractPool<Object>> configAdjuster) {
+	void allocatorErrorInWarmupIsPropagated(PoolStyle configAdjuster) {
 		final PoolBuilder<Object, ?> builder = PoolBuilder
 				.from(Mono.error(new IllegalStateException("boom")))
 				.sizeBetween(1, 1)
@@ -1402,7 +1091,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void discardCloseableWhenCloseFailureLogs(Function<PoolBuilder<Closeable, ?>, AbstractPool<Closeable>> configAdjuster) {
+	void discardCloseableWhenCloseFailureLogs(PoolStyle configAdjuster) {
 		TestLogger testLogger = new TestLogger();
 		Loggers.useCustomLoggers(it -> testLogger);
 		try {
@@ -1429,7 +1118,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void pendingTimeoutNotImpactedByLongAllocation(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void pendingTimeoutNotImpactedByLongAllocation(PoolStyle configAdjuster) {
 		VirtualTimeScheduler vts1 = VirtualTimeScheduler.getOrSet();
 
 		try {
@@ -1469,7 +1158,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void pendingTimeoutImpactedByLongRelease(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void pendingTimeoutImpactedByLongRelease(PoolStyle configAdjuster) {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.just("instant"))
 				.sizeBetween(0, 1);
@@ -1489,7 +1178,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void pendingTimeoutDoesntCauseExtraReleasePostTimeout(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void pendingTimeoutDoesntCauseExtraReleasePostTimeout(PoolStyle configAdjuster) {
 		AtomicInteger resource = new AtomicInteger();
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
@@ -1517,7 +1206,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void eachBorrowerCanOnlyReleaseOnce(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void eachBorrowerCanOnlyReleaseOnce(PoolStyle configAdjuster) {
 		AtomicInteger resource = new AtomicInteger();
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
@@ -1545,7 +1234,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void eachBorrowerCanOnlyInvalidateOnce(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void eachBorrowerCanOnlyInvalidateOnce(PoolStyle configAdjuster) {
 		AtomicInteger resource = new AtomicInteger();
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
 				.from(Mono.just(resource))
@@ -1583,7 +1272,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationCountInWarmup(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationCountInWarmup(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1616,7 +1305,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationCountInBorrow(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationCountInBorrow(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1659,7 +1348,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationLatenciesInWarmup(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationLatenciesInWarmup(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1692,7 +1381,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsAllocationLatenciesInBorrow(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsAllocationLatenciesInBorrow(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1727,7 +1416,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsResetLatencies(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsResetLatencies(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1764,7 +1453,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsDestroyLatencies(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsDestroyLatencies(PoolStyle configAdjuster) {
 		AtomicBoolean flip = new AtomicBoolean();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1803,7 +1492,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsResetVsRecycle(Function<PoolBuilder<String, ?>, AbstractPool<String>> configAdjuster) {
+	void recordsResetVsRecycle(PoolStyle configAdjuster) {
 		AtomicReference<String> content = new AtomicReference<>("foo");
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<String, ?> builder = PoolBuilder
@@ -1824,7 +1513,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsLifetime(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) throws InterruptedException {
+	void recordsLifetime(PoolStyle configAdjuster) throws InterruptedException {
 		AtomicInteger allocCounter = new AtomicInteger();
 		AtomicInteger destroyCounter = new AtomicInteger();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
@@ -1864,7 +1553,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsIdleTimeFromConstructor(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) throws InterruptedException {
+	void recordsIdleTimeFromConstructor(PoolStyle configAdjuster) throws InterruptedException {
 		AtomicInteger allocCounter = new AtomicInteger();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<Integer, ?> builder = PoolBuilder
@@ -1895,7 +1584,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void recordsIdleTimeBetweenAcquires(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) throws InterruptedException {
+	void recordsIdleTimeBetweenAcquires(PoolStyle configAdjuster) throws InterruptedException {
 		AtomicInteger allocCounter = new AtomicInteger();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
 		PoolBuilder<Integer, ?> builder = PoolBuilder
@@ -1938,7 +1627,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void acquireTimeout(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void acquireTimeout(PoolStyle configAdjuster) {
 		AtomicInteger allocCounter = new AtomicInteger();
 		AtomicInteger didReset = new AtomicInteger();
 		//note the starter method here is irrelevant, only the config is created and passed to createPool
@@ -1969,7 +1658,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void instrumentedPoolsMetricsAreSelfViews(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void instrumentedPoolsMetricsAreSelfViews(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1));
 		Pool<Integer> pool = configAdjuster.apply(builder);
 
@@ -1983,7 +1672,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void instrumentAllocatedIdleAcquired(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void instrumentAllocatedIdleAcquired(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 				.sizeBetween(0, 1);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2007,7 +1696,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void instrumentAllocatedIdleAcquired_1(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
+	void instrumentAllocatedIdleAcquired_1(PoolStyle configAdjuster)
 			throws Exception {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 				.sizeBetween(0, 1);
@@ -2057,7 +1746,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void instrumentPendingAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void instrumentPendingAcquire(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 				.sizeBetween(0, 1);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2080,7 +1769,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void getConfigMaxPendingAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void getConfigMaxPendingAcquire(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 		                                          .maxPendingAcquire(12);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2092,7 +1781,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void getConfigMaxPendingAcquireUnbounded(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void getConfigMaxPendingAcquireUnbounded(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 		                                          .maxPendingAcquireUnbounded();
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2104,7 +1793,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void getConfigMaxSize(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void getConfigMaxSize(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 		                                          .sizeBetween(0, 22);
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2116,7 +1805,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("metrics")
-	void getConfigMaxSizeUnbounded(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void getConfigMaxSizeUnbounded(PoolStyle configAdjuster) {
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
 		                                          .sizeUnbounded();
 		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
@@ -2127,7 +1816,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void invalidateRaceIdleState(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
+	void invalidateRaceIdleState(PoolStyle configAdjuster)
 			throws Exception {
 		AtomicInteger destroyCounter = new AtomicInteger();
 		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.just(1))
@@ -2155,7 +1844,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("lruPools")
-	void releaseAllOnAcquire(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void releaseAllOnAcquire(PoolStyle configAdjuster) {
 		AtomicInteger intSource = new AtomicInteger();
 		AtomicInteger releasedIndex = new AtomicInteger();
 		ConcurrentLinkedQueue<Integer> destroyed = new ConcurrentLinkedQueue<>();
@@ -2194,7 +1883,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void releaseRacingWithPoolClose(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster)
+	void releaseRacingWithPoolClose(PoolStyle configAdjuster)
 			throws InterruptedException {
 		for (int i = 0; i < 10_000; i++) {
 			final int round = i + 1;
@@ -2231,7 +1920,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void poolCloseRacingWithRelease(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster)
+	void poolCloseRacingWithRelease(PoolStyle configAdjuster)
 			throws InterruptedException {
 		for (int i = 0; i < 10_000; i++) {
 			final int round = i + 1;
@@ -2267,7 +1956,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("slow")
-	void raceShutdownAndAcquireInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void raceShutdownAndAcquireInvalidate(PoolStyle configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
 				.from(Mono.fromSupplier(() -> {
@@ -2312,7 +2001,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("slow")
-	void raceShutdownAndPreAcquiredInvalidate(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void raceShutdownAndPreAcquiredInvalidate(PoolStyle configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
 				.from(Mono.fromSupplier(() -> {
@@ -2356,7 +2045,7 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	@Tag("slow")
-	void raceShutdownAndPreAcquiredReleaseWithEviction(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+	void raceShutdownAndPreAcquiredReleaseWithEviction(PoolStyle configAdjuster) {
 		AtomicInteger ai = new AtomicInteger();
 		PoolBuilder<AtomicInteger, PoolConfig<AtomicInteger>> configBuilder = PoolBuilder
 				.from(Mono.fromSupplier(() -> {
@@ -2399,7 +2088,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void maxPendingZero(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster) {
+	void maxPendingZero(PoolStyle configAdjuster) {
 		AtomicInteger source = new AtomicInteger();
 		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder
 				.from(Mono.fromSupplier(source::incrementAndGet))
@@ -2431,7 +2120,7 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void maxPendingOne(Function<PoolBuilder<Integer, ?>, AbstractPool<Integer>> configAdjuster)
+	void maxPendingOne(PoolStyle configAdjuster)
 			throws InterruptedException {
 		AtomicInteger source = new AtomicInteger();
 		PoolBuilder<Integer, PoolConfig<Integer>> configBuilder = PoolBuilder

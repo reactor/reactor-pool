@@ -148,6 +148,11 @@ class PoolBuilderTest {
 		public Mono<Void> disposeLater() {
 			return null;
 		}
+
+		@Override
+		public PoolConfig<T> config() {
+			return this.config;
+		}
 	}
 
 	static class FooExtraConfig<T> extends DefaultPoolConfig<T> {

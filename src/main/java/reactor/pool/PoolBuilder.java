@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -416,7 +416,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * @return an {@link InstrumentedPool}
 	 */
 	public InstrumentedPool<T> buildPool() {
-		return new SimpleDequePool<>(this.buildConfig(), true);
+		return new SimpleDequePool<>(this.buildConfig());
 	}
 
 	/**
@@ -429,39 +429,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 */
 	public <P extends InstrumentedPool<T>> P buildPoolAndDecorateWith(Function<? super InstrumentedPool<T>, P> decorator) {
 		return decorator.apply(buildPool());
-	}
-
-
-	/**
-	 * Build a LIFO flavor of {@link Pool}, that is to say a flavor where the last
-	 * {@link Pool#acquire()} {@link Mono Mono} that was pending is served first
-	 * whenever a resource becomes available.
-	 * <p>
-	 * This is different from the {@link #idleResourceReuseOrder(boolean) idle resource reuse order},
-	 * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
-	 *
-	 * @return a {@link Pool} with LIFO pending acquire ordering
-	 * @deprecated use {@link #buildPool()} instead, the FIFO vs LIFO is to be removed in 0.3.x
-	 */
-	@Deprecated
-	public InstrumentedPool<T> lifo() {
-		return new SimpleDequePool<>(this.buildConfig(), false);
-	}
-
-	/**
-	 * Build the default flavor of {@link Pool}, which has FIFO semantics on pending
-	 * {@link Pool#acquire()} {@link Mono Mono}, serving the oldest pending acquire first
-	 * whenever a resource becomes available.
-	 * <p>
-	 * This is different from the {@link #idleResourceReuseOrder(boolean) idle resource reuse order},
-	 * which is used when resources ARE available at the instant the {@link Pool#acquire()} is attempted.
-	 *
-	 * @return a {@link Pool} with FIFO pending acquire ordering
-	 * @deprecated use {@link #buildPool()} instead, to be removed in 0.3.x
-	 */
-	@Deprecated
-	public InstrumentedPool<T> fifo() {
-		return buildPool();
 	}
 
 	/**

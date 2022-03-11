@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ public class SimpleDequePoolStressTest {
 				.sizeBetween(1, 1) //we'll warmup the first resource
 				.evictionPredicate((res, meta) -> res.get() > 0)
 				.destroyHandler(ai -> Mono.fromRunnable(() -> ai.addAndGet(1000)))
-				.build(conf -> new SimpleDequePool<>(conf, true));
+				.build(SimpleDequePool::new);
 
 
 		{
@@ -113,7 +113,7 @@ public class SimpleDequePoolStressTest {
 					return v > 1;
 				})
 				.destroyHandler(ai -> Mono.fromRunnable(() -> ai.addAndGet(1000)))
-				.build(conf -> new SimpleDequePool<>(conf, true));
+				.build(SimpleDequePool::new);
 
 		private final PooledRef<AtomicInteger> ref = pool.acquire().block(Duration.ofMillis(100));
 
@@ -157,7 +157,7 @@ public class SimpleDequePoolStressTest {
 				.from(Mono.fromCallable(() -> new AtomicInteger(firstResourceCreated.getAndSet(true) ? 2 : 1)))
 				.sizeBetween(0, 1)
 				.maxPendingAcquire(1)
-				.build(conf -> new SimpleDequePool<>(conf, true));
+				.build(SimpleDequePool::new);
 
 		@Actor
 		public void acquisition1() {

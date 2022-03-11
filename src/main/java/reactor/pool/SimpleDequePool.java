@@ -64,7 +64,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final ConcurrentLinkedDeque TERMINATED = new ConcurrentLinkedDeque();
 
 	final boolean idleResourceLeastRecentlyUsed;
-	final boolean pendingBorrowerFirstInFirstServed;
 
 	volatile Deque<QueuePooledRef<POOLABLE>> idleResources;
 	@SuppressWarnings("rawtypes")
@@ -99,10 +98,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	Disposable evictionTask;
 
-	SimpleDequePool(PoolConfig<POOLABLE> poolConfig, boolean pendingBorrowerFirstInFirstServed) {
+	SimpleDequePool(PoolConfig<POOLABLE> poolConfig) {
 		super(poolConfig, Loggers.getLogger(SimpleDequePool.class));
 		this.idleResourceLeastRecentlyUsed = poolConfig.reuseIdleResourcesInLruOrder();
-		this.pendingBorrowerFirstInFirstServed = pendingBorrowerFirstInFirstServed;
 		this.pending = new ConcurrentLinkedDeque<>(); //unbounded
 		this.idleResources = new ConcurrentLinkedDeque<>();
 		recordInteractionTimestamp();
@@ -606,9 +604,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	 */
 	@Nullable
 	Borrower<POOLABLE> pendingPoll(Deque<Borrower<POOLABLE>> borrowers) {
-		Borrower<POOLABLE> b = this.pendingBorrowerFirstInFirstServed ?
-				borrowers.pollFirst() :
-				borrowers.pollLast();
+		Borrower<POOLABLE> b = borrowers.pollFirst();
 		if (b != null) {
 			PENDING_SIZE.decrementAndGet(this);
 		}

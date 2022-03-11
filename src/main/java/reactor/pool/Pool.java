@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -137,15 +137,11 @@ public interface Pool<POOLABLE> extends Disposable {
 
 	/**
 	 * Return the pool's {@link PoolConfig configuration}.
-	 * <p>
-	 * Until 0.3.0, implementors MAY throw an {@link UnsupportedOperationException} instead,
-	 * although all vanilla reactor-pool implementation do return their configuration.
+	 * @implNote Starting at 1.0.x, implementors MUST return a configuration.
 	 *
 	 * @return the {@link PoolConfig}
 	 */
-	default PoolConfig<POOLABLE> config() {
-		throw new UnsupportedOperationException("This instance of Pool doesn't expose its configuration");
-	}
+	PoolConfig<POOLABLE> config();
 
 	/**
 	 * Shutdown the pool by:

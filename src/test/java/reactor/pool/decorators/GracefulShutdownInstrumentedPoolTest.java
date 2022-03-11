@@ -184,6 +184,11 @@ class GracefulShutdownInstrumentedPoolTest {
 			public Mono<Void> disposeLater() {
 				return null;
 			}
+
+			@Override
+			public PoolConfig<Object> config() {
+				throw new UnsupportedOperationException("test pool");
+			}
 		};
 
 		assertThatExceptionOfType(UnsupportedOperationException.class)

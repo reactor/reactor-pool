@@ -284,6 +284,8 @@ task japicmp(type: JapicmpTask) {
   classExcludes = [
   ]
   methodExcludes = [
+          // New methods with default implementation
+          "reactor.pool.PoolConfig#acquireTimer()"
   ]
 }
 check.dependsOn japicmp

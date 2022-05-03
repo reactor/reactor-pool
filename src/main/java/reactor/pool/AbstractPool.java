@@ -425,7 +425,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 				boolean noPermits = pool.poolConfig.allocationStrategy().estimatePermitCount() == 0;
 
 				if (!acquireTimeout.isZero() && noIdle && noPermits) {
-					timeoutTask = Schedulers.parallel().schedule(this, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
+					timeoutTask = this.pool.config().acquireTimer().apply(this, acquireTimeout);
 				}
 				//doAcquire should interrupt the countdown if there is either an available
 				//resource or the pool can allocate one

@@ -18,11 +18,13 @@ package reactor.pool;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -125,5 +127,19 @@ public interface PoolConfig<POOLABLE> {
 	 * @return {@code true} for LRU, {@code false} for MRU
 	 */
 	boolean reuseIdleResourcesInLruOrder();
+
+	/**
+	 * The function to apply when scheduling timers for acquisitions that are added to the pending queue.
+	 * i.e. there is no idle resource and no new resource can be created currently, so a timer is scheduled using the
+	 * returned function.
+	 * <p>
+	 *
+	 * By default, the {@link Schedulers#parallel()} scheduler is used.
+	 *
+	 * @return the function to apply when scheduling timers for pending acquisitions
+	 */
+	default BiFunction<Runnable, Duration, Disposable> acquireTimer() {
+		return PoolBuilder.DEFAULT_ACQUIRE_TIMER;
+	}
 
 }

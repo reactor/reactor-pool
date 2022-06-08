@@ -20,6 +20,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -75,6 +77,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	Clock                                  clock                       = Clock.systemUTC();
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder         = true;
+	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer = DEFAULT_PENDING_ACQUIRE_TIMER;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -96,6 +99,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		this.metricsRecorder = source.metricsRecorder;
 		this.clock = source.clock;
 		this.idleLruOrder = source.idleLruOrder;
+		this.pendingAcquireTimer = source.pendingAcquireTimer;
 	}
 
 	/**
@@ -110,6 +114,22 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 */
 	public PoolBuilder<T, CONF> acquisitionScheduler(Scheduler acquisitionScheduler) {
 		this.acquisitionScheduler = Objects.requireNonNull(acquisitionScheduler, "acquisitionScheduler");
+		return this;
+	}
+
+	/**
+	 * Define how timeouts are scheduled when a {@link Pool#acquire(Duration)} call is made and the acquisition is pending.
+	 * i.e. there is no idle resource and no new resource can be created currently, so a timeout is scheduled using the
+	 * provided function.
+	 * <p>
+	 *
+	 * By default, the {@link Schedulers#parallel()} scheduler is used.
+	 *
+	 * @param pendingAcquireTimer the function to apply when scheduling timers for acquisitions that are added to the pending queue.
+	 * @return this {@link Pool} builder
+	 */
+	public PoolBuilder<T, CONF> pendingAcquireTimer(BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer) {
+		this.pendingAcquireTimer = Objects.requireNonNull(pendingAcquireTimer, "pendingAcquireTimer");
 		return this;
 	}
 
@@ -450,6 +470,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 						new AllocationStrategies.UnboundedAllocationStrategy() :
 						allocationStrategy,
 				maxPending,
+				pendingAcquireTimer,
 				releaseHandler,
 				destroyHandler,
 				evictionPredicate,
@@ -479,5 +500,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
 	static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
+	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
 
 }

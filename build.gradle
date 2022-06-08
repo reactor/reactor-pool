@@ -286,9 +286,12 @@ task japicmp(type: JapicmpTask) {
   methodExcludes = [
     "reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock)",
     "reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock, boolean)",
+    "reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, java.time.Duration, reactor.core.scheduler.Scheduler, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock, boolean)",
     "reactor.pool.Pool#config()",
     "reactor.pool.PoolBuilder#fifo()",
-    "reactor.pool.PoolBuilder#lifo()"
+    "reactor.pool.PoolBuilder#lifo()",
+    //TODO: remove before GA once we compare API against latest 0.2.x
+    "reactor.pool.PoolConfig#pendingAcquireTimer()"
   ]
 }
 check.dependsOn japicmp

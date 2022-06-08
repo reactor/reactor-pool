@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package reactor.pool;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -125,5 +127,18 @@ public interface PoolConfig<POOLABLE> {
 	 * @return {@code true} for LRU, {@code false} for MRU
 	 */
 	boolean reuseIdleResourcesInLruOrder();
+
+	/**
+	 * The function that defines how timeouts are scheduled when a {@link Pool#acquire(Duration)} call is made and the acquisition is pending.
+	 * i.e. there is no idle resource and no new resource can be created currently, so a timeout is scheduled using the returned function.
+	 * <p>
+	 *
+	 * By default, the {@link Schedulers#parallel()} scheduler is used.
+	 *
+	 * @return the function to apply when scheduling timers for pending acquisitions
+	 */
+	default BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer() {
+		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
+	}
 
 }

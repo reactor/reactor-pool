@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,15 @@ package reactor.pool;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import io.reactivex.Flowable;
 import org.junit.jupiter.api.Test;
 
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -107,6 +110,19 @@ class PoolBuilderTest {
 		StepVerifier.create(config.allocator())
 					.assertNext(n -> assertThat(n).matches(numberPredicate))
 					.verifyComplete();
+	}
+
+	@Test
+	void pendingAcquireTimerCustomized() {
+		final BiFunction<Runnable, Duration, Disposable> customizedBiFunction = (r, d) -> {
+			r.run();
+			return Disposables.disposed();
+		};
+		PoolBuilder<Integer, PoolConfig<Integer>> poolBuilder = PoolBuilder.from(Mono.just(1))
+				.pendingAcquireTimer(customizedBiFunction);
+		PoolConfig<Integer> config = poolBuilder.buildConfig();
+
+		assertThat(config.pendingAcquireTimer()).isSameAs(customizedBiFunction);
 	}
 
 	@Test

@@ -1517,6 +1517,41 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
+	void pendingTimeoutWithCustomAcquireTimer(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
+		AtomicInteger resource = new AtomicInteger();
+		AtomicBoolean customTimeout = new AtomicBoolean();
+		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
+				.from(Mono.just(resource))
+				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
+				.sizeBetween(0, 1)
+				.pendingAcquireTimer((r, d) -> {
+					customTimeout.set(true);
+					return Schedulers.parallel().schedule(r, d.toMillis(), TimeUnit.MILLISECONDS);
+				});
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> uniqueRef = pool.acquire().block();
+		assert uniqueRef != null;
+
+		StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable))
+				.expectSubscription()
+				.expectNoEvent(Duration.ofMillis(100))
+				.thenAwait(Duration.ofMillis(1))
+				.verifyErrorSatisfies(e -> assertThat(e)
+						.isInstanceOf(TimeoutException.class)
+						.isExactlyInstanceOf(PoolAcquireTimeoutException.class)
+						.hasMessage("Pool#acquire(Duration) has been pending for more than the configured timeout of 100ms"));
+
+		assertThat(customTimeout).as("custom pendingAcquireTimer invoked").isTrue();
+
+		assertThat(resource).as("post timeout but before resource available").hasValue(0);
+
+		uniqueRef.release().block();
+		assertThat(resource).as("post timeout and after resource available").hasValue(1);
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
 	void eachBorrowerCanOnlyReleaseOnce(Function<PoolBuilder<AtomicInteger, ?>, AbstractPool<AtomicInteger>> configAdjuster) {
 		AtomicInteger resource = new AtomicInteger();
 		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder

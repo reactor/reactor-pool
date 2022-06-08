@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package reactor.pool;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -35,6 +37,7 @@ import reactor.core.scheduler.Schedulers;
  */
 public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 
+	protected final BiFunction<Runnable, Duration, Disposable> 	  pendingAcquireTimer;
 	protected final Mono<POOLABLE>                                allocator;
 	protected final AllocationStrategy                            allocationStrategy;
 	protected final int                                           maxPending;
@@ -51,6 +54,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
 			int maxPending,
+			BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer,
 			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
 			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
 			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
@@ -60,6 +64,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock,
 			boolean isIdleLRU) {
+		this.pendingAcquireTimer = pendingAcquireTimer;
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
 		this.maxPending = maxPending;
@@ -72,6 +77,27 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
 		this.isIdleLRU = isIdleLRU;
+	}
+
+	/**
+	 * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, BiFunction, Function, Function, BiPredicate, Duration, Scheduler, Scheduler, PoolMetricsRecorder, Clock, boolean) other constructor}
+	 * with explicit setting of background eviction, to be removed in 1.0.0 at the earliest
+	 */
+	@Deprecated
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Duration evictInBackgroundInterval,
+			Scheduler evictInBackgroundScheduler,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock,
+			boolean isIdleLRU) {
+		this(allocator, allocationStrategy, maxPending, PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER, releaseHandler, destroyHandler, evictionPredicate, evictInBackgroundInterval,
+				evictInBackgroundScheduler, acquisitionScheduler, metricsRecorder, clock, isIdleLRU);
 	}
 
 	/**
@@ -127,6 +153,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.allocator = toCopyDpc.allocator;
 			this.allocationStrategy = toCopyDpc.allocationStrategy;
 			this.maxPending = toCopyDpc.maxPending;
+			this.pendingAcquireTimer = toCopyDpc.pendingAcquireTimer;
 			this.releaseHandler = toCopyDpc.releaseHandler;
 			this.destroyHandler = toCopyDpc.destroyHandler;
 			this.evictionPredicate = toCopyDpc.evictionPredicate;
@@ -141,6 +168,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.allocator = toCopy.allocator();
 			this.allocationStrategy = toCopy.allocationStrategy();
 			this.maxPending = toCopy.maxPending();
+			this.pendingAcquireTimer = toCopy.pendingAcquireTimer();
 			this.releaseHandler = toCopy.releaseHandler();
 			this.destroyHandler = toCopy.destroyHandler();
 			this.evictionPredicate = toCopy.evictionPredicate();
@@ -166,6 +194,11 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public int maxPending() {
 		return this.maxPending;
+	}
+
+	@Override
+	public BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer() {
+		return this.pendingAcquireTimer;
 	}
 
 	@Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
@@ -34,7 +33,6 @@ import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.Logger;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
@@ -391,16 +389,16 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
 		final CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual;
 		final AbstractPool<POOLABLE> pool;
-		final Duration acquireTimeout;
+		final Duration pendingAcquireTimeout;
 
 		Disposable timeoutTask;
 
 		Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual,
 				AbstractPool<POOLABLE> pool,
-				Duration acquireTimeout) {
+				Duration pendingAcquireTimeout) {
 			this.actual = actual;
 			this.pool = pool;
-			this.acquireTimeout = acquireTimeout;
+			this.pendingAcquireTimeout = pendingAcquireTimeout;
 			this.timeoutTask = TIMEOUT_DISPOSED;
 		}
 
@@ -412,7 +410,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		public void run() {
 			if (Borrower.this.compareAndSet(false, true)) {
 				pool.cancelAcquire(Borrower.this);
-				actual.onError(new PoolAcquireTimeoutException(acquireTimeout));
+				actual.onError(new PoolAcquireTimeoutException(pendingAcquireTimeout));
 			}
 		}
 
@@ -424,8 +422,8 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 				boolean noIdle = pool.idleSize() == 0;
 				boolean noPermits = pool.poolConfig.allocationStrategy().estimatePermitCount() == 0;
 
-				if (!acquireTimeout.isZero() && noIdle && noPermits) {
-					timeoutTask = Schedulers.parallel().schedule(this, acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
+				if (!pendingAcquireTimeout.isZero() && noIdle && noPermits) {
+					timeoutTask = this.pool.config().pendingAcquireTimer().apply(this, pendingAcquireTimeout);
 				}
 				//doAcquire should interrupt the countdown if there is either an available
 				//resource or the pool can allocate one

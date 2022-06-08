@@ -1524,7 +1524,7 @@ public class CommonPoolTest {
 				.from(Mono.just(resource))
 				.releaseHandler(atomic -> Mono.fromRunnable(atomic::incrementAndGet))
 				.sizeBetween(0, 1)
-				.acquireTimer((r, d) -> {
+				.pendingAcquireTimer((r, d) -> {
 					customTimeout.set(true);
 					return Schedulers.parallel().schedule(r, d.toMillis(), TimeUnit.MILLISECONDS);
 				});
@@ -1542,7 +1542,7 @@ public class CommonPoolTest {
 						.isExactlyInstanceOf(PoolAcquireTimeoutException.class)
 						.hasMessage("Pool#acquire(Duration) has been pending for more than the configured timeout of 100ms"));
 
-		assertThat(customTimeout).as("custom acquireTimer invoked").isTrue();
+		assertThat(customTimeout).as("custom pendingAcquireTimer invoked").isTrue();
 
 		assertThat(resource).as("post timeout but before resource available").hasValue(0);
 

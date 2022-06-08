@@ -285,7 +285,7 @@ task japicmp(type: JapicmpTask) {
   ]
   methodExcludes = [
           // New methods with default implementation
-          "reactor.pool.PoolConfig#acquireTimer()"
+          "reactor.pool.PoolConfig#pendingAcquireTimer()"
   ]
 }
 check.dependsOn japicmp

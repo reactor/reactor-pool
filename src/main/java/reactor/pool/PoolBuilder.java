@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	Clock                                  clock                       = Clock.systemUTC();
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder         = true;
-	BiFunction<Runnable, Duration, Disposable> acquireTimer = DEFAULT_ACQUIRE_TIMER;
+	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer = DEFAULT_PENDING_ACQUIRE_TIMER;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -99,7 +99,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		this.metricsRecorder = source.metricsRecorder;
 		this.clock = source.clock;
 		this.idleLruOrder = source.idleLruOrder;
-		this.acquireTimer = source.acquireTimer;
+		this.pendingAcquireTimer = source.pendingAcquireTimer;
 	}
 
 	/**
@@ -118,18 +118,18 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	}
 
 	/**
-	 * Set a function to apply when scheduling timers for acquisitions that are added to the pending queue.
-	 * i.e. there is no idle resource and no new resource can be created currently, so a timer is scheduled using the
+	 * Define how timeouts are scheduled when a {@link Pool#acquire(Duration)} call is made and the acquisition is pending.
+	 * i.e. there is no idle resource and no new resource can be created currently, so a timeout is scheduled using the
 	 * provided function.
 	 * <p>
 	 *
 	 * By default, the {@link Schedulers#parallel()} scheduler is used.
 	 *
-	 * @param acquireTimer the function to apply when scheduling timers for acquisitions that are added to the pending queue.
+	 * @param pendingAcquireTimer the function to apply when scheduling timers for acquisitions that are added to the pending queue.
 	 * @return this {@link Pool} builder
 	 */
-	public PoolBuilder<T, CONF> acquireTimer(BiFunction<Runnable, Duration, Disposable> acquireTimer) {
-		this.acquireTimer = Objects.requireNonNull(acquireTimer, "acquireTimer");
+	public PoolBuilder<T, CONF> pendingAcquireTimer(BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer) {
+		this.pendingAcquireTimer = Objects.requireNonNull(pendingAcquireTimer, "pendingAcquireTimer");
 		return this;
 	}
 
@@ -503,7 +503,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 						new AllocationStrategies.UnboundedAllocationStrategy() :
 						allocationStrategy,
 				maxPending,
-				acquireTimer,
+				pendingAcquireTimer,
 				releaseHandler,
 				destroyHandler,
 				evictionPredicate,
@@ -533,6 +533,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
 	static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
-	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
+	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
 
 }

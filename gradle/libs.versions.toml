@@ -1,6 +1,6 @@
 [versions]
 # Baselines, should be updated on every release
-baseline-pool-api = "0.2.8"
+baseline-pool-api = "0.2.9"
 reactorCore = "3.5.0-SNAPSHOT"
 reactorAddons = "3.5.0-SNAPSHOT"
 

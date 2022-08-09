@@ -1,13 +1,13 @@
 [versions]
 # Baselines, should be updated on every release
 baseline-pool-api = "0.2.9"
-reactorCore = "3.5.0-SNAPSHOT"
-reactorAddons = "3.5.0-SNAPSHOT"
+reactorCore = "3.5.0-M5"
+reactorAddons = "3.5.0-M5"
 
 # Other shared versions
 junit = "5.8.2"
 slf4j = "1.7.36"
-reactiveStreams = "1.0.3"
+reactiveStreams = "1.0.4"
 
 [libraries]
 assertj = "org.assertj:assertj-core:3.22.0"

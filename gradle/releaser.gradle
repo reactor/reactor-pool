@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,6 @@
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoField
-
-if (project.hasProperty("releaserDryRun") && project.findProperty("releaserDryRun") != "false") {
-	println "Adding MavenLocal() for benefit of releaser dry run"
-	project.repositories {
-		mavenLocal()
-	}
-}
-
-task groupId(group: "releaser helpers", description: "output the group id of the project") {
-	doLast {
-		println project.group
-	}
-}
 
 
 task copyReadme(type: Copy, group: "releaser helpers", description: "copies the README in preparation for search and replace") {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,35 +14,29 @@
  * limitations under the License.
  */
 
-configure(rootProject) {
+javadoc {
+	dependsOn jar
+	group = "documentation"
+	description = "Generates Javadoc API documentation."
 
-	javadoc {
-		dependsOn jar
-		group = "Reactor Pool Javadoc"
-
-		description = "Generates aggregated Javadoc API documentation."
-		title = "Reactor Pool ${version}"
-
-		if (JavaVersion.current().isJava8Compatible()) {
-				options.addStringOption('Xdoclint:none', '-quiet')
-		}
-		options.addStringOption('charSet', 'UTF-8')
-		options.tags = [ "apiNote:a:API Note:"]
-
-		options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
-		options.author = true
-		options.header = "Reactor Object Pool"
-		options.overview = "docs/api/overview.html"
-		options.stylesheetFile = file("docs/api/stylesheet.css")
-		options.links(rootProject.ext.javadocLinks)
-
-		maxMemory = "1024m"
-		destinationDir = new File(buildDir, "docs/javadoc")
-		source rootProject.sourceSets.main.allJava
-		doFirst {
-			classpath = files(rootProject.sourceSets.main.compileClasspath)
-		}
+	title = "${project.name} ${version}"
+	if (JavaVersion.current().isJava8Compatible()) {
+		options.addStringOption('Xdoclint:none', '-quiet')
 	}
+	options.addStringOption('charSet', 'UTF-8')
+	options.tags = [ "apiNote:a:API Note:"]
 
+	options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
+	options.author = true
+	options.header = "$project.name"
+	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
+	options.links(rootProject.ext.javadocLinks) //TODO add micrometer ?
+
+	maxMemory = "1024m"
+	destinationDir = new File(project.buildDir, "docs/javadoc")
+	source project.sourceSets.main.allJava
+	doFirst {
+		classpath = files(project.sourceSets.main.compileClasspath)
+	}
 }
 

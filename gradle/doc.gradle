@@ -30,7 +30,13 @@ javadoc {
 	options.author = true
 	options.header = "$project.name"
 	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
-	options.links(rootProject.ext.javadocLinks) //TODO add micrometer ?
+	options.links([
+		"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+		jdkJavadoc,
+		//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
+		"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
+		//TODO add micrometer ?
+	] as String[])
 
 	maxMemory = "1024m"
 	destinationDir = new File(project.buildDir, "docs/javadoc")

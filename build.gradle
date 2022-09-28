@@ -61,11 +61,6 @@ ext {
     jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
   }
   println "JDK Javadoc link for this build is ${rootProject.jdkJavadoc}"
-  javadocLinks = [
-    "https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
-    jdkJavadoc,
-    "https://www.reactive-streams.org/reactive-streams-${libs.versions.reactiveStreams.get()}-javadoc/"
-  ] as String[]
 
   osgiVersion = osgiVersion(version.toString())
 }

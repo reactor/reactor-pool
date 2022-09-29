@@ -17,3 +17,4 @@
 rootProject.name = 'reactor-pool-base'
 
 include 'reactor-pool'
+include 'reactor-pool-micrometer'

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,22 @@
  * limitations under the License.
  */
 
-rootProject.name = 'reactor-pool-base'
+package reactor.pool;
 
-include 'reactor-pool'
+/**
+ * A {@link RuntimeException} that denotes that a {@link Pool} has been
+ * {@link Pool#dispose() disposed}.
+ *
+ * @author Simon Baslé
+ */
+public class PoolShutdownException extends RuntimeException {
+
+	public PoolShutdownException() {
+		super("Pool has been shut down");
+	}
+
+	public PoolShutdownException(String reason) {
+		super(reason);
+	}
+
+}

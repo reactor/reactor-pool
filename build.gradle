@@ -14,51 +14,46 @@
  * limitations under the License.
  */
 
-import me.champeau.gradle.japicmp.JapicmpTask
 import org.gradle.util.VersionNumber
-
 import java.text.SimpleDateFormat
 
 plugins {
   id "idea"
-  alias(libs.plugins.artifactory) apply false
+  alias(libs.plugins.artifactory)
   alias(libs.plugins.bnd) apply false
   alias(libs.plugins.japicmp)
   alias(libs.plugins.download)
-  alias(libs.plugins.jcstress)
+  alias(libs.plugins.jcstress) apply false
   alias(libs.plugins.spotless)
 }
 
-description = 'Reactive Object Pool'
+apply from: 'gradle/releaser.gradle'
 
-ext {
-  if (project.hasProperty('versionBranch') && version.toString().endsWith("-SNAPSHOT")) {
-    versionBranch = versionBranch.replaceAll("\"", "").trim()
-    if (!versionBranch.isEmpty()) {
-      realVersion = version.toString() + "-" + versionBranch
-      project.version = realVersion
-      println "Building special snapshot ${project.version}"
-    }
-  }
+description = 'Reactive Object Pool root build'
 
-  versionNumber = VersionNumber.parse(version.toString())
+def osgiVersion(String v) {
+  def versionNumber = VersionNumber.parse(v)
+  def result
   if (versionNumber.qualifier == null || versionNumber.qualifier.size() == 0) {
-    osgiVersion = "${version}.RELEASE"
-    println "$version is a release, will use $osgiVersion for bnd"
+    result = "${v}.RELEASE"
+    println "$v is a release, will use $result for bnd"
   }
   else if (versionNumber.qualifier.equalsIgnoreCase("SNAPSHOT")) {
-    sdf = new SimpleDateFormat("yyyyMMddHHmm");
+    def sdf = new SimpleDateFormat("yyyyMMddHHmm");
     sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-    buildTimestamp = sdf.format(new Date())
-    osgiVersion = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.BUILD-$buildTimestamp"
-    println "$version is a snapshot, will use $osgiVersion for bnd"
+    def buildTimestamp = sdf.format(new Date())
+    result = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.BUILD-$buildTimestamp"
+    println "$v is a snapshot, will use $result for bnd"
   }
   else {
-    osgiVersion = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.${versionNumber.qualifier}"
-    println "$version is neither release nor snapshot, will use $osgiVersion for bnd"
+    result = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.${versionNumber.qualifier}"
+    println "$v is neither release nor snapshot, will use $result for bnd"
   }
+  return result
+}
 
-  isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo, but eh
+ext {
+  isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo
 
   jdk = JavaVersion.current().majorVersion
   jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
@@ -66,29 +61,36 @@ ext {
     jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
   }
   println "JDK Javadoc link for this build is ${rootProject.jdkJavadoc}"
-  javadocLinks = [
-    "https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
-    jdkJavadoc,
-    "https://www.reactive-streams.org/reactive-streams-${libs.versions.reactiveStreams.get()}-javadoc/"
-  ] as String[]
 
-  bndOptions = [
-          "Export-Package": [
-                  "!*internal*",
-                  "reactor.pool.*;version=$osgiVersion"
-          ].join(","),
-          "Import-Package": [
-                  "!javax.annotation",
-                  "*"
-          ].join(","),
-          "Bundle-Name" : "reactor-pool",
-          "Bundle-SymbolicName" : "io.projectreactor.addons.reactor-pool",
-          "Bundle-Version" : "$osgiVersion"
-  ]
+  osgiVersion = osgiVersion(version.toString())
 }
 
+spotless {
+  if (project.hasProperty("spotlessFrom")) {
+    if (project.spotlessFrom == "ALL") {
+      println "[Spotless] Ratchet deactivated"
+    }
+    else {
+      println "[Spotless] Ratchet from $project.spotlessFrom"
+      ratchetFrom project.spotlessFrom
+    }
+  }
+  else if (isCiServer) {
+    println "[Spotless] CI detected without explicit branch, not enforcing check"
+    enforceCheck false
+  }
+  else {
+    String spotlessBranch = "origin/0.2.x"
+    println "[Spotless] Local run detected, ratchet from $spotlessBranch"
+    ratchetFrom spotlessBranch
+  }
+  java {
+    target '**/*.java'
+    licenseHeaderFile('codequality/spotless/licenseSlashstarStyle.txt')
+  }
+}
 
-configure(rootProject) { project ->
+configure(subprojects) { project ->
   group = 'io.projectreactor.addons'
 
   apply plugin: 'java-library'
@@ -96,7 +98,6 @@ configure(rootProject) { project ->
   apply plugin: 'biz.aQute.bnd.builder'
   apply from: "${rootDir}/gradle/doc.gradle"
   apply from: "${rootDir}/gradle/setup.gradle"
-  apply from: "${rootDir}/gradle/releaser.gradle"
 
   jacocoTestReport {
     reports {
@@ -149,31 +150,6 @@ configure(rootProject) { project ->
     exclude '**/*Abstract*.*'
   }
 
-  spotless {
-    if (project.hasProperty("spotlessFrom")) {
-      if (project.spotlessFrom == "ALL") {
-        println "[Spotless] Ratchet deactivated"
-      }
-      else {
-        println "[Spotless] Ratchet from $project.spotlessFrom"
-        ratchetFrom project.spotlessFrom
-      }
-    }
-    else if (isCiServer) {
-      println "[Spotless] CI detected without explicit branch, not enforcing check"
-      enforceCheck false
-    }
-    else {
-      String spotlessBranch = "origin/0.2.x"
-      println "[Spotless] Local run detected, ratchet from $spotlessBranch"
-      ratchetFrom spotlessBranch
-    }
-    java {
-      target '**/*.java'
-      licenseHeaderFile('codequality/spotless/licenseSlashstarStyle.txt')
-    }
-  }
-
   test {
     //configure tag support for the core test task
     def tags = rootProject.findProperty("junit-tags")
@@ -202,43 +178,6 @@ configure(rootProject) { project ->
     }
     maven { url 'https://repo.spring.io/milestone' }
   }
-
-  dependencies {
-    api libs.reactor.core
-
-    // JSR-305 annotations
-    compileOnly libs.jsr305
-
-    // Testing
-    testImplementation libs.assertj
-    testImplementation libs.awaitility
-    testImplementation libs.hdrHistogram
-    testRuntimeOnly libs.slf4j.jcl
-    testRuntimeOnly libs.logback
-    testImplementation libs.mockito
-
-    testImplementation libs.reactor.test
-    testImplementation libs.reactor.extra
-
-    testImplementation libs.rxjava2
-
-    testImplementation platform(libs.junit.bom)
-    testImplementation "org.junit.jupiter:junit-jupiter-api"
-    testImplementation "org.junit.jupiter:junit-jupiter-params"
-    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
-  }
-
-  jar {
-    manifest {
-      attributes("Created-By": "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})",
-              "Implementation-Title": project.name,
-              "Implementation-Version": project.version,
-              "Automatic-Module-Name": "reactor.pool")
-    }
-    bnd(bndOptions)
-  }
-
-  check.dependsOn jacocoTestReport
 }
 
 
@@ -247,75 +186,3 @@ configurations.all {
   resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
-
-task downloadBaseline(type: Download) {
-  onlyIfNewer true
-  compress true
-
-  src "${repositories.mavenCentral().url}io/projectreactor/addons/reactor-pool/${libs.versions.baseline.pool.api.get()}/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
-  dest "${buildDir}/baselineLibs/reactor-pool-${libs.versions.baseline.pool.api.get()}.jar"
-}
-
-def japicmpReport = tasks.register('japicmpReport') {
-  onlyIf {
-    japicmp.state.failure != null
-  }
-  doLast {
-    def reportFile = file("${project.buildDir}/reports/japi.txt")
-    if (reportFile.exists()) {
-      println "\n **********************************"
-      println " * /!\\ API compatibility failures *"
-      println " **********************************"
-      println "Japicmp report was filtered and interpreted to find the following incompatibilities:"
-      reportFile.eachLine {
-        if (it.contains("*") && (!it.contains("***") || it.contains("****")))
-          println "source incompatible change: $it"
-        else if (it.contains("!"))
-          println "binary incompatible change: $it"
-      }
-    }
-    else println "No incompatible change to report"
-  }
-}
-
-task japicmp(type: JapicmpTask) {
-  if (project.gradle.startParameter.isOffline()) {
-    println "Offline: skipping downloading of baseline and JAPICMP"
-    enabled = false
-  }
-  else if ("${libs.versions.baseline.pool.api.get()}" == "SKIP") {
-    println "SKIP: Instructed to skip the baseline comparison"
-    enabled = false
-  }
-  else {
-    println "Will download and perform baseline comparison with ${libs.versions.baseline.pool.api.get()}"
-    dependsOn(downloadBaseline)
-    finalizedBy(japicmpReport)
-  }
-
-  oldClasspath.from(tasks.downloadBaseline.outputs.files)
-  newClasspath.from(tasks.jar.outputs.files)
-  // these onlyXxx parameters result in a report that is slightly too noisy, but better than
-  // onlyBinaryIncompatibleModified = true which masks source-incompatible-only changes
-  onlyBinaryIncompatibleModified = false
-  onlyModified = true
-  failOnModification = true
-  failOnSourceIncompatibility = true
-  txtOutputFile = file("${project.buildDir}/reports/japi.txt")
-  ignoreMissingClasses = true
-  includeSynthetic = true
-  compatibilityChangeExcludes = [ "METHOD_NEW_DEFAULT" ]
-
-  //TODO after a release, bump the gradle.properties baseline
-  //TODO after a release, remove the reactor-pool exclusions below if any
-  classExcludes = [
-  ]
-  methodExcludes = [ ]
-}
-check.dependsOn japicmp
-
-jcstress {
-  mode = 'default' //quick, default, tough
-}
-tasks.jcstressJar.classifier("jcstress") // make sure jcstress jar doesn't override our own
-tasks.check.dependsOn(tasks.jcstress)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,26 @@
 
 import org.gradle.util.VersionNumber
 
+apply plugin: 'maven-publish'
+//we also conditionally apply artifactory and signing plugins below
+
+jar {
+	manifest.attributes["Created-By"] = "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})"
+	manifest.attributes["Implementation-Title"] = project.name
+	manifest.attributes["Implementation-Version"] = project.version
+}
+
+//the sourcesJar and javadocJar tasks must be defined before publications in order to be publishable
+task sourcesJar(type: Jar) {
+	archiveClassifier.set('sources')
+	from sourceSets.main.allSource
+}
+
+task javadocJar(type: Jar) {
+	archiveClassifier.set('javadoc')
+	from javadoc
+}
+
 static def qualifyVersion(String v) {
 	def versionNumber = VersionNumber.parse(v)
 
@@ -29,140 +49,125 @@ static def qualifyVersion(String v) {
 	return "BAD"
 }
 
-configure(rootProject) { project ->
-	apply plugin: "maven-publish"
-	//we also conditionally apply artifactory and signing plugins below
+ext {
+	isReleaseVersion = version.matches('[0-9].[0-9].[0-9]')
+	isMilestoneVersion = version.matches('[0-9].[0-9].[0-9]-M[0-9]+') || version.matches('[0-9].[0-9].[0-9]-RC[0-9]+')
+	isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
 
-	ext {
-		isReleaseVersion = version.matches('[0-9].[0-9].[0-9]')
-		isMilestoneVersion = version.matches('[0-9].[0-9].[0-9]-M[0-9]+') || version.matches('[0-9].[0-9].[0-9]-RC[0-9]+')
-		isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
-
-		resolveVersion = { String version ->
-			if (isMilestoneVersion) {
+	resolveVersion = { String version ->
+		if (isMilestoneVersion) {
 			return 'milestone'
-			}
-			if (isReleaseVersion) {
+		}
+		if (isReleaseVersion) {
 			return 'release'
-			}
-			return 'snapshot'
 		}
+		return 'snapshot'
 	}
+}
 
-  	//the sourcesJar and javadocJar tasks must be defined before publications in order to be publishable
-	task sourcesJar(type: Jar) {
-		archiveClassifier.set('sources')
-		from sourceSets.main.allSource
-	}
+task qualifyVersionGha() {
+	doLast {
+		def versionType = qualifyVersion("$version")
 
-	task javadocJar(type: Jar) {
-		archiveClassifier.set('javadoc')
-		from javadoc
-	}
-
-	task qualifyVersionGha() {
-		doLast {
-			def versionType = qualifyVersion("$version")
-
-			println "::set-output name=versionType::$versionType"
-			println "::set-output name=fullVersion::$version"
-			if (versionType == "BAD") {
-				println "::error ::Unable to parse $version to a VersionNumber with recognizable qualifier"
-				throw new TaskExecutionException(tasks.getByName("qualifyVersionGha"), new IllegalArgumentException("Unable to parse $version to a VersionNumber with recognizable qualifier"))
-			}
+		println "::set-output name=versionType::$versionType"
+		println "::set-output name=fullVersion::$version"
+		if (versionType == "BAD") {
+			println "::error ::Unable to parse $version to a VersionNumber with recognizable qualifier"
+			throw new TaskExecutionException(tasks.getByName("qualifyVersionGha"), new IllegalArgumentException("Unable to parse $version to a VersionNumber with recognizable qualifier"))
 		}
+		println "Recognized $version as $versionType"
 	}
+}
 
-	publishing {
-		repositories {
+publishing {
+	repositories {
+		maven {
+			name = "mock"
+			url = "${rootProject.buildDir}/mockRepo"
+		}
+		if (qualifyVersion("$version") == "RELEASE") {
 			maven {
-				name = "mock"
-				url = "${rootProject.buildDir}/mockRepo"
-			}
-			if (qualifyVersion("$version") == "RELEASE") {
-				maven {
-					name = "sonatype"
-					url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2"
-					credentials {
-						username findProperty("sonatypeUsername")
-						password findProperty("sonatypePassword")
-					}
+				name = "sonatype"
+				url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2"
+				credentials {
+					username findProperty("sonatypeUsername")
+					password findProperty("sonatypePassword")
 				}
 			}
 		}
+	}
 
-		publications {
-			mavenJava(MavenPublication) {
-				from components.java
-				artifact sourcesJar
-				artifact javadocJar
-				//consider adding extra artifacts here, conditionally on submodule's name and perhaps in an afterEvaluate block
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java
+			artifact sourcesJar
+			artifact javadocJar
+			//consider adding extra artifacts here, conditionally on submodule's name and perhaps in an afterEvaluate block
 
-				pom {
-					afterEvaluate {
-						name = 'Reactor Pool'
-						description = project.description
+			pom {
+				afterEvaluate {
+					name = project.ext.shortName
+					description = project.description
+				}
+				url = 'https://github.com/reactor/reactor-pool'
+				organization {
+					name = 'reactor'
+					url = 'https://github.com/reactor'
+				}
+				licenses {
+					license {
+						name = 'The Apache Software License, Version 2.0'
+						url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+						distribution = 'repo'
 					}
+				}
+				scm {
 					url = 'https://github.com/reactor/reactor-pool'
-					organization {
-						name = 'reactor'
-						url = 'https://github.com/reactor'
+					connection = 'scm:git:git://github.com/reactor/reactor-pool'
+					developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
+				}
+				developers {
+					developer {
+						id = 'simonbasle'
+						name = 'Simon Baslé'
+						email = 'sbasle@vmware.com'
 					}
-					licenses {
-						license {
-							name = 'The Apache Software License, Version 2.0'
-							url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-							distribution = 'repo'
-						}
+					developer {
+						id = 'violetagg'
+						name = 'Violeta Georgieva'
+						email = 'violetag@vmware.com'
 					}
-					scm {
-						url = 'https://github.com/reactor/reactor-pool'
-						connection = 'scm:git:git://github.com/reactor/reactor-pool'
-						developerConnection = 'scm:git:git://github.com/reactor/reactor-pool'
-					}
-					developers {
-						developer {
-							id = 'simonbasle'
-							name = 'Simon Baslé'
-							email = 'sbasle@vmware.com'
-						}
-						developer {
-							id = 'violetagg'
-							name = 'Violeta Georgieva'
-							email = 'violetag@vmware.com'
-						}
-					}
-					issueManagement {
-						system = "GitHub Issues"
-						url = "https://github.com/reactor/reactor-pool/issues"
-					}
+				}
+				issueManagement {
+					system = "GitHub Issues"
+					url = "https://github.com/reactor/reactor-pool/issues"
 				}
 			}
 		}
 	}
+}
 
-	if (rootProject.hasProperty("artifactory_publish_password")) {
-		apply plugin: "com.jfrog.artifactory"
+if (rootProject.hasProperty("artifactory_publish_password")) {
+	apply plugin: "com.jfrog.artifactory"
 
-		artifactoryPublish {
-			publications(publishing.publications.mavenJava)
-		}
+	artifactoryPublish {
+		publications(publishing.publications.mavenJava)
 	}
+}
 
-	if (qualifyVersion("$version") in ["RELEASE", "MILESTONE"] || rootProject.hasProperty("forceSigning")) {
-		apply plugin: 'signing'
+if (qualifyVersion("$version") in ["RELEASE", "MILESTONE"] || rootProject.hasProperty("forceSigning")) {
+	apply plugin: 'signing'
 
-		signing {
-			//requiring signature if there is a publish task that is not to MavenLocal
-			required {  gradle.taskGraph.allTasks.any { it.name.toLowerCase().contains("publish")	&& !it.name.contains("MavenLocal") } }
-			def signingKey = findProperty("signingKey")
-			def signingPassword = findProperty("signingPassword")
+	signing {
+		//requiring signature if there is a publish task that is not to MavenLocal
+		required {  gradle.taskGraph.allTasks.any { it.name.toLowerCase().contains("publish")	&& !it.name.contains("MavenLocal") && !it.name.contains("MockRepository") } }
+		def signingKey = findProperty("signingKey")
+		def signingPassword = findProperty("signingPassword")
 
-			useInMemoryPgpKeys(signingKey, signingPassword)
+		useInMemoryPgpKeys(signingKey, signingPassword)
 
-			afterEvaluate {
-				sign publishing.publications.mavenJava
-			}
+		afterEvaluate {
+			sign publishing.publications.mavenJava
 		}
 	}
 }

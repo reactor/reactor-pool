@@ -20,6 +20,7 @@ apply plugin: 'java-library'
 description = 'Micrometer metrics support for Reactor Pool'
 
 ext {
+    shortName = "Reactor Pool Micrometer"
     bndOptions = [
       "Export-Package": [
         "!*internal*",

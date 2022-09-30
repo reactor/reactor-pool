@@ -22,6 +22,7 @@ apply plugin: 'java-library'
 description = 'Reactor Generic Object Pooling'
 
 ext {
+	shortName = 'Reactor Pool'
 	bndOptions = [
 		"Export-Package": [
 			"!*internal*",

@@ -19,16 +19,18 @@ javadoc {
 	group = "documentation"
 	description = "Generates Javadoc API documentation."
 
-	title = "${project.name} ${version}"
+	afterEvaluate {
+		title = "${shortName} ${version}"
+		options.header = "$shortName"
+	}
+
 	if (JavaVersion.current().isJava8Compatible()) {
 		options.addStringOption('Xdoclint:none', '-quiet')
 	}
 	options.addStringOption('charSet', 'UTF-8')
 	options.tags = [ "apiNote:a:API Note:"]
-
 	options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
 	options.author = true
-	options.header = "$project.name"
 	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
 	options.links([
 		"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",

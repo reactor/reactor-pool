@@ -106,7 +106,7 @@ publishing {
 
 			pom {
 				afterEvaluate {
-					name = project.name
+					name = project.ext.shortName
 					description = project.description
 				}
 				url = 'https://github.com/reactor/reactor-pool'

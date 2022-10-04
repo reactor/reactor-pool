@@ -29,53 +29,72 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 	ACQUIRED {
 		@Override
 		public String getName() {
-			return "%s.resources.acquired";
+			return "reactor.pool.resources.acquired";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.GAUGE;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	},
 	ALLOCATED {
 		@Override
 		public String getName() {
-			return "%s.resources.allocated";
+			return "reactor.pool.resources.allocated";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.GAUGE;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	},
 	IDLE {
 		@Override
 		public String getName() {
-			return "%s.resources.idle";
+			return "reactor.pool.resources.idle";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.GAUGE;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	},
 	PENDING_ACQUIRE {
 		@Override
 		public String getName() {
-			return "%s.resources.pendingAcquire";
+			return "reactor.pool.resources.pendingAcquire";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.GAUGE;
 		}
-	},
 
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
+		}
+	},
 
 	ALLOCATION {
 		@Override
 		public String getName() {
-			return "%s.allocation";
+			return "reactor.pool.allocation";
 		}
 
 		@Override
@@ -85,62 +104,65 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public KeyName[] getKeyNames() {
-			return AllocationTags.values();
+			return KeyName.merge(CommonTags.values(), AllocationTags.values());
 		}
 	},
 
 	DESTROYED {
 		@Override
 		public String getName() {
-			return "%s.destroyed";
+			return "reactor.pool.destroyed";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.TIMER;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	},
 
 	SUMMARY_IDLENESS {
 		@Override
 		public String getName() {
-			return "%s.resources.summary.idleness";
+			return "reactor.pool.resources.summary.idleness";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.TIMER;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	},
 
 	SUMMARY_LIFETIME {
 		@Override
 		public String getName() {
-			return "%s.resources.summary.lifetime";
+			return "reactor.pool.resources.summary.lifetime";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.TIMER;
 		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
+		}
 	},
 
 	RECYCLED {
 		@Override
 		public String getName() {
-			return "%s.recycled";
-		}
-
-		@Override
-		public Meter.Type getType() {
-			return Meter.Type.COUNTER;
-		}
-	},
-
-	RECYCLED_NOTABLE {
-		@Override
-		public String getName() {
-			return "%s.recycled.notable";
+			return "reactor.pool.recycled";
 		}
 
 		@Override
@@ -150,20 +172,41 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public KeyName[] getKeyNames() {
-			return RecycledNotableTags.values();
+			return CommonTags.values();
 		}
 	},
 
+	RECYCLED_NOTABLE {
+		@Override
+		public String getName() {
+			return "reactor.pool.recycled.notable";
+		}
+
+		@Override
+		public Meter.Type getType() {
+			return Meter.Type.COUNTER;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return KeyName.merge(CommonTags.values(), RecycledNotableTags.values());
+		}
+	},
 
 	RESET {
 		@Override
 		public String getName() {
-			return "%s.reset";
+			return "reactor.pool.reset";
 		}
 
 		@Override
 		public Meter.Type getType() {
 			return Meter.Type.TIMER;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return CommonTags.values();
 		}
 	};
 
@@ -201,5 +244,15 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 		public static final Tag PATH_FAST = Tag.of(PATH.asString(), "fast");
 
 
+	}
+
+	public enum CommonTags implements KeyName {
+
+		POOL_NAME {
+			@Override
+			public String asString() {
+				return "pool.name";
+			}
+		}
 	}
 }

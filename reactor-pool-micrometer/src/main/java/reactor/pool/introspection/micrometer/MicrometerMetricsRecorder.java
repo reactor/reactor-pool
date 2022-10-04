@@ -19,8 +19,8 @@ package reactor.pool.introspection.micrometer;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 
@@ -29,12 +29,13 @@ import reactor.pool.PoolMetricsRecorder;
 import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.*;
 import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_FAILURE;
 import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_SUCCESS;
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.CommonTags.POOL_NAME;
 import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_FAST;
 import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_SLOW;
 
 final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 
-	private final String        metricsPrefix;
+	private final String        poolName;
 	private final MeterRegistry meterRegistry;
 
 	private final Timer   allocationFailureTimer;
@@ -47,23 +48,29 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 	private final Timer   resourceSummaryIdleness;
 	private final Timer   resourceSummaryLifetime;
 
-	MicrometerMetricsRecorder(String metricsPrefix, MeterRegistry registry) {
-		this.metricsPrefix = metricsPrefix;
+	MicrometerMetricsRecorder(String poolName, MeterRegistry registry) {
+		this.poolName = poolName;
 		this.meterRegistry = registry;
 
-		allocationSuccessTimer = this.meterRegistry.timer(ALLOCATION.getName(this.metricsPrefix), Tags.of(OUTCOME_SUCCESS));
-		allocationFailureTimer = this.meterRegistry.timer(ALLOCATION.getName(this.metricsPrefix), Tags.of(OUTCOME_FAILURE));
+		final Tags nameTag = Tags.of(POOL_NAME.asString(), this.poolName);
 
-		resetMeter = this.meterRegistry.timer(RESET.getName(this.metricsPrefix));
-		destroyedMeter = this.meterRegistry.timer(DESTROYED.getName(this.metricsPrefix));
+		allocationSuccessTimer = this.meterRegistry.timer(ALLOCATION.getName(),
+			nameTag.and(OUTCOME_SUCCESS));
+		allocationFailureTimer = this.meterRegistry.timer(ALLOCATION.getName(),
+			nameTag.and(OUTCOME_FAILURE));
 
-		recycledCounter = this.meterRegistry.counter(RECYCLED.getName(this.metricsPrefix));
+		resetMeter = this.meterRegistry.timer(RESET.getName(), nameTag);
+		destroyedMeter = this.meterRegistry.timer(DESTROYED.getName(), nameTag);
 
-		recycledNotableFastPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(this.metricsPrefix), Tags.of(PATH_FAST));
-		recycledNotableSlowPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(this.metricsPrefix), Tags.of(PATH_SLOW));
+		recycledCounter = this.meterRegistry.counter(RECYCLED.getName(), nameTag);
 
-		resourceSummaryLifetime = this.meterRegistry.timer(SUMMARY_LIFETIME.getName(this.metricsPrefix));
-		resourceSummaryIdleness = this.meterRegistry.timer(SUMMARY_IDLENESS.getName(this.metricsPrefix));
+		recycledNotableFastPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(),
+			nameTag.and(PATH_FAST));
+		recycledNotableSlowPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(),
+			nameTag.and(PATH_SLOW));
+
+		resourceSummaryLifetime = this.meterRegistry.timer(SUMMARY_LIFETIME.getName(), nameTag);
+		resourceSummaryIdleness = this.meterRegistry.timer(SUMMARY_IDLENESS.getName(), nameTag);
 	}
 
 	@Override

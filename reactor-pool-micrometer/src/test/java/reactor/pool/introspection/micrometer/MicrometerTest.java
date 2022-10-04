@@ -43,10 +43,10 @@ class MicrometerTest {
 				return name + tags;
 			}))
 			.containsExactlyInAnyOrder(
-				"testGauge.resources.acquired",
-				"testGauge.resources.allocated",
-				"testGauge.resources.idle",
-				"testGauge.resources.pendingAcquire"
+				"reactor.pool.resources.acquired[tag(pool.name=testGauge)]",
+				"reactor.pool.resources.allocated[tag(pool.name=testGauge)]",
+				"reactor.pool.resources.idle[tag(pool.name=testGauge)]",
+				"reactor.pool.resources.pendingAcquire[tag(pool.name=testGauge)]"
 			);
 	}
 
@@ -66,15 +66,15 @@ class MicrometerTest {
 				return name + tags;
 			}))
 			.containsExactlyInAnyOrder(
-				"testRecorder.allocation[tag(pool.allocation.outcome=success)]",
-				"testRecorder.allocation[tag(pool.allocation.outcome=failure)]",
-				"testRecorder.destroyed",
-				"testRecorder.recycled",
-				"testRecorder.recycled.notable[tag(pool.recycling.path=fast)]",
-				"testRecorder.recycled.notable[tag(pool.recycling.path=slow)]",
-				"testRecorder.reset",
-				"testRecorder.resources.summary.lifetime",
-				"testRecorder.resources.summary.idleness"
+				"reactor.pool.allocation[tag(pool.allocation.outcome=success), tag(pool.name=testRecorder)]",
+				"reactor.pool.allocation[tag(pool.allocation.outcome=failure), tag(pool.name=testRecorder)]",
+				"reactor.pool.destroyed[tag(pool.name=testRecorder)]",
+				"reactor.pool.recycled[tag(pool.name=testRecorder)]",
+				"reactor.pool.recycled.notable[tag(pool.name=testRecorder), tag(pool.recycling.path=fast)]",
+				"reactor.pool.recycled.notable[tag(pool.name=testRecorder), tag(pool.recycling.path=slow)]",
+				"reactor.pool.reset[tag(pool.name=testRecorder)]",
+				"reactor.pool.resources.summary.lifetime[tag(pool.name=testRecorder)]",
+				"reactor.pool.resources.summary.idleness[tag(pool.name=testRecorder)]"
 			);
 	}
 
@@ -92,19 +92,19 @@ class MicrometerTest {
 				return name + tags;
 			}))
 			.containsExactlyInAnyOrder(
-				"testMetrics.resources.acquired",
-				"testMetrics.resources.allocated",
-				"testMetrics.resources.idle",
-				"testMetrics.resources.pendingAcquire",
-				"testMetrics.allocation[tag(pool.allocation.outcome=success)]",
-				"testMetrics.allocation[tag(pool.allocation.outcome=failure)]",
-				"testMetrics.destroyed",
-				"testMetrics.recycled",
-				"testMetrics.recycled.notable[tag(pool.recycling.path=fast)]",
-				"testMetrics.recycled.notable[tag(pool.recycling.path=slow)]",
-				"testMetrics.reset",
-				"testMetrics.resources.summary.lifetime",
-				"testMetrics.resources.summary.idleness"
+				"reactor.pool.resources.acquired[tag(pool.name=testMetrics)]",
+				"reactor.pool.resources.allocated[tag(pool.name=testMetrics)]",
+				"reactor.pool.resources.idle[tag(pool.name=testMetrics)]",
+				"reactor.pool.resources.pendingAcquire[tag(pool.name=testMetrics)]",
+				"reactor.pool.allocation[tag(pool.allocation.outcome=success), tag(pool.name=testMetrics)]",
+				"reactor.pool.allocation[tag(pool.allocation.outcome=failure), tag(pool.name=testMetrics)]",
+				"reactor.pool.destroyed[tag(pool.name=testMetrics)]",
+				"reactor.pool.recycled[tag(pool.name=testMetrics)]",
+				"reactor.pool.recycled.notable[tag(pool.name=testMetrics), tag(pool.recycling.path=fast)]",
+				"reactor.pool.recycled.notable[tag(pool.name=testMetrics), tag(pool.recycling.path=slow)]",
+				"reactor.pool.reset[tag(pool.name=testMetrics)]",
+				"reactor.pool.resources.summary.lifetime[tag(pool.name=testMetrics)]",
+				"reactor.pool.resources.summary.idleness[tag(pool.name=testMetrics)]"
 			);
 	}
 }

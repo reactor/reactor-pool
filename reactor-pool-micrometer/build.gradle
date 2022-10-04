@@ -37,13 +37,16 @@ ext {
 }
 
 dependencies {
+    // Reactor
     api libs.reactor.core
     api project(":reactor-pool")
 
+    // Micrometer
     api platform(libs.micrometer.bom)
     api libs.micrometer.core
+    // Micrometer for tests
     testImplementation platform(libs.micrometer.bom)
-    testImplementation libs.micrometer.core
+    testImplementation libs.micrometer.test
 
     // JSR-305 annotations
     compileOnly libs.jsr305

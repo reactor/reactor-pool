@@ -34,7 +34,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.COUNTER;
+			return Meter.Type.GAUGE;
 		}
 	},
 	ALLOCATED {
@@ -45,7 +45,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.COUNTER;
+			return Meter.Type.GAUGE;
 		}
 	},
 	IDLE {
@@ -56,7 +56,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.COUNTER;
+			return Meter.Type.GAUGE;
 		}
 	},
 	PENDING_ACQUIRE {
@@ -67,7 +67,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.COUNTER;
+			return Meter.Type.GAUGE;
 		}
 	},
 
@@ -97,7 +97,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.DISTRIBUTION_SUMMARY;
+			return Meter.Type.TIMER;
 		}
 	},
 
@@ -109,7 +109,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.DISTRIBUTION_SUMMARY;
+			return Meter.Type.TIMER;
 		}
 	},
 
@@ -121,7 +121,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.DISTRIBUTION_SUMMARY;
+			return Meter.Type.TIMER;
 		}
 	},
 
@@ -163,7 +163,7 @@ enum DocumentedPoolMeters implements DocumentedMeter {
 
 		@Override
 		public Meter.Type getType() {
-			return Meter.Type.DISTRIBUTION_SUMMARY;
+			return Meter.Type.TIMER;
 		}
 	};
 

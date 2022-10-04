@@ -26,51 +26,44 @@ import io.micrometer.core.instrument.Timer;
 
 import reactor.pool.PoolMetricsRecorder;
 
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.*;
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_FAILURE;
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_SUCCESS;
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_FAST;
+import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_SLOW;
+
 final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 
 	private final String        metricsPrefix;
 	private final MeterRegistry meterRegistry;
 
-	private final Timer               allocationFailureTimer;
-	private final Timer               allocationSuccessTimer;
-	private final DistributionSummary destroyedMeter;
-	private final Counter             recycledCounter;
-	private final Counter             recycledNotableFastPathCounter;
-	private final Counter             recycledNotableSlowPathCounter;
-	private final DistributionSummary resetMeter;
-	private final DistributionSummary resourceSummaryIdleness;
-	private final DistributionSummary resourceSummaryLifetime;
+	private final Timer   allocationFailureTimer;
+	private final Timer   allocationSuccessTimer;
+	private final Timer   destroyedMeter;
+	private final Counter recycledCounter;
+	private final Counter recycledNotableFastPathCounter;
+	private final Counter recycledNotableSlowPathCounter;
+	private final Timer   resetMeter;
+	private final Timer   resourceSummaryIdleness;
+	private final Timer   resourceSummaryLifetime;
 
 	MicrometerMetricsRecorder(String metricsPrefix, MeterRegistry registry) {
 		this.metricsPrefix = metricsPrefix;
 		this.meterRegistry = registry;
 
-		allocationSuccessTimer = this.meterRegistry.timer(
-			DocumentedPoolMeters.ALLOCATION.getName(this.metricsPrefix),
-			Tags.of(DocumentedPoolMeters.AllocationTags.OUTCOME_SUCCESS));
-		allocationFailureTimer = this.meterRegistry.timer(
-			DocumentedPoolMeters.ALLOCATION.getName(this.metricsPrefix),
-			Tags.of(DocumentedPoolMeters.AllocationTags.OUTCOME_FAILURE));
+		allocationSuccessTimer = this.meterRegistry.timer(ALLOCATION.getName(this.metricsPrefix), Tags.of(OUTCOME_SUCCESS));
+		allocationFailureTimer = this.meterRegistry.timer(ALLOCATION.getName(this.metricsPrefix), Tags.of(OUTCOME_FAILURE));
 
-		resetMeter = this.meterRegistry.summary(
-			DocumentedPoolMeters.RESET.getName(this.metricsPrefix));
-		destroyedMeter = this.meterRegistry.summary(
-			DocumentedPoolMeters.DESTROYED.getName(this.metricsPrefix));
+		resetMeter = this.meterRegistry.timer(RESET.getName(this.metricsPrefix));
+		destroyedMeter = this.meterRegistry.timer(DESTROYED.getName(this.metricsPrefix));
 
-		recycledCounter = this.meterRegistry.counter(
-			DocumentedPoolMeters.RECYCLED.getName(this.metricsPrefix));
+		recycledCounter = this.meterRegistry.counter(RECYCLED.getName(this.metricsPrefix));
 
-		recycledNotableFastPathCounter = this.meterRegistry.counter(
-			DocumentedPoolMeters.RECYCLED_NOTABLE.getName(this.metricsPrefix),
-			Tags.of(DocumentedPoolMeters.RecycledNotableTags.PATH_FAST));
-		recycledNotableSlowPathCounter = this.meterRegistry.counter(
-			DocumentedPoolMeters.RECYCLED_NOTABLE.getName(this.metricsPrefix),
-			Tags.of(DocumentedPoolMeters.RecycledNotableTags.PATH_SLOW));
+		recycledNotableFastPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(this.metricsPrefix), Tags.of(PATH_FAST));
+		recycledNotableSlowPathCounter = this.meterRegistry.counter(RECYCLED_NOTABLE.getName(this.metricsPrefix), Tags.of(PATH_SLOW));
 
-		resourceSummaryLifetime = this.meterRegistry.summary(
-			DocumentedPoolMeters.SUMMARY_LIFETIME.getName(this.metricsPrefix));
-		resourceSummaryIdleness = this.meterRegistry.summary(
-			DocumentedPoolMeters.SUMMARY_IDLENESS.getName(this.metricsPrefix));
+		resourceSummaryLifetime = this.meterRegistry.timer(SUMMARY_LIFETIME.getName(this.metricsPrefix));
+		resourceSummaryIdleness = this.meterRegistry.timer(SUMMARY_IDLENESS.getName(this.metricsPrefix));
 	}
 
 	@Override
@@ -85,12 +78,12 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 
 	@Override
 	public void recordResetLatency(long latencyMs) {
-		resetMeter.record(latencyMs);
+		resetMeter.record(latencyMs, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
 	public void recordDestroyLatency(long latencyMs) {
-		destroyedMeter.record(latencyMs);
+		destroyedMeter.record(latencyMs, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
@@ -100,12 +93,12 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 
 	@Override
 	public void recordLifetimeDuration(long millisecondsSinceAllocation) {
-		resourceSummaryLifetime.record(millisecondsSinceAllocation);
+		resourceSummaryLifetime.record(millisecondsSinceAllocation, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
 	public void recordIdleTime(long millisecondsIdle) {
-		resourceSummaryIdleness.record(millisecondsIdle);
+		resourceSummaryIdleness.record(millisecondsIdle, TimeUnit.MILLISECONDS);
 	}
 
 	@Override

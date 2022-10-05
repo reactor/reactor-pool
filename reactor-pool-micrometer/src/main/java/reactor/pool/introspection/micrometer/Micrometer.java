@@ -16,15 +16,11 @@
 
 package reactor.pool.introspection.micrometer;
 
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Tags;
 
 import reactor.pool.InstrumentedPool;
 import reactor.pool.PoolBuilder;
 import reactor.pool.PoolMetricsRecorder;
-
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.CommonTags.POOL_NAME;
 
 /**
  * Micrometer supporting utilities for instrumentation of reactor-pool.
@@ -62,9 +58,10 @@ public final class Micrometer {
 	}
 
 	/**
-	 * Register Micrometer gauges around the {@link InstrumentedPool}'s {@link reactor.pool.InstrumentedPool.PoolMetrics},
-	 * publishing to the provided {@link MeterRegistry}. One can differentiate between pools thanks to the provided {@code poolName},
-	 * which will be set on all meters as the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
+	 * Create a {@link PoolGaugesBinder} and bind to the provided {@link MeterRegistry}. This registers gauges around the
+	 * {@link InstrumentedPool}'s {@link reactor.pool.InstrumentedPool.PoolMetrics}.
+	 * One can differentiate between pools thanks to the provided {@code poolName}, which will be set on all meters as
+	 * the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
 	 * <p>
 	 * {@link DocumentedPoolMeters} include the gauges which are:
 	 * <ul>
@@ -75,33 +72,14 @@ public final class Micrometer {
 	 * </ul>
 	 *
 	 * @param poolMetrics the {@link reactor.pool.InstrumentedPool.PoolMetrics} to turn into gauges
-	 * @param poolName the tag value to use on the gauges and the recorder's meters to differentiate between pools
+	 * @param poolName the tag value to use on the gauges to differentiate between pools
 	 * @param meterRegistry the registry to use for the gauges
+	 * @see PoolGaugesBinder
 	 * @see DocumentedPoolMeters
 	 * @see #instrumentedPool(PoolBuilder, String, MeterRegistry)
 	 */
 	public static void gaugesOf(InstrumentedPool.PoolMetrics poolMetrics, String poolName, MeterRegistry meterRegistry) {
-		Tags nameTag = Tags.of(POOL_NAME.asString(), poolName);
-		Gauge.builder(
-				DocumentedPoolMeters.ACQUIRED.getName(), poolMetrics,
-				InstrumentedPool.PoolMetrics::acquiredSize)
-			.tags(nameTag)
-			.register(meterRegistry);
-		Gauge.builder(
-				DocumentedPoolMeters.ALLOCATED.getName(), poolMetrics,
-				InstrumentedPool.PoolMetrics::allocatedSize)
-			.tags(nameTag)
-			.register(meterRegistry);
-		Gauge.builder(
-				DocumentedPoolMeters.IDLE.getName(), poolMetrics,
-				InstrumentedPool.PoolMetrics::idleSize)
-			.tags(nameTag)
-			.register(meterRegistry);
-		Gauge.builder(
-				DocumentedPoolMeters.PENDING_ACQUIRE.getName(), poolMetrics,
-				InstrumentedPool.PoolMetrics::pendingAcquireSize)
-			.tags(nameTag)
-			.register(meterRegistry);
+		new PoolGaugesBinder(poolMetrics, poolName).bindTo(meterRegistry);
 	}
 
 	/**

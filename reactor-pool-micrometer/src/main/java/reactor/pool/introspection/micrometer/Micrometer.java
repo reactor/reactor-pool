@@ -28,6 +28,8 @@ import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.CommonT
 
 /**
  * Micrometer supporting utilities for instrumentation of reactor-pool.
+ *
+ * @author Simon Baslé
  */
 public final class Micrometer {
 

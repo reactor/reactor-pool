@@ -23,6 +23,8 @@ import io.micrometer.core.instrument.docs.DocumentedMeter;
 
 /**
  * Meters used by {@link Micrometer} utility.
+ *
+ * @author Simon Baslé
  */
 enum DocumentedPoolMeters implements DocumentedMeter {
 

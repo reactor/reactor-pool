@@ -24,19 +24,19 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 import reactor.pool.InstrumentedPool;
 import reactor.pool.PoolBuilder;
 
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.CommonTags.POOL_NAME;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.CommonTags.POOL_NAME;
 
 /**
  * A {@link MeterBinder} that registers Micrometer gauges around a {@link InstrumentedPool}'s {@link reactor.pool.InstrumentedPool.PoolMetrics},
  * publishing to the provided {@link MeterRegistry}. One can differentiate between pools thanks to the provided {@code poolName},
- * which will be set on all meters as the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
+ * which will be set on all meters as the value for the {@link PoolMetersDocumentation.CommonTags#POOL_NAME} tag.
  * <p>
- * {@link DocumentedPoolMeters} include the gauges which are:
+ * {@link PoolMetersDocumentation} include the gauges which are:
  * <ul>
- *     <li> {@link DocumentedPoolMeters#ACQUIRED} </li>
- *     <li> {@link DocumentedPoolMeters#ALLOCATED}, </li>
- *     <li> {@link DocumentedPoolMeters#IDLE} </li>
- *     <li> {@link DocumentedPoolMeters#PENDING_ACQUIRE} </li>
+ *     <li> {@link PoolMetersDocumentation#ACQUIRED} </li>
+ *     <li> {@link PoolMetersDocumentation#ALLOCATED}, </li>
+ *     <li> {@link PoolMetersDocumentation#IDLE} </li>
+ *     <li> {@link PoolMetersDocumentation#PENDING_ACQUIRE} </li>
  * </ul>
  * <p>
  * Note that this doesn't cover metrics that show evolution of the pool's state and timings, which are separately
@@ -56,7 +56,7 @@ public final class PoolGaugesBinder implements MeterBinder {
 	 *
 	 * @param poolMetrics the {@link reactor.pool.InstrumentedPool.PoolMetrics} to turn into gauges
 	 * @param poolName the tag value to use on the gauges to differentiate between pools
-	 * @see DocumentedPoolMeters
+	 * @see PoolMetersDocumentation
 	 */
 	public PoolGaugesBinder(InstrumentedPool.PoolMetrics poolMetrics, String poolName) {
 		this.poolMetrics = poolMetrics;
@@ -67,22 +67,22 @@ public final class PoolGaugesBinder implements MeterBinder {
 	public void bindTo(MeterRegistry meterRegistry) {
 		Tags nameTag = Tags.of(POOL_NAME.asString(), poolName);
 		Gauge.builder(
-				DocumentedPoolMeters.ACQUIRED.getName(), poolMetrics,
+				PoolMetersDocumentation.ACQUIRED.getName(), poolMetrics,
 				InstrumentedPool.PoolMetrics::acquiredSize)
 			.tags(nameTag)
 			.register(meterRegistry);
 		Gauge.builder(
-				DocumentedPoolMeters.ALLOCATED.getName(), poolMetrics,
+				PoolMetersDocumentation.ALLOCATED.getName(), poolMetrics,
 				InstrumentedPool.PoolMetrics::allocatedSize)
 			.tags(nameTag)
 			.register(meterRegistry);
 		Gauge.builder(
-				DocumentedPoolMeters.IDLE.getName(), poolMetrics,
+				PoolMetersDocumentation.IDLE.getName(), poolMetrics,
 				InstrumentedPool.PoolMetrics::idleSize)
 			.tags(nameTag)
 			.register(meterRegistry);
 		Gauge.builder(
-				DocumentedPoolMeters.PENDING_ACQUIRE.getName(), poolMetrics,
+				PoolMetersDocumentation.PENDING_ACQUIRE.getName(), poolMetrics,
 				InstrumentedPool.PoolMetrics::pendingAcquireSize)
 			.tags(nameTag)
 			.register(meterRegistry);

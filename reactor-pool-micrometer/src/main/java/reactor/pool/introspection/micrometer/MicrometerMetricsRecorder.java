@@ -25,12 +25,12 @@ import io.micrometer.core.instrument.Timer;
 
 import reactor.pool.PoolMetricsRecorder;
 
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.*;
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_FAILURE;
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.AllocationTags.OUTCOME_SUCCESS;
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.CommonTags.POOL_NAME;
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_FAST;
-import static reactor.pool.introspection.micrometer.DocumentedPoolMeters.RecycledNotableTags.PATH_SLOW;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.*;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.AllocationTags.OUTCOME_FAILURE;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.AllocationTags.OUTCOME_SUCCESS;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.CommonTags.POOL_NAME;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.RecycledNotableTags.PATH_FAST;
+import static reactor.pool.introspection.micrometer.PoolMetersDocumentation.RecycledNotableTags.PATH_SLOW;
 
 final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 

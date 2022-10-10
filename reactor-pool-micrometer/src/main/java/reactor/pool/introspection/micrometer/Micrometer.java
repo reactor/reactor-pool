@@ -32,7 +32,7 @@ public final class Micrometer {
 	/**
 	 * Create an {@link InstrumentedPool} starting from the provided {@link PoolBuilder}. The pool publishes metrics to
 	 * a Micrometer {@link MeterRegistry}. One can differentiate between pools thanks to the provided {@code poolName},
-	 * which will be set on all meters as the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
+	 * which will be set on all meters as the value for the {@link PoolMetersDocumentation.CommonTags#POOL_NAME} tag.
 	 * <p>
 	 * The steps involved are as follows:
 	 * <ol>
@@ -48,7 +48,7 @@ public final class Micrometer {
 	 * @param meterRegistry the registry to use for the gauges and the recorder's meters
 	 * @param <POOLABLE> the type of resources in the pool
 	 * @return a new {@link InstrumentedPool} with a Micrometer recorder and with gauges attached
-	 * @see DocumentedPoolMeters
+	 * @see PoolMetersDocumentation
 	 */
 	public static <POOLABLE> InstrumentedPool<POOLABLE> instrumentedPool(PoolBuilder<POOLABLE, ?> poolBuilder, String poolName, MeterRegistry meterRegistry) {
 		PoolMetricsRecorder recorder = recorder(poolName, meterRegistry);
@@ -61,21 +61,21 @@ public final class Micrometer {
 	 * Create a {@link PoolGaugesBinder} and bind to the provided {@link MeterRegistry}. This registers gauges around the
 	 * {@link InstrumentedPool}'s {@link reactor.pool.InstrumentedPool.PoolMetrics}.
 	 * One can differentiate between pools thanks to the provided {@code poolName}, which will be set on all meters as
-	 * the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
+	 * the value for the {@link PoolMetersDocumentation.CommonTags#POOL_NAME} tag.
 	 * <p>
-	 * {@link DocumentedPoolMeters} include the gauges which are:
+	 * {@link PoolMetersDocumentation} include the gauges which are:
 	 * <ul>
-	 *     <li> {@link DocumentedPoolMeters#ACQUIRED} </li>
-	 *     <li> {@link DocumentedPoolMeters#ALLOCATED}, </li>
-	 *     <li> {@link DocumentedPoolMeters#IDLE} </li>
-	 *     <li> {@link DocumentedPoolMeters#PENDING_ACQUIRE} </li>
+	 *     <li> {@link PoolMetersDocumentation#ACQUIRED} </li>
+	 *     <li> {@link PoolMetersDocumentation#ALLOCATED}, </li>
+	 *     <li> {@link PoolMetersDocumentation#IDLE} </li>
+	 *     <li> {@link PoolMetersDocumentation#PENDING_ACQUIRE} </li>
 	 * </ul>
 	 *
 	 * @param poolMetrics the {@link reactor.pool.InstrumentedPool.PoolMetrics} to turn into gauges
 	 * @param poolName the tag value to use on the gauges to differentiate between pools
 	 * @param meterRegistry the registry to use for the gauges
 	 * @see PoolGaugesBinder
-	 * @see DocumentedPoolMeters
+	 * @see PoolMetersDocumentation
 	 * @see #instrumentedPool(PoolBuilder, String, MeterRegistry)
 	 */
 	public static void gaugesOf(InstrumentedPool.PoolMetrics poolMetrics, String poolName, MeterRegistry meterRegistry) {
@@ -85,22 +85,22 @@ public final class Micrometer {
 	/**
 	 * Create a {@link PoolMetricsRecorder} publishing timers and other meters to a provided {@link MeterRegistry}.
 	 * One can differentiate between pools thanks to the provided {@code poolName}, which will be set on all meters
-	 * as the value for the {@link DocumentedPoolMeters.CommonTags#POOL_NAME} tag.
+	 * as the value for the {@link PoolMetersDocumentation.CommonTags#POOL_NAME} tag.
 	 * <p>
-	 * {@link DocumentedPoolMeters} include the recorder-specific meters which are:
+	 * {@link PoolMetersDocumentation} include the recorder-specific meters which are:
 	 * <ul>
-	 *     <li> {@link DocumentedPoolMeters#ALLOCATION} </li>
-	 *     <li> {@link DocumentedPoolMeters#DESTROYED}, </li>
-	 *     <li> {@link DocumentedPoolMeters#RECYCLED} </li>
-	 *     <li> {@link DocumentedPoolMeters#RESET} </li>
-	 *     <li> {@link DocumentedPoolMeters#SUMMARY_IDLENESS} </li>
-	 *     <li> {@link DocumentedPoolMeters#SUMMARY_LIFETIME} </li>
+	 *     <li> {@link PoolMetersDocumentation#ALLOCATION} </li>
+	 *     <li> {@link PoolMetersDocumentation#DESTROYED}, </li>
+	 *     <li> {@link PoolMetersDocumentation#RECYCLED} </li>
+	 *     <li> {@link PoolMetersDocumentation#RESET} </li>
+	 *     <li> {@link PoolMetersDocumentation#SUMMARY_IDLENESS} </li>
+	 *     <li> {@link PoolMetersDocumentation#SUMMARY_LIFETIME} </li>
 	 * </ul>
 	 *
 	 * @param poolName the tag value to use on the gauges and the recorder's meters to differentiate between pools
 	 * @param meterRegistry the registry to use for the recorder's meters
 	 * @return a Micrometer {@link PoolMetricsRecorder}
-	 * @see DocumentedPoolMeters
+	 * @see PoolMetersDocumentation
 	 * @see #instrumentedPool(PoolBuilder, String, MeterRegistry)
 	 */
 	public static PoolMetricsRecorder recorder(String poolName, MeterRegistry meterRegistry) {

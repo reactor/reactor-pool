@@ -19,14 +19,14 @@ package reactor.pool.introspection.micrometer;
 import io.micrometer.common.docs.KeyName;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.Tag;
-import io.micrometer.core.instrument.docs.DocumentedMeter;
+import io.micrometer.core.instrument.docs.MeterDocumentation;
 
 /**
  * Meters used by {@link Micrometer} utility.
  *
  * @author Simon Baslé
  */
-enum DocumentedPoolMeters implements DocumentedMeter {
+enum PoolMetersDocumentation implements MeterDocumentation {
 
 	ACQUIRED {
 		@Override

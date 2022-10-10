@@ -18,9 +18,11 @@ apply plugin: 'biz.aQute.bnd.builder'
 apply plugin: 'java-library'
 
 description = 'Micrometer metrics support for Reactor Pool'
+version = "$reactorPoolMicrometerVersion"
 
 ext {
     shortName = "Reactor Pool Micrometer"
+    osgiVersion = osgiVersion(version.toString())
     bndOptions = [
       "Export-Package": [
         "!*internal*",

@@ -32,13 +32,18 @@ javadoc {
 	options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
 	options.author = true
 	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
-	options.links([
+
+	String[] links = [
 		"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
 		jdkJavadoc,
 		//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
 		"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
-		//TODO add micrometer ?
-	] as String[])
+	]
+	if (project.name != 'reactor-pool') {
+		//TODO currently java 8 cannot link to Micrometer javadocs deployed to javadoc.io
+		links += "https://projectreactor.io/docs/pool/${libs.versions.baseline.pool.api.get()}/api/"
+	}
+	options.links(links)
 
 	maxMemory = "1024m"
 	destinationDir = new File(project.buildDir, "docs/javadoc")

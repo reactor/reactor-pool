@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,12 @@
  * limitations under the License.
  */
 
-rootProject.name = 'reactor-pool-base'
+/**
+ * Metrics and observability Micrometer utilities for Reactor-Pool.
+ *
+ * @author Simon Baslé
+ */
+@NonNullApi
+package reactor.pool.introspection.micrometer;
 
-include 'reactor-pool'
-include 'reactor-pool-micrometer'
+import reactor.util.annotation.NonNullApi;

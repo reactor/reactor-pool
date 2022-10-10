@@ -23,6 +23,7 @@ description = 'Reactor Generic Object Pooling'
 
 ext {
 	shortName = 'Reactor Pool'
+	osgiVersion = osgiVersion(version.toString())
 	bndOptions = [
 		"Export-Package": [
 			"!*internal*",

@@ -127,12 +127,6 @@ task japicmp(type: JapicmpTask) {
 	classExcludes = [
 	]
 	methodExcludes = [
-		"reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock)",
-		"reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock, boolean)",
-		"reactor.pool.DefaultPoolConfig#DefaultPoolConfig(reactor.core.publisher.Mono, reactor.pool.AllocationStrategy, int, java.util.function.Function, java.util.function.Function, java.util.function.BiPredicate, java.time.Duration, reactor.core.scheduler.Scheduler, reactor.core.scheduler.Scheduler, reactor.pool.PoolMetricsRecorder, java.time.Clock, boolean)",
-		"reactor.pool.Pool#config()",
-		"reactor.pool.PoolBuilder#fifo()",
-		"reactor.pool.PoolBuilder#lifo()"
 	]
 }
 check.dependsOn japicmp

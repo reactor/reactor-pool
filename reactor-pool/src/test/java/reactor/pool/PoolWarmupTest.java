@@ -26,6 +26,7 @@ import reactor.pool.TestUtils.ParameterizedTestWithName;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
+import java.io.Closeable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -112,7 +113,7 @@ public class PoolWarmupTest {
 	 * A DBConnection simulates an SQL "findAll" request, which is executed
 	 * through a DBConnectionThread executor.
 	 */
-	final static class DBConnection {
+	final static class DBConnection implements Closeable {
 		final DBConnectionThread dbThread;
 
 		public DBConnection(DBConnectionThread dbThread) {
@@ -120,25 +121,25 @@ public class PoolWarmupTest {
 		}
 
 		Flux<String> findAll() {
-			return Flux.create(sink -> sink.onRequest(value -> {
-				if (dbThread == null) {
-					// publish from the current thread, which is assumed to be a DBConnectionThread.
-					doPublish(sink);
-				} else {
-					// publish through our db thread executor
-					dbThread.execute(() -> doPublish(sink));
-				}
-			}));
+			return Flux.create(sink -> sink.onRequest(value -> dbThread.execute(() -> doPublish(sink))));
 		}
 
-		public void doPublish(FluxSink<String> sink) {
-			for (int i = 0; i < 1000; i ++) {
-				try {
-					Thread.sleep(1);
-				} catch (InterruptedException ignored) {}
-				sink.next("table entry - " + i);
-			}
+		void doPublish(FluxSink<String> sink) {
+			IntStream.range(0, 1000)
+					.peek(i -> sleep(1L))
+					.forEach(value -> sink.next("table entry - " + value));
 			sink.complete();
+		}
+
+		void sleep(long millis) {
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException ignored) {}
+		}
+
+		@Override
+		public void close() {
+			dbThread.stop();
 		}
 	}
 
@@ -177,13 +178,14 @@ public class PoolWarmupTest {
 		}
 
 		void stop() {
+			pool.disposeLater().block(Duration.ofSeconds(30));
 			Stream.of(dbThreads).forEach(DBConnectionThread::stop);
 		}
 	}
 
 	@ParameterizedTestWithName
 	@MethodSource("warmupOptions")
-	void testReactorNetty_2781(boolean doWarmup) {
+	void warmupTest(boolean doWarmup) {
 		int poolSize = 10;
 		DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize);
 
@@ -206,7 +208,7 @@ public class PoolWarmupTest {
 			}
 
 			Flux.fromIterable(next)
-					.flatMap(x -> x) // will prefetch all fluxes
+					.flatMap(x -> x)
 					.collectList()
 					.block(Duration.ofSeconds(60));
 

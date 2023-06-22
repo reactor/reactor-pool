@@ -419,7 +419,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								assert newInstance != null;
 								ACQUIRED.incrementAndGet(this);
 								metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
-								borrower.deliver(createSlot(newInstance));
+								poolConfig.acquisitionScheduler()
+										.schedule(() -> borrower.deliver(createSlot(newInstance)));
 							}
 							else if (sig.isOnError()) {
 								Throwable error = sig.getThrowable();

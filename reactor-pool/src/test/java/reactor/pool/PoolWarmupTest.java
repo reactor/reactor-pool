@@ -19,14 +19,12 @@ package reactor.pool;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.pool.TestUtils.ParameterizedTestWithName;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
-import java.io.Closeable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -113,7 +111,7 @@ public class PoolWarmupTest {
 	 * A DBConnection simulates an SQL "findAll" request, which is executed
 	 * through a DBConnectionThread executor.
 	 */
-	final static class DBConnection implements Closeable {
+	final static class DBConnection {
 		final DBConnectionThread dbThread;
 
 		public DBConnection(DBConnectionThread dbThread) {
@@ -121,25 +119,10 @@ public class PoolWarmupTest {
 		}
 
 		Flux<String> findAll() {
-			return Flux.create(sink -> sink.onRequest(value -> dbThread.execute(() -> doPublish(sink))));
-		}
-
-		void doPublish(FluxSink<String> sink) {
-			IntStream.range(0, 1000)
-					.peek(i -> sleep(1L))
-					.forEach(value -> sink.next("table entry - " + value));
-			sink.complete();
-		}
-
-		void sleep(long millis) {
-			try {
-				Thread.sleep(1);
-			} catch (InterruptedException ignored) {}
-		}
-
-		@Override
-		public void close() {
-			dbThread.stop();
+			return Flux.range(0, 1000)
+					.map(integer -> "table entry -" + integer)
+					.delayElements(Duration.ofMillis(1L))
+					.publishOn(Schedulers.fromExecutor(dbThread));
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -249,7 +249,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						                                    .returnPermits(1);
 					                          });
 				}
-				return Flux.concat(allWarmups)
+				// merge will eagerly subscribe to all warmups from the current thread
+				return Flux.merge(allWarmups.length, allWarmups)
 				           .reduce(0, (count, p) -> count + 1);
 			});
 		}
@@ -442,13 +443,14 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							logger.debug("should warm up {} extra resources", toWarmup);
 
 							final long startWarmupIteration = clock.millis();
-							Flux<Void> warmupFlux = Flux.range(1, toWarmup)
+							Flux<POOLABLE> warmupFlux = Flux.range(1, toWarmup)
 							    //individual warmup failures decrement the permit and are logged
 							    .flatMap(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator));
 
-							primary.onErrorResume(e -> Mono.empty())
-							       .thenMany(warmupFlux)
-							       .subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
+							// merge will eagerly subscribe to the primary and to all warmupFlux from the current thread.
+							Flux.merge(toWarmup + 1, primary, warmupFlux)
+									.onErrorResume(e -> Mono.empty())
+									.subscribe(poolable -> drain(), alreadyPropagatedOrLogged -> drain(), () -> drain());
 						}
 					}
 				}
@@ -469,7 +471,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		return poolConfig.allocator();
 	}
 
-	Mono<Void> warmupMono(int index, int max, long startWarmupIteration, Mono<POOLABLE> allocator) {
+	Mono<POOLABLE> warmupMono(int index, int max, long startWarmupIteration, Mono<POOLABLE> allocator) {
 		return allocator.flatMap(poolable -> {
 			logger.debug("warmed up extra resource {}/{}", index, max);
 			metricsRecorder.recordAllocationSuccessAndLatency(
@@ -479,9 +481,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				//BUT: it requires a PoolRef that is marked as invalidated
 				QueuePooledRef<POOLABLE> tempRef = createSlot(poolable);
 				tempRef.markDestroy();
-				return destroyPoolable(tempRef);
+				return destroyPoolable(tempRef)
+						.then(Mono.empty());
 			}
-			return Mono.empty();
+			return Mono.just(poolable);
 		}).onErrorResume(warmupError -> {
 			logger.debug("failed to warm up extra resource {}/{}: {}", index, max,
 					warmupError.toString());

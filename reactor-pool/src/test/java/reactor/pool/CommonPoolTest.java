@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1401,10 +1401,18 @@ public class CommonPoolTest {
 				.clock(recorder.getClock());
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
+		// warmup will eagerly subscribe 10 times to the allocator.
+		// The five first subscribtions will success (after around 100 millis), and some allocation should fail after around
+		// 200 millis.
 		assertThatIllegalStateException()
 				.isThrownBy(() -> pool.warmup().block());
 
-		assertThat(recorder.getAllocationTotalCount()).isEqualTo(2);
+		// at least 5 allocation should be successful
+		assertThat(recorder.getAllocationSuccessCount()).isEqualTo(5);
+		// at least 1 allocation should have failed
+		assertThat(recorder.getAllocationErrorCount()).isGreaterThanOrEqualTo(1);
+		// at least 6 allocations should have taken place
+		assertThat(recorder.getAllocationTotalCount()).isGreaterThanOrEqualTo(6);
 
 		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
 		long minError = recorder.getAllocationErrorHistogram().getMinValue();

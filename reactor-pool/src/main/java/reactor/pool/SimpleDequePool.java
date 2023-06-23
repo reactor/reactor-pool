@@ -448,8 +448,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							    //individual warmup failures decrement the permit and are logged
 							    .flatMap(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator));
 
-							// merge will eagerly subscribe to the primary and to all warmupFlux from the current thread.
-							Flux.merge(toWarmup + 1, primary, warmupFlux)
+							// mergeSequential will eagerly subscribe to the primary and to all warmupFlux from the current thread.
+							// The first completed source will be the primary, then the warmupFlux sources.
+							Flux.mergeSequential(toWarmup + 1, primary, warmupFlux)
 									.onErrorResume(e -> Mono.empty())
 									.subscribe(poolable -> drain(), alreadyPropagatedOrLogged -> drain(), () -> drain());
 						}

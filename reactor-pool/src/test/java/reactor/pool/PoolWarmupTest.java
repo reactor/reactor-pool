@@ -16,23 +16,24 @@
 
 package reactor.pool;
 
-import org.assertj.core.data.Offset;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.pool.TestUtils.ParameterizedTestWithName;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -65,148 +66,156 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Pierre De Rop
  */
 public class PoolWarmupTest {
-	/**
-	 * The test will be run twice: with InstrumentedPool warmups, and without it.
-	 * If warmup is not done, then the warmup will be internally done
-	 * lazily when the first acquire is taking place because the allocation strategy is
-	 * configured with minResources == maxResources.
-	 */
-	static List<Boolean> warmupOptions() { return Arrays.asList(Boolean.FALSE, Boolean.TRUE); }
+    static final Logger LOGGER = Loggers.getLogger(PoolWarmupTest.class);
 
-	static final Logger LOGGER = Loggers.getLogger(PoolWarmupTest.class);
+    protected static Stream<Arguments> warmupTestArgs() {
+        return Stream.of(
+                Arguments.of(true, 10, Schedulers.immediate()),
+                Arguments.of(true, 1, Schedulers.single()),
+                Arguments.of(false, 10, Schedulers.immediate()),
+                Arguments.of(false, 1, Schedulers.single())
+        );
+    }
 
-	/**
-	 * Each DBConnection will use one of the following DBConnection Executor
-	 */
-	final static class DBConnectionThread implements Executor {
-		final static ThreadLocal<DBConnectionThread> current = ThreadLocal.withInitial(() -> null);
 
-		final ExecutorService dbThread;
+    /**
+     * Each DBConnection will use one of the following DBConnection Executor
+     */
+    final static class DBConnectionThread implements Executor {
+        final static ThreadLocal<DBConnectionThread> current = ThreadLocal.withInitial(() -> null);
 
-		DBConnectionThread(String name) {
-			dbThread = Executors.newSingleThreadExecutor(r -> new Thread(() -> {
-				current.set(DBConnectionThread.this);
-				r.run();
-			}, name));
-		}
+        final ExecutorService dbThread;
+        final AtomicBoolean used = new AtomicBoolean(false);
 
-		void stop() {
-			dbThread.shutdown();
-			try {
-				if (! dbThread.awaitTermination(30, TimeUnit.SECONDS)) {
-					throw new IllegalStateException("Could not stop db thread timely.");
-				}
-			} catch (InterruptedException e) {
-				throw new RuntimeException(e);
-			}
-		}
+        DBConnectionThread(String name) {
+            dbThread = Executors.newSingleThreadExecutor(r -> new Thread(() -> {
+                current.set(DBConnectionThread.this);
+                r.run();
+            }, name));
+        }
 
-		@Override
-		public void execute(Runnable command) {
-			dbThread.execute(command);
-		}
-	}
+        void stop() {
+            dbThread.shutdown();
+            try {
+                if (!dbThread.awaitTermination(30, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Could not stop db thread timely.");
+                }
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
-	/**
-	 * A DBConnection simulates an SQL "findAll" request, which is executed
-	 * through a DBConnectionThread executor.
-	 */
-	final static class DBConnection {
-		final DBConnectionThread dbThread;
+        @Override
+        public void execute(Runnable command) {
+            used.set(true);
+            dbThread.execute(command);
+        }
+    }
 
-		public DBConnection(DBConnectionThread dbThread) {
-			this.dbThread = dbThread;
-		}
+    /**
+     * A DBConnection simulates an SQL "findAll" request, which is executed
+     * through a DBConnectionThread executor.
+     */
+    final static class DBConnection {
+        final DBConnectionThread dbThread;
 
-		Flux<String> findAll() {
-			return Flux.range(0, 1000)
-					.map(integer -> "table entry -" + integer)
-					.delayElements(Duration.ofMillis(1L))
-					.publishOn(Schedulers.fromExecutor(dbThread));
-		}
-	}
+        public DBConnection(DBConnectionThread dbThread) {
+            this.dbThread = dbThread;
+        }
 
-	/**
-	 * A DBConnection Pool, based on Reactor-Pool "InstrumentedPool", configured with minResources == maxResources
-	 */
-	final static class DBConnectionPool {
-		final int poolSize;
-		final DBConnectionThread[] dbThreads;
-		final InstrumentedPool<DBConnection> pool;
-		final static AtomicInteger roundRobin = new AtomicInteger();
+        Flux<String> findAll() {
+            return Flux.range(0, 1000)
+                    .map(integer -> "table entry -" + integer)
+                    .delayElements(Duration.ofMillis(1L))
+                    .publishOn(Schedulers.fromExecutor(dbThread));
+        }
+    }
 
-		DBConnectionPool(int poolSize) {
-			this.poolSize = poolSize;
-			this.dbThreads = new DBConnectionThread[poolSize];
-			IntStream.range(0, poolSize).forEach(i -> dbThreads[i] = new DBConnectionThread("dbthread-" + i));
+    /**
+     * A DBConnection Pool, based on Reactor-Pool "InstrumentedPool", configured with minResources == maxResources
+     */
+    final static class DBConnectionPool {
+        final int poolSize;
+        final DBConnectionThread[] dbThreads;
+        final InstrumentedPool<DBConnection> pool;
+        final static AtomicInteger roundRobin = new AtomicInteger();
 
-			pool = PoolBuilder
-					.from(Mono.defer(() -> {
-						// if the current thread is already one of our DB thread, then DBConnection.findAll will use
-						// this current thread, else, let's select one in a round-robin way.
-						DBConnectionThread dbThread = DBConnectionThread.current.get();
-						dbThread = dbThread == null ?
-								dbThreads[(roundRobin.incrementAndGet() & 0x7F_FF_FF_FF) % dbThreads.length] : dbThread;
-						return Mono.just(new DBConnection(dbThread))
-								.delayElement(Duration.ofMillis(10)) // simulate Database handshaking (authentication, etc ...)
-								.publishOn(Schedulers.fromExecutor(dbThread));
-					}))
-					.sizeBetween(10, 10)
-					.idleResourceReuseOrder(false)
-					.buildPool();
-		}
+        DBConnectionPool(int poolSize, int warmupConcurrency, Scheduler allocatorSubscribeScheduler) {
+            this.poolSize = poolSize;
+            this.dbThreads = new DBConnectionThread[poolSize];
+            IntStream.range(0, poolSize).forEach(i -> dbThreads[i] = new DBConnectionThread("dbthread-" + i));
 
-		InstrumentedPool<DBConnection> getPool() {
-			return pool;
-		}
+            pool = PoolBuilder
+                    .from(Mono.defer(() -> {
+                                // if the current thread is already one of our DB thread, then DBConnection.findAll will use
+                                // this current thread, else, let's select one in a round-robin way.
+                                DBConnectionThread dbThread = DBConnectionThread.current.get();
+                                dbThread = dbThread == null ?
+                                        dbThreads[(roundRobin.incrementAndGet() & 0x7F_FF_FF_FF) % dbThreads.length] : dbThread;
+                                return Mono.just(new DBConnection(dbThread))
+                                        .doOnSubscribe(subscription -> LOGGER.warn("subscribe"))
+                                        .delayElement(Duration.ofMillis(10)) // simulate Database handshaking (authentication, etc ...)
+                                        .publishOn(Schedulers.fromExecutor(dbThread));
+                            })
+                            .subscribeOn(allocatorSubscribeScheduler))
+                    .sizeBetween(10, 10)
+                    .idleResourceReuseOrder(false)
+                    .warmupConcurrency(warmupConcurrency)
+                    .buildPool();
+        }
 
-		void stop() {
-			pool.disposeLater().block(Duration.ofSeconds(30));
-			Stream.of(dbThreads).forEach(DBConnectionThread::stop);
-		}
-	}
+        InstrumentedPool<DBConnection> getPool() {
+            return pool;
+        }
 
-	@ParameterizedTestWithName
-	@MethodSource("warmupOptions")
-	void warmupTest(boolean doWarmup) {
-		int poolSize = 10;
-		DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize);
+        long dbThreadsUsed() {
+            return Stream.of(dbThreads)
+                    .filter(dbThread -> dbThread.used.get())
+                    .count();
+        }
 
-		try {
-			InstrumentedPool<DBConnection> pool = dbConnectionPool.getPool();
-			if (doWarmup) {
-				pool.warmup().block();
-			}
+        void stop() {
+            pool.disposeLater().block(Duration.ofSeconds(30));
+            Stream.of(dbThreads).forEach(DBConnectionThread::stop);
+        }
+    }
 
-			long startTime = System.currentTimeMillis();
+    @ParameterizedTest
+    @MethodSource("warmupTestArgs")
+    void warmupTest(boolean doWarmup, int warmupConcurrency, Scheduler allocatorSubscribeScheduler) {
+        int poolSize = 10;
+        DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize, warmupConcurrency, allocatorSubscribeScheduler);
 
-			List<Flux<String>> fluxes = IntStream.rangeClosed(1, poolSize)
-					.mapToObj(i -> Flux.from(pool.withPoolable(DBConnection::findAll)
-							.doOnComplete(() -> LOGGER.info(": " + i + "-findAll done"))))
-					.collect(Collectors.toList());
+        try {
+            InstrumentedPool<DBConnection> pool = dbConnectionPool.getPool();
+            if (doWarmup) {
+                pool.warmup().block();
+            }
 
-			List<Mono<Long>> next = new ArrayList<>();
-			for (Flux<String> flux : fluxes) {
-				next.add(flux.count().doOnNext(number -> LOGGER.info("num:" + number)));
-			}
+            long startTime = System.currentTimeMillis();
 
-			Flux.fromIterable(next)
-					.flatMap(x -> x)
-					.collectList()
-					.block(Duration.ofSeconds(60));
+            List<Flux<String>> fluxes = IntStream.rangeClosed(1, poolSize)
+                    .mapToObj(i -> Flux.from(pool.withPoolable(DBConnection::findAll)
+                            .doOnComplete(() -> LOGGER.info(": " + i + "-findAll done"))))
+                    .collect(Collectors.toList());
 
-			long elapsed = (System.currentTimeMillis() - startTime);
-			LOGGER.info("Elapsed time: " + elapsed);
+            List<Mono<Long>> next = new ArrayList<>();
+            for (Flux<String> flux : fluxes) {
+                next.add(flux.count().doOnNext(number -> LOGGER.info("num:" + number)));
+            }
 
-			// each "dbConnection.findAll()" should take around 1000 millis, we have
-			// 10 subscriptions, but we expect subscriptions to be served concurrently using
-			// our 10 DBConnections threads from the pool ... So the elapsed time should be around 1000 millis, not 10 000 millis !
-			assertThat(elapsed).isCloseTo(1000, Offset.offset(3000L));
-		}
+            Flux.fromIterable(next)
+                    .flatMap(x -> x)
+                    .collectList()
+                    .block(Duration.ofSeconds(60));
 
-		finally {
-			dbConnectionPool.stop();
-		}
-	}
+            long elapsed = (System.currentTimeMillis() - startTime);
+            LOGGER.info("Elapsed time: " + elapsed + ", concurrency=" + dbConnectionPool.dbThreadsUsed());
+
+            assertThat(dbConnectionPool.dbThreadsUsed()).isEqualTo(10);
+        } finally {
+            dbConnectionPool.stop();
+        }
+    }
 }
 

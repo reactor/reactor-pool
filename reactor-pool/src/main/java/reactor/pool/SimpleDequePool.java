@@ -43,6 +43,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
+import reactor.util.concurrent.Queues;
 
 /**
  * The {@link SimpleDequePool} is based on {@link Deque} for idle resources and pending {@link Pool#acquire()} Monos,
@@ -249,8 +250,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						                                    .returnPermits(1);
 					                          });
 				}
-				// merge will eagerly subscribe to all warmups from the current thread
-				return Flux.merge(allWarmups.length, allWarmups)
+				// merge will eagerly subscribe to all warmups from the current thread, but
+				// the concurrency can be controlled from configuration.
+				int warmupConcurrency = Math.min(allWarmups.length, poolConfig.warmupConcurrency());
+				return Flux.merge(Flux.fromArray(allWarmups), warmupConcurrency)
 				           .reduce(0, (count, p) -> count + 1);
 			});
 		}
@@ -419,8 +422,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 								assert newInstance != null;
 								ACQUIRED.incrementAndGet(this);
 								metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
-								poolConfig.acquisitionScheduler()
-										.schedule(() -> borrower.deliver(createSlot(newInstance)));
+								borrower.deliver(createSlot(newInstance));
 							}
 							else if (sig.isOnError()) {
 								Throwable error = sig.getThrowable();
@@ -444,13 +446,13 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							logger.debug("should warm up {} extra resources", toWarmup);
 
 							final long startWarmupIteration = clock.millis();
-							Flux<POOLABLE> warmupFlux = Flux.range(1, toWarmup)
-							    //individual warmup failures decrement the permit and are logged
-							    .flatMap(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator));
+							Flux<Mono<POOLABLE>> monos = Flux.range(0, toWarmup + 1)
+									.map(n -> (n == 0) ? primary : warmupMono(n, toWarmup, startWarmupIteration, allocator));
 
-							// mergeSequential will eagerly subscribe to the primary and to all warmupFlux from the current thread.
-							// The first completed source will be the primary, then the warmupFlux sources.
-							Flux.mergeSequential(toWarmup + 1, primary, warmupFlux)
+							// merge will eagerly subscribe to the allocator from the current thread, but the concurrency
+							// can be controlled from configuration
+							int warmupConcurrency = Math.min(toWarmup + 1, poolConfig.warmupConcurrency());
+							Flux.merge(monos, warmupConcurrency, Queues.XS_BUFFER_SIZE)
 									.onErrorResume(e -> Mono.empty())
 									.subscribe(poolable -> drain(), alreadyPropagatedOrLogged -> drain(), () -> drain());
 						}

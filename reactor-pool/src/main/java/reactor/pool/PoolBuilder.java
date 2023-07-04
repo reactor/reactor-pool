@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,6 +78,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder         = true;
 	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer = DEFAULT_PENDING_ACQUIRE_TIMER;
+	int									   warmupConcurrency 		   = DEFAULT_WARMUP_CONCURRENCY;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -431,6 +432,27 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	}
 
 	/**
+	 * Specifies the concurrency level used when the allocator is subscribed to during the warmup phase.
+	 * During warmup, resources that can be pre-allocated will be created eagerly, but at most {@code concurrency} resources are
+	 * subscribed to at the same time.
+	 * A concurrency level of 1 means that warmed-up resources will be pre-allocated one after the other, not concurrently.
+	 * A concurrency level of {@code Integer.MAX_VALUE} means that all pre-allocated resources will be created eagerly, with all resources being
+	 * subscribed to from the current thread.
+	 * By default, the concurrency level is set to {@code Integer.MAX_VALUE}, meaning that the allocator is subscribed to with the
+	 * highest possible concurrency level.
+	 *
+	 * @param warmupConcurrency The concurrency level used when the allocator is subscribed to during the warmup phase, must be positive,
+	 *                          {@code Integer.MAX_VALUE} by default
+	 */
+	public PoolBuilder<T, CONF> warmupConcurrency(int warmupConcurrency) {
+		if (warmupConcurrency < 1) {
+			throw new IllegalArgumentException("warmupConcurrency must be positive");
+		}
+		this.warmupConcurrency = warmupConcurrency;
+		return this;
+	}
+
+	/**
 	 * Construct a default reactor pool with the builder's configuration.
 	 *
 	 * @return an {@link InstrumentedPool}
@@ -479,7 +501,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				acquisitionScheduler,
 				metricsRecorder,
 				clock,
-				idleLruOrder);
+				idleLruOrder,
+				warmupConcurrency);
 
 		return this.configModifier.apply(baseConfig);
 	}
@@ -501,5 +524,5 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
 	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
-
+	static final int DEFAULT_WARMUP_CONCURRENCY = Integer.MAX_VALUE;
 }

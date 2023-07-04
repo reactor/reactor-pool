@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,4 +141,17 @@ public interface PoolConfig<POOLABLE> {
 		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
 	}
 
+	/**
+	 * Specifies the concurrency level used when the allocator is subscribed to during the warmup phase.
+	 * During warmup, resources that can be pre-allocated will be created eagerly, but at most {@code concurrency} resources are
+	 * subscribed to at the same time.
+	 * A concurrency level of 1 means that warmed-up resources will be pre-allocated one after the other, not concurrently.
+	 * A concurrency level of {@code Integer.MAX_VALUE} means that all pre-allocated resources will be created eagerly, with all resources being
+	 * subscribed to from the current thread.
+	 * By default, the concurrency level is set to {@code Integer.MAX_VALUE}, meaning that the allocator is subscribed to with the
+	 * highest possible concurrency level.
+	 */
+	default int warmupConcurrency() {
+		return PoolBuilder.DEFAULT_WARMUP_CONCURRENCY;
+	}
 }

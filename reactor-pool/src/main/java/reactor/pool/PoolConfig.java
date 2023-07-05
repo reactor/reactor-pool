@@ -142,16 +142,23 @@ public interface PoolConfig<POOLABLE> {
 	}
 
 	/**
-	 * Specifies the concurrency level used when the allocator is subscribed to during the warmup phase.
-	 * During warmup, resources that can be pre-allocated will be created eagerly, but at most {@code concurrency} resources are
-	 * subscribed to at the same time.
-	 * A concurrency level of 1 means that warmed-up resources will be pre-allocated one after the other, not concurrently.
-	 * A concurrency level of {@code Integer.MAX_VALUE} means that all pre-allocated resources will be created eagerly, with all resources being
-	 * subscribed to from the current thread.
-	 * By default, the concurrency level is set to {@code Integer.MAX_VALUE}, meaning that the allocator is subscribed to with the
-	 * highest possible concurrency level.
+	 * Specifies if the allocator should be subscribed to eagerly during warmup phase.
+	 * <p>
+	 * Returning {@code true} means that during warmup, all resources that must be pre-allocated will be
+	 * created eagerly. The allocator will be eagerly subscribed to from the current thread for each pre-allocated resources.
+	 * <p>
+	 * Returning {@code false} means that pre-allocation of resources is achieved by
+	 * sequentially subscribing to the allocator, waiting for a resource to be created before subscribing a next time to the allocator,
+	 * and so on until the last pre-allocated resource completes.
+	 *
+	 * <p>
+	 * By default, the warmup parallelism is disabled.
+	 *
+	 * @see #allocator
+	 *
+	 * @return {@code true} if the allocator should be subscribed to eagerly during warmup phase
 	 */
-	default int warmupConcurrency() {
-		return PoolBuilder.DEFAULT_WARMUP_CONCURRENCY;
+	default boolean parallelizeWarmup() {
+		return PoolBuilder.DEFAULT_PARALLELIZE_WARMUP;
 	}
 }

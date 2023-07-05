@@ -49,7 +49,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final PoolMetricsRecorder                           metricsRecorder;
 	protected final Clock                                         clock;
 	protected final boolean                                       isIdleLRU;
-	protected final int											  warmupConcurrency;
+	protected final boolean										  parallelizeWarmup;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -64,7 +64,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock,
 			boolean isIdleLRU,
-			int warmupConcurrency) {
+			boolean parallelizeWarmup) {
 		this.pendingAcquireTimer = pendingAcquireTimer;
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
@@ -78,12 +78,12 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
 		this.isIdleLRU = isIdleLRU;
-		this.warmupConcurrency = warmupConcurrency;
+		this.parallelizeWarmup = parallelizeWarmup;
 	}
 
 	/**
-	  * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, BiFunction, Function, Function, BiPredicate, Duration, Scheduler, Scheduler, PoolMetricsRecorder, Clock, boolean, int) other constructor}
-	  * with explicit setting of warmupConcurrency, to be removed in 1.0.2 at the earliest.
+	  * @deprecated use the {@link #DefaultPoolConfig(Mono, AllocationStrategy, int, BiFunction, Function, Function, BiPredicate, Duration, Scheduler, Scheduler, PoolMetricsRecorder, Clock, boolean, boolean) other constructor}
+	  * with explicit setting of parallelizeWarmup, to be removed in 1.0.2 at the earliest.
 	  * @since 1.0.1
 	  */
 	@Deprecated
@@ -103,7 +103,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this(allocator, allocationStrategy, maxPending, pendingAcquireTimer, releaseHandler,
 				destroyHandler, evictionPredicate, evictInBackgroundInterval, evictInBackgroundScheduler,
 				acquisitionScheduler, metricsRecorder, clock, isIdleLRU,
-				PoolBuilder.DEFAULT_WARMUP_CONCURRENCY);
+				PoolBuilder.DEFAULT_PARALLELIZE_WARMUP);
 	}
 
 	/**
@@ -128,7 +128,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
 			this.clock = toCopyDpc.clock;
 			this.isIdleLRU = toCopyDpc.isIdleLRU;
-			this.warmupConcurrency = toCopyDpc.warmupConcurrency;
+			this.parallelizeWarmup = toCopyDpc.parallelizeWarmup;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -144,7 +144,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopy.metricsRecorder();
 			this.clock = toCopy.clock();
 			this.isIdleLRU = toCopy.reuseIdleResourcesInLruOrder();
-			this.warmupConcurrency = toCopy.warmupConcurrency();
+			this.parallelizeWarmup = toCopy.parallelizeWarmup();
 		}
 	}
 
@@ -169,8 +169,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	}
 
 	@Override
-	public int warmupConcurrency() {
-		return this.warmupConcurrency;
+	public boolean parallelizeWarmup() {
+		return this.parallelizeWarmup;
 	}
 
 	@Override

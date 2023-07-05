@@ -70,10 +70,14 @@ public class PoolWarmupTest {
 
     protected static Stream<Arguments> warmupTestArgs() {
         return Stream.of(
-                Arguments.of(true, 10, Schedulers.immediate()),
-                Arguments.of(true, 1, Schedulers.single()),
-                Arguments.of(false, 10, Schedulers.immediate()),
-                Arguments.of(false, 1, Schedulers.single())
+                Arguments.of(true, true, Schedulers.immediate(), true),
+                Arguments.of(true, true, Schedulers.single(), true),
+                Arguments.of(true, false, Schedulers.single(), true),
+                Arguments.of(true, false, Schedulers.immediate(), false),
+                Arguments.of(false, true, Schedulers.immediate(), true),
+                Arguments.of(false, true, Schedulers.single(), true),
+                Arguments.of(false, false, Schedulers.single(), true),
+                Arguments.of(false, false, Schedulers.immediate(), false)
         );
     }
 
@@ -140,7 +144,7 @@ public class PoolWarmupTest {
         final InstrumentedPool<DBConnection> pool;
         final static AtomicInteger roundRobin = new AtomicInteger();
 
-        DBConnectionPool(int poolSize, int warmupConcurrency, Scheduler allocatorSubscribeScheduler) {
+        DBConnectionPool(int poolSize, boolean enableParallelWarmup, Scheduler allocatorSubscribeScheduler) {
             this.poolSize = poolSize;
             this.dbThreads = new DBConnectionThread[poolSize];
             IntStream.range(0, poolSize).forEach(i -> dbThreads[i] = new DBConnectionThread("dbthread-" + i));
@@ -160,7 +164,7 @@ public class PoolWarmupTest {
                             .subscribeOn(allocatorSubscribeScheduler))
                     .sizeBetween(10, 10)
                     .idleResourceReuseOrder(false)
-                    .warmupConcurrency(warmupConcurrency)
+                    .parallelizeWarmup(enableParallelWarmup)
                     .buildPool();
         }
 
@@ -182,9 +186,9 @@ public class PoolWarmupTest {
 
     @ParameterizedTest
     @MethodSource("warmupTestArgs")
-    void warmupTest(boolean doWarmup, int warmupConcurrency, Scheduler allocatorSubscribeScheduler) {
+    void warmupTest(boolean doWarmup, boolean enableParallelWarmup, Scheduler allocatorSubscribeScheduler, boolean expectSuccess) {
         int poolSize = 10;
-        DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize, warmupConcurrency, allocatorSubscribeScheduler);
+        DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize, enableParallelWarmup, allocatorSubscribeScheduler);
 
         try {
             InstrumentedPool<DBConnection> pool = dbConnectionPool.getPool();
@@ -212,7 +216,12 @@ public class PoolWarmupTest {
             long elapsed = (System.currentTimeMillis() - startTime);
             LOGGER.info("Elapsed time: " + elapsed + ", concurrency=" + dbConnectionPool.dbThreadsUsed());
 
-            assertThat(dbConnectionPool.dbThreadsUsed()).isEqualTo(10);
+            if (expectSuccess) {
+                assertThat(dbConnectionPool.dbThreadsUsed()).isEqualTo(10);
+            }
+            else {
+                assertThat(dbConnectionPool.dbThreadsUsed()).isLessThan(10);
+            }
         } finally {
             dbConnectionPool.stop();
         }

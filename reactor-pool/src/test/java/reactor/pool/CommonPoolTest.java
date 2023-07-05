@@ -1401,6 +1401,40 @@ public class CommonPoolTest {
 				.clock(recorder.getClock());
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
+		assertThatIllegalStateException()
+				.isThrownBy(() -> pool.warmup().block());
+
+		assertThat(recorder.getAllocationTotalCount()).isEqualTo(2);
+
+		long minSuccess = recorder.getAllocationSuccessHistogram().getMinValue();
+		long minError = recorder.getAllocationErrorHistogram().getMinValue();
+
+		assertThat(minSuccess).as("allocation success latency").isGreaterThanOrEqualTo(100L);
+		assertThat(minError).as("allocation error latency").isGreaterThanOrEqualTo(200L);
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void recordsAllocationLatenciesInEagerWarmup(PoolStyle configAdjuster) {
+		AtomicBoolean flip = new AtomicBoolean();
+		//note the starter method here is irrelevant, only the config is created and passed to createPool
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.defer(() -> {
+					if (flip.compareAndSet(false, true)) {
+						return Mono.just("foo").delayElement(Duration.ofMillis(100));
+					}
+					else {
+						flip.compareAndSet(true, false);
+						return Mono.delay(Duration.ofMillis(200)).then(Mono.error(new IllegalStateException("boom")));
+					}
+				}))
+				.sizeBetween(10, Integer.MAX_VALUE)
+				.parallelizeWarmup(true)
+				.metricsRecorder(recorder)
+				.clock(recorder.getClock());
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
 		// warmup will eagerly subscribe 10 times to the allocator.
 		// The five first subscribtions will success (after around 100 millis), and some allocation should fail after around
 		// 200 millis.

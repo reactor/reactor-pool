@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,24 +141,4 @@ public interface PoolConfig<POOLABLE> {
 		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
 	}
 
-	/**
-	 * Specifies if the allocator should be subscribed to eagerly during warmup phase.
-	 * <p>
-	 * Returning {@code true} means that during warmup, all resources that must be pre-allocated will be
-	 * created eagerly. The allocator will be eagerly subscribed to from the current thread for each pre-allocated resources.
-	 * <p>
-	 * Returning {@code false} means that pre-allocation of resources is achieved by
-	 * sequentially subscribing to the allocator, waiting for a resource to be created before subscribing a next time to the allocator,
-	 * and so on until the last pre-allocated resource completes.
-	 *
-	 * <p>
-	 * By default, the warmup parallelism is disabled.
-	 *
-	 * @see #allocator
-	 *
-	 * @return {@code true} if the allocator should be subscribed to eagerly during warmup phase
-	 */
-	default boolean parallelizeWarmup() {
-		return PoolBuilder.DEFAULT_PARALLELIZE_WARMUP;
-	}
 }

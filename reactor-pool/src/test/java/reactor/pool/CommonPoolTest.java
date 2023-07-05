@@ -1429,8 +1429,7 @@ public class CommonPoolTest {
 						return Mono.delay(Duration.ofMillis(200)).then(Mono.error(new IllegalStateException("boom")));
 					}
 				}))
-				.sizeBetween(10, Integer.MAX_VALUE)
-				.parallelizeWarmup(true)
+				.sizeBetween(10, Integer.MAX_VALUE, 10)
 				.metricsRecorder(recorder)
 				.clock(recorder.getClock());
 		AbstractPool<String> pool = configAdjuster.apply(builder);

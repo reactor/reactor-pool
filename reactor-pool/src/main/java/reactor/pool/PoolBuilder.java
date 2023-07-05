@@ -78,7 +78,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder         = true;
 	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer = DEFAULT_PENDING_ACQUIRE_TIMER;
-	boolean								   parallelizeWarmup 		   = DEFAULT_PARALLELIZE_WARMUP;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -350,6 +349,10 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
 	 * At the same time it MUST NOT allocate any resource if that would bring the number of live resources
 	 * over the {@code max}, rejecting further allocations until some resources have been {@link PooledRef#release() released}.
+	 * <p>
+	 * Pre-allocation of warmed-up resources, if any, will be performed sequentially by subscribing to the allocator
+	 * one at a time. The process waits for a resource to be created before subscribing again to the allocator.
+	 * This sequence continues until all pre-allocated resources have been successfully created.
 	 *
 	 * @param min the minimum number of live resources to keep in the pool (can be best effort)
 	 * @param max the maximum number of live resources to keep in the pool. use {@link Integer#MAX_VALUE} when you only need a
@@ -359,7 +362,32 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * @see #allocationStrategy(AllocationStrategy)
 	 */
 	public PoolBuilder<T, CONF> sizeBetween(int min, int max) {
-		return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, max));
+		return sizeBetween(min, max, DEFAULT_WARMUP_PARALLELISM);
+	}
+
+	/**
+	 * Replace the {@link AllocationStrategy} with one that lets the {@link Pool} allocate between {@code min} and {@code max} resources.
+	 * When acquiring and there is no available resource, the pool should strive to warm up enough resources to reach
+	 * {@code min} live resources before serving the acquire with (one of) the newly created resource(s).
+	 * At the same time it MUST NOT allocate any resource if that would bring the number of live resources
+	 * over the {@code max}, rejecting further allocations until some resources have been {@link PooledRef#release() released}.
+	 *
+	 * @param min the minimum number of live resources to keep in the pool (can be best effort)
+	 * @param max the maximum number of live resources to keep in the pool. use {@link Integer#MAX_VALUE} when you only need a
+	 * minimum and no upper bound
+	 * @param warmupParallelism Specifies the concurrency level used when the allocator is subscribed to during the warmup phase, if any.
+	 * During warmup, resources that can be pre-allocated will be created eagerly, but at most {@code warmupParallelism} resources are
+	 * subscribed to at the same time.
+	 * A {@code warmupParallelism} of 1 means that pre-allocation of resources is achieved by sequentially subscribing to the allocator,
+	 * waiting for a resource to be created before subscribing a next time to the allocator, and so on until the last allocation
+	 * completes.
+	 * @return this {@link Pool} builder
+	 * @see #sizeUnbounded()
+	 * @see #allocationStrategy(AllocationStrategy)
+	 * @since 1.0.1
+	 */
+	public PoolBuilder<T, CONF> sizeBetween(int min, int max, int warmupParallelism) {
+		return allocationStrategy(new AllocationStrategies.SizeBasedAllocationStrategy(min, max, warmupParallelism));
 	}
 
 	/**
@@ -432,28 +460,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	}
 
 	/**
-	 * Specifies if the allocator should be subscribed to eagerly during warmup phase.
-	 * <p>
-	 * Setting the {@code enableParallelism} flag to {@code true} means that during warmup, all resources that must be pre-allocated will be
-	 * created eagerly. The allocator will be eagerly subscribed to from the current thread for each pre-allocated resources.
-	 * <p>
-	 * Setting the {@code enableParallelism} flag to {@code false} means that pre-allocation of resources is achieved by
-	 * sequentially subscribing to the allocator, waiting for a resource to be created before subscribing a next time to the allocator,
-	 * and so on until the last pre-allocated resource completes.
-	 *
-	 * <p>
-	 * By default, the warmup parallelism is disabled.
-	 *
-	 * @see #allocator
-	 *
-	 * @param enableParallelism Specifies if the allocator should be subscribed to eagerly during warmup phase, {@code false} by default
-	 */
-	public PoolBuilder<T, CONF> parallelizeWarmup(boolean enableParallelism) {
-		this.parallelizeWarmup = enableParallelism;
-		return this;
-	}
-
-	/**
 	 * Construct a default reactor pool with the builder's configuration.
 	 *
 	 * @return an {@link InstrumentedPool}
@@ -502,8 +508,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				acquisitionScheduler,
 				metricsRecorder,
 				clock,
-				idleLruOrder,
-				parallelizeWarmup);
+				idleLruOrder);
 
 		return this.configModifier.apply(baseConfig);
 	}
@@ -525,5 +530,5 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
 	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
-	static final boolean DEFAULT_PARALLELIZE_WARMUP = false;
+	static final int DEFAULT_WARMUP_PARALLELISM = 1;
 }

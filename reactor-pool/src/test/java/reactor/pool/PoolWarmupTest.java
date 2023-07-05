@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <li>like in reactor-netty and r2dbc, when a DBConnection is created, it will either use
  *   a dedicate thread that will be used to send SQL requests on the DBConnection, unless the current thread is already
  *   a DBConnection thread. In this case, the current DBConnection thread will be used: this is similar to
- *   "colocated" TcpRespource EventLoops in reactor-netty.</li>
+ *   "colocated" TcpResource EventLoops in reactor-netty.</li>
  * </ul>
  *
  * @author Pierre De Rop
@@ -70,14 +70,22 @@ public class PoolWarmupTest {
 
     protected static Stream<Arguments> warmupTestArgs() {
         return Stream.of(
-                Arguments.of(true, true, Schedulers.immediate(), true),
-                Arguments.of(true, true, Schedulers.single(), true),
-                Arguments.of(true, false, Schedulers.single(), true),
-                Arguments.of(true, false, Schedulers.immediate(), false),
-                Arguments.of(false, true, Schedulers.immediate(), true),
-                Arguments.of(false, true, Schedulers.single(), true),
-                Arguments.of(false, false, Schedulers.single(), true),
-                Arguments.of(false, false, Schedulers.immediate(), false)
+                // explicit warmup with parallelism=10, subscribes to allocator from current thread, expect success
+                Arguments.of(true, 10, Schedulers.immediate(), true),
+                // explicit warmup with parallelism=10, subscribes to allocator from Schedulers.single, expect success
+                Arguments.of(true, 10, Schedulers.single(), true),
+                // explicit warmup with parallelism=1, subscribes to allocator from Schedulers.single, expect success
+                Arguments.of(true, 1, Schedulers.single(), true),
+                // explicit warmup with parallelism=1, subscribes to allocator from current thread, expect failure
+                Arguments.of(true, 1, Schedulers.immediate(), false),
+                // implicit warmup with parallelism=10, subscribes to allocator from current thread, expect success
+                Arguments.of(false, 10, Schedulers.immediate(), true),
+                // implicit warmup with parallelism=10, subscribes to allocator from Schedulers.single, expect success
+                Arguments.of(false, 10, Schedulers.single(), true),
+                // implicit warmup with parallelism=1, subscribes to allocator from Schedulers.single, expect success
+                Arguments.of(false, 1, Schedulers.single(), true),
+                // implicit warmup with parallelism=1, subscribes to allocator from current thread, expect failure
+                Arguments.of(false, 1, Schedulers.immediate(), false)
         );
     }
 
@@ -144,7 +152,7 @@ public class PoolWarmupTest {
         final InstrumentedPool<DBConnection> pool;
         final static AtomicInteger roundRobin = new AtomicInteger();
 
-        DBConnectionPool(int poolSize, boolean enableParallelWarmup, Scheduler allocatorSubscribeScheduler) {
+        DBConnectionPool(int poolSize, int warmupParallelism, Scheduler allocatorSubscribeScheduler) {
             this.poolSize = poolSize;
             this.dbThreads = new DBConnectionThread[poolSize];
             IntStream.range(0, poolSize).forEach(i -> dbThreads[i] = new DBConnectionThread("dbthread-" + i));
@@ -162,9 +170,8 @@ public class PoolWarmupTest {
                                         .publishOn(Schedulers.fromExecutor(dbThread));
                             })
                             .subscribeOn(allocatorSubscribeScheduler))
-                    .sizeBetween(10, 10)
+                    .sizeBetween(10, 10, warmupParallelism)
                     .idleResourceReuseOrder(false)
-                    .parallelizeWarmup(enableParallelWarmup)
                     .buildPool();
         }
 
@@ -186,9 +193,9 @@ public class PoolWarmupTest {
 
     @ParameterizedTest
     @MethodSource("warmupTestArgs")
-    void warmupTest(boolean doWarmup, boolean enableParallelWarmup, Scheduler allocatorSubscribeScheduler, boolean expectSuccess) {
+    void warmupTest(boolean doWarmup, int warmupParallelism, Scheduler allocatorSubscribeScheduler, boolean expectSuccess) {
         int poolSize = 10;
-        DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize, enableParallelWarmup, allocatorSubscribeScheduler);
+        DBConnectionPool dbConnectionPool = new DBConnectionPool(poolSize, warmupParallelism, allocatorSubscribeScheduler);
 
         try {
             InstrumentedPool<DBConnection> pool = dbConnectionPool.getPool();

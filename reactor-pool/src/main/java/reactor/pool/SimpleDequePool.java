@@ -252,7 +252,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				}
 				// merge will eagerly subscribe to all warmups from the current thread, but
 				// the parallelism can be controlled from configuration.
-				int mergeConcurrency = poolConfig.parallelizeWarmup() ? allWarmups.length : 1;
+				int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), allWarmups.length);
 				return Flux.merge(Flux.fromArray(allWarmups), mergeConcurrency)
 				           .reduce(0, (count, p) -> count + 1);
 			});
@@ -451,7 +451,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 							// merge will eagerly subscribe to the allocator from the current thread, but the concurrency
 							// can be controlled from configuration
-							int mergeConcurrency = poolConfig.parallelizeWarmup() ? toWarmup + 1 : 1;
+							int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
 							Flux.merge(monos, mergeConcurrency, Queues.XS_BUFFER_SIZE)
 									.onErrorResume(e -> Mono.empty())
 									.subscribe(poolable -> drain(), alreadyPropagatedOrLogged -> drain(), () -> drain());

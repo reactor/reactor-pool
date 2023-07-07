@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
@@ -43,7 +44,6 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
 import reactor.util.annotation.Nullable;
-import reactor.util.concurrent.Queues;
 
 /**
  * The {@link SimpleDequePool} is based on {@link Deque} for idle resources and pending {@link Pool#acquire()} Monos,
@@ -446,15 +446,15 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							logger.debug("should warm up {} extra resources", toWarmup);
 
 							final long startWarmupIteration = clock.millis();
-							Flux<Mono<POOLABLE>> monos = Flux.range(0, toWarmup + 1)
-									.map(n -> (n == 0) ? primary : warmupMono(n, toWarmup, startWarmupIteration, allocator));
-
-							// merge will eagerly subscribe to the allocator from the current thread, but the concurrency
+							// flatMap will eagerly subscribe to the allocator from the current thread, but the concurrency
 							// can be controlled from configuration
-							int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
-							Flux.merge(monos, mergeConcurrency, Queues.XS_BUFFER_SIZE)
+							final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
+							Flux.range(1, toWarmup)
+									.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
+									.startWith(primary.doOnSuccess(__ -> drain()).then())
+									.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
 									.onErrorResume(e -> Mono.empty())
-									.subscribe(poolable -> drain(), alreadyPropagatedOrLogged -> drain(), () -> drain());
+									.subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
 						}
 					}
 				}
@@ -475,7 +475,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		return poolConfig.allocator();
 	}
 
-	Mono<POOLABLE> warmupMono(int index, int max, long startWarmupIteration, Mono<POOLABLE> allocator) {
+	Mono<Void> warmupMono(int index, int max, long startWarmupIteration, Mono<POOLABLE> allocator) {
 		return allocator.flatMap(poolable -> {
 			logger.debug("warmed up extra resource {}/{}", index, max);
 			metricsRecorder.recordAllocationSuccessAndLatency(
@@ -485,10 +485,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				//BUT: it requires a PoolRef that is marked as invalidated
 				QueuePooledRef<POOLABLE> tempRef = createSlot(poolable);
 				tempRef.markDestroy();
-				return destroyPoolable(tempRef)
-						.then(Mono.empty());
+				return destroyPoolable(tempRef);
 			}
-			return Mono.just(poolable);
+			return Mono.empty();
 		}).onErrorResume(warmupError -> {
 			logger.debug("failed to warm up extra resource {}/{}: {}", index, max,
 					warmupError.toString());

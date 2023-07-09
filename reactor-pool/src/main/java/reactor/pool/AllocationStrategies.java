@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,16 +74,28 @@ final class AllocationStrategies {
 
 		final int min;
 		final int max;
+		final int warmupParallelism;
 
 		volatile int permits;
 		static final AtomicIntegerFieldUpdater<SizeBasedAllocationStrategy> PERMITS = AtomicIntegerFieldUpdater.newUpdater(SizeBasedAllocationStrategy.class, "permits");
 
 		SizeBasedAllocationStrategy(int min, int max) {
+			this(min, max, PoolBuilder.DEFAULT_WARMUP_PARALLELISM);
+		}
+
+		SizeBasedAllocationStrategy(int min, int max, int warmupParallelism) {
 			if (min < 0) throw new IllegalArgumentException("min must be positive or zero");
 			if (max < 1) throw new IllegalArgumentException("max must be strictly positive");
 			if (min > max) throw new IllegalArgumentException("min must be less than or equal to max");
+			if (min > 0 && warmupParallelism < 1) {
+				throw new IllegalArgumentException("warmupParallelism must be greater than 0");
+			}
+			if (min > 0 && warmupParallelism > min) {
+				throw new IllegalArgumentException("warmupParallelism must be less than or equal to min");
+			}
 			this.min = min;
 			this.max = max;
+			this.warmupParallelism = warmupParallelism;
 			PERMITS.lazySet(this, this.max);
 		}
 
@@ -145,6 +157,11 @@ final class AllocationStrategies {
 					return;
 				}
 			}
+		}
+
+		@Override
+		public int warmupParallelism() {
+			return warmupParallelism;
 		}
 	}
 }

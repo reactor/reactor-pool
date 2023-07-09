@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -192,110 +192,110 @@ public class TestUtils {
 		 * @param startTimeMillis the starting time, as measured by {@link #getClock() the Clock's} {@link Clock#millis() millis()}
 		 * @return the elapsed time
 		 */
-		public long measureTime(long startTimeMillis) {
+		public synchronized long measureTime(long startTimeMillis) {
 			final long l = clock.millis() - startTimeMillis;
 			if (l <= 0) return 1;
 			return l;
 		}
 
 		@Override
-		public void recordAllocationSuccessAndLatency(long latencyMs) {
+		public synchronized void recordAllocationSuccessAndLatency(long latencyMs) {
 			allocationSuccessHistogram.recordValue(latencyMs);
 		}
 
 		@Override
-		public void recordAllocationFailureAndLatency(long latencyMs) {
+		public synchronized void recordAllocationFailureAndLatency(long latencyMs) {
 			allocationErrorHistogram.recordValue(latencyMs);
 		}
 
 		@Override
-		public void recordResetLatency(long latencyMs) {
+		public synchronized void recordResetLatency(long latencyMs) {
 			resetHistogram.recordValue(latencyMs);
 		}
 
 		@Override
-		public void recordDestroyLatency(long latencyMs) {
+		public synchronized void recordDestroyLatency(long latencyMs) {
 			destroyHistogram.recordValue(latencyMs);
 		}
 
 		@Override
-		public void recordRecycled() {
+		public synchronized void recordRecycled() {
 			recycledCounter.increment();
 		}
 
 		@Override
-		public void recordLifetimeDuration(long millisecondsSinceAllocation) {
+		public synchronized void recordLifetimeDuration(long millisecondsSinceAllocation) {
 			this.lifetimeHistogram.recordValue(millisecondsSinceAllocation);
 		}
 
 		@Override
-		public void recordIdleTime(long millisecondsIdle) {
+		public synchronized void recordIdleTime(long millisecondsIdle) {
 			this.idleTimeHistogram.recordValue(millisecondsIdle);
 		}
 
 		@Override
-		public void recordSlowPath() {
+		public synchronized void recordSlowPath() {
 			this.slowPathCounter.increment();
 		}
 
 		@Override
-		public void recordFastPath() {
+		public synchronized void recordFastPath() {
 			this.fastPathCounter.increment();
 		}
 
-		public long getAllocationTotalCount() {
+		public synchronized long getAllocationTotalCount() {
 			return allocationSuccessHistogram.getTotalCount() + allocationErrorHistogram.getTotalCount();
 		}
 
-		public long getAllocationSuccessCount() {
+		public synchronized long getAllocationSuccessCount() {
 			return allocationSuccessHistogram.getTotalCount();
 		}
 
-		public long getAllocationErrorCount() {
+		public synchronized long getAllocationErrorCount() {
 			return allocationErrorHistogram.getTotalCount();
 		}
 
-		public long getResetCount() {
+		public synchronized long getResetCount() {
 			return resetHistogram.getTotalCount();
 		}
 
-		public long getDestroyCount() {
+		public synchronized long getDestroyCount() {
 			return destroyHistogram.getTotalCount();
 		}
 
-		public long getRecycledCount() {
+		public synchronized long getRecycledCount() {
 			return recycledCounter.sum();
 		}
 
-		public ShortCountsHistogram getAllocationSuccessHistogram() {
+		public synchronized ShortCountsHistogram getAllocationSuccessHistogram() {
 			return allocationSuccessHistogram;
 		}
 
-		public ShortCountsHistogram getAllocationErrorHistogram() {
+		public synchronized ShortCountsHistogram getAllocationErrorHistogram() {
 			return allocationErrorHistogram;
 		}
 
-		public ShortCountsHistogram getResetHistogram() {
+		public synchronized ShortCountsHistogram getResetHistogram() {
 			return resetHistogram;
 		}
 
-		public ShortCountsHistogram getDestroyHistogram() {
+		public synchronized ShortCountsHistogram getDestroyHistogram() {
 			return destroyHistogram;
 		}
 
-		public Histogram getLifetimeHistogram() {
+		public synchronized Histogram getLifetimeHistogram() {
 			return lifetimeHistogram;
 		}
 
-		public Histogram getIdleTimeHistogram() {
+		public synchronized Histogram getIdleTimeHistogram() {
 			return idleTimeHistogram;
 		}
 
-		public long getFastPathCount() {
+		public synchronized long getFastPathCount() {
 			return fastPathCounter.sum();
 		}
 
-		public long getSlowPathCount() {
+		public synchronized long getSlowPathCount() {
 			return slowPathCounter.sum();
 		}
 	}

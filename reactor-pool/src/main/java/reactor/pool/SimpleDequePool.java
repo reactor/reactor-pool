@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
@@ -249,7 +250,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						                                    .returnPermits(1);
 					                          });
 				}
-				return Flux.concat(allWarmups)
+				// merge will eagerly subscribe to all warmups from the current thread, but
+				// the parallelism can be controlled from configuration.
+				int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), allWarmups.length);
+				return Flux.merge(Flux.fromArray(allWarmups), mergeConcurrency)
 				           .reduce(0, (count, p) -> count + 1);
 			});
 		}
@@ -442,13 +446,15 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							logger.debug("should warm up {} extra resources", toWarmup);
 
 							final long startWarmupIteration = clock.millis();
-							Flux<Void> warmupFlux = Flux.range(1, toWarmup)
-							    //individual warmup failures decrement the permit and are logged
-							    .flatMap(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator));
-
-							primary.onErrorResume(e -> Mono.empty())
-							       .thenMany(warmupFlux)
-							       .subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
+							// flatMap will eagerly subscribe to the allocator from the current thread, but the concurrency
+							// can be controlled from configuration
+							final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
+							Flux.range(1, toWarmup)
+									.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
+									.startWith(primary.doOnSuccess(__ -> drain()).then())
+									.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
+									.onErrorResume(e -> Mono.empty())
+									.subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
 						}
 					}
 				}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,4 +75,22 @@ public interface AllocationStrategy {
 	 * is not consistent with the strategy's limits and delivered permits.
 	 */
 	void returnPermits(int returned);
+
+	/**
+	 * Return the concurrency level used when the allocator is subscribed to during the warmup phase, if any.
+	 * <p>
+	 * The number of resources created concurrently will not exceed the value returned by {@code warmupParallelism()}.
+	 * If the concurrency level is set to 1, pre-allocation of resources will be performed sequentially by subscribing to the allocator
+	 * one at a time. The process waits for a resource to be created before subscribing again to the allocator.
+	 * This sequence continues until all pre-allocated resources have been successfully created.
+	 * <p>
+	 * Defaults to 1
+	 *
+	 * @return The concurrency level used when the allocator is subscribed to during the warmup phase, must be positive,
+	 *                          {@code 1} by default
+	 * @since 1.0.1
+	 */
+	default int warmupParallelism() {
+		return PoolBuilder.DEFAULT_WARMUP_PARALLELISM;
+	}
 }

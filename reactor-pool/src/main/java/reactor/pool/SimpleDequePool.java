@@ -99,6 +99,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	Disposable evictionTask;
 
+	// Flag used to avoid creating resources while warmup is in progress
+	volatile boolean warmupInProgress = false;
+
 	SimpleDequePool(PoolConfig<POOLABLE> poolConfig) {
 		super(poolConfig, Loggers.getLogger(SimpleDequePool.class));
 		this.idleResourceLeastRecentlyUsed = poolConfig.reuseIdleResourcesInLruOrder();
@@ -372,89 +375,97 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					          .schedule(() -> borrower.deliver(slot));
 				}
 				else {
-					/*==================================*
-					 * One Borrower, but NO RESOURCE... *
-					 *==================================*/
-					// Can we allocate more?
-					int permits = poolConfig.allocationStrategy().getPermits(1);
-					if (permits <= 0) {
-						/*==========================*
-						 * ... and CANNOT ALLOCATE  => MAX PENDING ENFORCING *
-						 *==========================*/
-						//we don't have idle resource nor allocation permit
-						//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
-						if (maxPending >= 0) {
-							borrowersCount = pendingSize;
-							int toCull = borrowersCount - maxPending;
-							for (int i = 0; i < toCull; i++) {
-								Borrower<POOLABLE> extraneous = pendingPoll(borrowers);
-								if (extraneous != null) {
-									//fail fast. differentiate slightly special case of maxPending == 0
-									if (maxPending == 0) {
-										extraneous.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
-									}
-									else {
-										extraneous.fail(new PoolAcquirePendingLimitException(maxPending));
+					/*=========================================================================================================*
+					 * One Borrower, but no idle resource, or some resources are still warming up
+					 *=========================================================================================================*/
+
+					if(! warmupInProgress) {
+						// Warmup not in progress, can we allocate more ?
+						int permits = poolConfig.allocationStrategy().getPermits(1);
+						if (permits <= 0) {
+							/*==========================*
+							 * ... and CANNOT ALLOCATE  => MAX PENDING ENFORCING *
+							 *==========================*/
+							//we don't have idle resource nor allocation permit
+							//we look at the borrowers and cull those that are above the maxPending limit (using pollLast!)
+							if (maxPending >= 0) {
+								borrowersCount = pendingSize;
+								int toCull = borrowersCount - maxPending;
+								for (int i = 0; i < toCull; i++) {
+									Borrower<POOLABLE> extraneous = pendingPoll(borrowers);
+									if (extraneous != null) {
+										//fail fast. differentiate slightly special case of maxPending == 0
+										if (maxPending == 0) {
+											extraneous.fail(new PoolAcquirePendingLimitException(0, "No pending allowed and pool has reached allocation limit"));
+										}
+										else {
+											extraneous.fail(new PoolAcquirePendingLimitException(maxPending));
+										}
 									}
 								}
 							}
 						}
-					}
-					else {
-						/*=======================*
-						 * ... and CAN ALLOCATE  => Subscribe to allocator + Warmup *
-						 *=======================*/
-						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
-						if (borrower == null) {
-							continue; //we expect to detect pool is shut down in next round
-						}
-						if (isDisposed()) {
-							borrower.fail(new PoolShutdownException());
-							return;
-						}
-						borrower.stopPendingCountdown();
-						long start = clock.millis();
-						Mono<POOLABLE> allocator = allocatorWithScheduler();
-
-						Mono<POOLABLE> primary = allocator.doOnEach(sig -> {
-							if (sig.isOnNext()) {
-								POOLABLE newInstance = sig.get();
-								assert newInstance != null;
-								ACQUIRED.incrementAndGet(this);
-								metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
-								borrower.deliver(createSlot(newInstance));
-							}
-							else if (sig.isOnError()) {
-								Throwable error = sig.getThrowable();
-								assert error != null;
-								metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
-								poolConfig.allocationStrategy()
-								          .returnPermits(1);
-								borrower.fail(error);
-							}
-						}).contextWrite(borrower.currentContext());
-
-						if (permits == 1) {
-							//subscribe to the primary, which will directly feed to the borrower
-							primary.subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
-						}
 						else {
-							/*=============================================*
-							 * (warm up in sequence to primary allocation) *
-							 *=============================================*/
-							int toWarmup = permits - 1;
-							logger.debug("should warm up {} extra resources", toWarmup);
+							/*=======================*
+							 * ... and CAN ALLOCATE  => Subscribe to allocator + Warmup *
+							 *=======================*/
+							Borrower<POOLABLE> borrower = pendingPoll(borrowers);
+							if (borrower == null) {
+								continue; //we expect to detect pool is shut down in next round
+							}
+							if (isDisposed()) {
+								borrower.fail(new PoolShutdownException());
+								return;
+							}
+							borrower.stopPendingCountdown();
+							long start = clock.millis();
+							Mono<POOLABLE> allocator = allocatorWithScheduler();
 
-							final long startWarmupIteration = clock.millis();
-							// flatMap will eagerly subscribe to the allocator from the current thread, but the concurrency
-							// can be controlled from configuration
-							final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
-							Flux.range(1, toWarmup)
-									.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
-									.startWith(primary.doOnSuccess(__ -> drain()).then())
-									.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
-									.onErrorResume(e -> Mono.empty())
-									.subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
+							Mono<POOLABLE> primary = allocator.doOnEach(sig -> {
+								if (sig.isOnNext()) {
+									POOLABLE newInstance = sig.get();
+									assert newInstance != null;
+									ACQUIRED.incrementAndGet(this);
+									metricsRecorder.recordAllocationSuccessAndLatency(clock.millis() - start);
+									borrower.deliver(createSlot(newInstance));
+								}
+								else if (sig.isOnError()) {
+									Throwable error = sig.getThrowable();
+									assert error != null;
+									metricsRecorder.recordAllocationFailureAndLatency(clock.millis() - start);
+									poolConfig.allocationStrategy()
+											.returnPermits(1);
+									borrower.fail(error);
+								}
+							}).contextWrite(borrower.currentContext());
+
+							if (permits == 1) {
+								//subscribe to the primary, which will directly feed to the borrower
+								primary.subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
+							}
+							else {
+								/*=============================================*
+								 * (warm up in sequence to primary allocation) *
+								 *=============================================*/
+								int toWarmup = permits - 1;
+								logger.debug("should warm up {} extra resources", toWarmup);
+
+								final long startWarmupIteration = clock.millis();
+								// flatMap will eagerly subscribe to the allocator from the current thread, but the concurrency
+								// can be controlled from configuration
+								final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
+								warmupInProgress = true;
+								Flux.range(1, toWarmup)
+										.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
+										.startWith(primary.doOnSuccess(__ -> drain()).then())
+										.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
+										.onErrorResume(e -> Mono.empty())
+										.subscribe(aVoid -> {
+										}, alreadyPropagatedOrLogged -> drain(), () -> {
+											warmupInProgress = false;
+											drain();
+										});
+							}
 						}
 					}
 				}

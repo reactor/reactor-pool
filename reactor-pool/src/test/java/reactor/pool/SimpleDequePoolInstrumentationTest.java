@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@
 package reactor.pool;
 
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.scheduler.clock.SchedulerClock;
 import reactor.test.scheduler.VirtualTimeScheduler;
 
@@ -372,6 +375,68 @@ class SimpleDequePoolInstrumentationTest {
 		assertThat(pool.isInactiveForMoreThan(Duration.ofSeconds(5)))
 				.as("isInactiveForMoreThan(5s)")
 				.isTrue();
+	}
+
+	@Test
+	void testIssue172_block() throws InterruptedException {
+		Mono<Integer> allocator = Mono.just(1).subscribeOn(Schedulers.single());
+
+		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7).buildPool();
+		pool.acquire().block();
+		pool.acquire().block();
+		assertThat(pool.metrics().allocatedSize()).isEqualTo(3);
+	}
+
+	@Test
+	void testIssue172_async() throws InterruptedException {
+		Mono<Integer> allocator = Mono.just(1).subscribeOn(Schedulers.single());
+
+		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7).buildPool();
+		CountDownLatch latch = new CountDownLatch(2);
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		latch.await(5, TimeUnit.SECONDS);
+		assertThat(pool.metrics().allocatedSize()).isEqualTo(3);
+	}
+
+	@Test
+	void testIssue172_async_concurrent_warmup() throws InterruptedException {
+		Mono<Integer> allocator = Mono.just(1).subscribeOn(Schedulers.single());
+
+		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7, 3).buildPool();
+		CountDownLatch latch = new CountDownLatch(2);
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		latch.await(5, TimeUnit.SECONDS);
+		assertThat(pool.metrics().allocatedSize()).isEqualTo(3);
+	}
+
+	@Test
+	void testIssue172_async_with_delay_and_more_than_min() throws InterruptedException {
+		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1)).subscribeOn(Schedulers.single());
+
+		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7).buildPool();
+		CountDownLatch latch = new CountDownLatch(4);
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(pool.metrics().allocatedSize()).isEqualTo(4);
+	}
+
+	@Test
+	void testIssue172_async_with_delay_and_more_than_min_concurrent_warmup() throws InterruptedException {
+		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1)).subscribeOn(Schedulers.single());
+
+		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7, 3).buildPool();
+		CountDownLatch latch = new CountDownLatch(4);
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		pool.acquire().subscribe(integerPooledRef -> latch.countDown());
+		assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(pool.metrics().allocatedSize()).isEqualTo(4);
 	}
 
 }

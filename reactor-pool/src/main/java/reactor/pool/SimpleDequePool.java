@@ -16,6 +16,17 @@
 
 package reactor.pool;
 
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscription;
+import reactor.core.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.Loggers;
+import reactor.util.annotation.Nullable;
+
 import java.time.Duration;
 import java.util.Deque;
 import java.util.Iterator;
@@ -28,22 +39,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
-
-import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscription;
-
-import reactor.core.CoreSubscriber;
-import reactor.core.Disposable;
-import reactor.core.Disposables;
-import reactor.core.Exceptions;
-import reactor.core.Scannable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Operators;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.util.Loggers;
-import reactor.util.annotation.Nullable;
 
 /**
  * The {@link SimpleDequePool} is based on {@link Deque} for idle resources and pending {@link Pool#acquire()} Monos,
@@ -451,7 +446,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
 							Flux.range(1, toWarmup)
 									.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
-									.startWith(primary.doOnSuccess(__ -> drain()).then())
+									.startWith(primary.doOnSuccess(__ -> drain()).then().onErrorComplete())
 									.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
 									.onErrorResume(e -> Mono.empty())
 									.subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);

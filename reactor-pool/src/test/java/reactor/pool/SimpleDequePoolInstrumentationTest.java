@@ -413,7 +413,7 @@ class SimpleDequePoolInstrumentationTest {
 
 	@Test
 	void testIssue172_async_with_delay_and_more_than_min() throws InterruptedException {
-		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1)).subscribeOn(Schedulers.single());
+		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1));
 
 		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7).buildPool();
 		CountDownLatch latch = new CountDownLatch(4);
@@ -427,7 +427,7 @@ class SimpleDequePoolInstrumentationTest {
 
 	@Test
 	void testIssue172_async_with_delay_and_more_than_min_concurrent_warmup() throws InterruptedException {
-		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1)).subscribeOn(Schedulers.single());
+		Mono<Integer> allocator = Mono.just(1).delayElement(Duration.ofSeconds(1));
 
 		InstrumentedPool<Integer> pool = PoolBuilder.from(allocator).sizeBetween(3, 7, 3).buildPool();
 		CountDownLatch latch = new CountDownLatch(4);

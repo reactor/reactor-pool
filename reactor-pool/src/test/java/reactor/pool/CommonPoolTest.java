@@ -94,7 +94,7 @@ public class CommonPoolTest {
 			return (AbstractPool<T>) builder.idleResourceReuseOrder(isLru).buildPool();
 		}
 	}
-
+	
 	//keeping the methods below in case more flavors need to be added to CommonPoolTest
 
 	static List<PoolStyle> allPools() {

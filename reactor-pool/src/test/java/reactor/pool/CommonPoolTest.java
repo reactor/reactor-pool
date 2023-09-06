@@ -94,7 +94,7 @@ public class CommonPoolTest {
 			return (AbstractPool<T>) builder.idleResourceReuseOrder(isLru).buildPool();
 		}
 	}
-	
+
 	//keeping the methods below in case more flavors need to be added to CommonPoolTest
 
 	static List<PoolStyle> allPools() {
@@ -2633,5 +2633,51 @@ public class CommonPoolTest {
 
 		assertThat(config.allocationStrategy().estimatePermitCount()).as("maxSize").isEqualTo(123);
 		assertThat(config.clock()).as("clock").isSameAs(clock);
+	}
+
+	@ParameterizedTestWithName
+	@EnumSource
+	void testIssue_174(PoolStyle style) {
+		final AtomicBoolean canAllocateResource = new AtomicBoolean(true);
+		final Mono<String> allocator = Mono.defer(() ->
+			canAllocateResource.get() ?
+				Mono.just("value") :
+				Mono.error(new IllegalStateException("Can't allocate"))
+		);
+
+		final PoolBuilder<String, PoolConfig<String>> configBuilder = PoolBuilder
+			.from(allocator)
+			.maxPendingAcquireUnbounded()
+			.sizeBetween(10, 10); // Spring Boot R2DBC connections pool default
+		final InstrumentedPool<String> pool = style.apply(configBuilder);
+
+		// New empty pool. No resources allocated yet, but has min-size (10) permits
+		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(10);
+		assertThat(pool.metrics().idleSize()).isEqualTo(0);
+
+		// Try to acquire one resource. This should trigger pool "warmup" to min-size of resources
+		StepVerifier.create(pool.acquire().flatMap(PooledRef::release)).verifyComplete();
+		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(0);
+		assertThat(pool.metrics().idleSize()).isEqualTo(10);
+
+		// Now allocator will return errors (simulating inaccessible DB server for R2DBC connections pool)
+		canAllocateResource.set(false);
+
+		// We have 10 allocated resources in the pool, but they are not valid anymore, so invalidate them
+		StepVerifier.create(Flux.range(0, 10).concatMap(ignore -> pool.acquire().flatMap(PooledRef::invalidate)))
+			.verifyComplete();
+		assertThat(pool.metrics().idleSize()).isEqualTo(0);
+		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(10);
+
+		// Now we have empty pool, so it should be warmed up again but allocator still not working
+		StepVerifier.create(pool.acquire()).verifyError();
+		assertThat(pool.metrics().idleSize()).isEqualTo(0);
+		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(10);
+
+		// Return allocator to "working" state and check what pool warms up correctly
+		canAllocateResource.set(true);
+		StepVerifier.create(pool.acquire().flatMap(PooledRef::release)).verifyComplete();
+		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(0);
+		assertThat(pool.metrics().idleSize()).isEqualTo(10);
 	}
 }

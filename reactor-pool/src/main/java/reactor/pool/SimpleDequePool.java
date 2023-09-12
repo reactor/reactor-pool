@@ -451,7 +451,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							final int mergeConcurrency = Math.min(poolConfig.allocationStrategy().warmupParallelism(), toWarmup + 1);
 							Flux.range(1, toWarmup)
 									.map(i -> warmupMono(i, toWarmup, startWarmupIteration, allocator).doOnSuccess(__ -> drain()))
-									.startWith(primary.doOnSuccess(__ -> drain()).then())
+									.startWith(primary.doOnSuccess(__ -> drain()).onErrorComplete().then())
 									.flatMap(Function.identity(), mergeConcurrency, 1) // since we dont store anything the inner buffer can be simplified
 									.onErrorResume(e -> Mono.empty())
 									.subscribe(aVoid -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);

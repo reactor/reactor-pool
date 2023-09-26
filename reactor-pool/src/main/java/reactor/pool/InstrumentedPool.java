@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,7 +113,7 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 		 */
 		default boolean isInactiveForMoreThan(Duration duration) {
 			return acquiredSize() == 0 && idleSize() == 0 && pendingAcquireSize() == 0 && allocatedSize() == 0
-					&& secondsSinceLastInteraction() >= duration.toMillis();
+					&& !Duration.ofSeconds(secondsSinceLastInteraction()).minus(duration).isNegative();
 		}
 
 		/**

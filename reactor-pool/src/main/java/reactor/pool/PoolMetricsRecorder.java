@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ package reactor.pool;
  * responsibility of a {@link java.time.Clock}.
  *
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 public interface PoolMetricsRecorder {
 
@@ -77,4 +78,26 @@ public interface PoolMetricsRecorder {
 	 * Record the fact that a {@link Pool} has a fast path of recycling and just used it.
 	 */
 	void recordFastPath();
+
+	/**
+	 * Record a latency for successful pending acquire operation.
+	 * A successful pending acquire operation is such that triggers an allocation operation.
+	 * Implies incrementing a pending acquire success counter as well.
+	 * @param latencyMs the latency in milliseconds
+	 * @since 1.0.4
+	 */
+	default void recordPendingSuccessAndLatency(long latencyMs) {
+		// noop
+	}
+
+	/**
+	 * Record a latency for failed pending acquire.
+	 * A failed pending acquire operation is such that finishes with {@link PoolAcquireTimeoutException}.
+	 * Implies incrementing a pending acquire failure counter as well.
+	 * @param latencyMs the latency in milliseconds
+	 * @since 1.0.4
+	 */
+	default void recordPendingFailureAndLatency(long latencyMs) {
+		// noop
+	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import io.micrometer.core.instrument.docs.MeterDocumentation;
  * Meters used by {@link Micrometer} utility.
  *
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 enum PoolMetersDocumentation implements MeterDocumentation {
 
@@ -210,6 +211,23 @@ enum PoolMetersDocumentation implements MeterDocumentation {
 		public KeyName[] getKeyNames() {
 			return CommonTags.values();
 		}
+	},
+
+	PENDING {
+		@Override
+		public String getName() {
+			return "reactor.pool.pending";
+		}
+
+		@Override
+		public Meter.Type getType() {
+			return Meter.Type.TIMER;
+		}
+
+		@Override
+		public KeyName[] getKeyNames() {
+			return KeyName.merge(CommonTags.values(), PendingTags.values());
+		}
 	};
 
 	public enum AllocationTags implements KeyName {
@@ -256,5 +274,24 @@ enum PoolMetersDocumentation implements MeterDocumentation {
 				return "pool.name";
 			}
 		}
+	}
+
+	public enum PendingTags implements KeyName {
+
+		/**
+		 * Indicates whether the pending acquire operation finished with a {@code success} or {@code failure} i.e.
+		 * whether an allocation operation was triggered or a {@link reactor.pool.PoolAcquireTimeoutException}
+		 * was thrown.
+		 */
+		OUTCOME {
+			@Override
+			public String asString() {
+				return "pool.pending.outcome";
+			}
+		};
+
+		public static final Tag OUTCOME_SUCCESS = Tag.of(OUTCOME.asString(), "success");
+		public static final Tag OUTCOME_FAILURE = Tag.of(OUTCOME.asString(), "failure");
+
 	}
 }

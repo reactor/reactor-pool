@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,9 @@ class MicrometerTest {
 				"reactor.pool.recycled.notable[tag(pool.name=testRecorder), tag(pool.recycling.path=slow)]",
 				"reactor.pool.reset[tag(pool.name=testRecorder)]",
 				"reactor.pool.resources.summary.lifetime[tag(pool.name=testRecorder)]",
-				"reactor.pool.resources.summary.idleness[tag(pool.name=testRecorder)]"
+				"reactor.pool.resources.summary.idleness[tag(pool.name=testRecorder)]",
+				"reactor.pool.pending[tag(pool.name=testRecorder), tag(pool.pending.outcome=success)]",
+				"reactor.pool.pending[tag(pool.name=testRecorder), tag(pool.pending.outcome=failure)]"
 			);
 	}
 
@@ -104,7 +106,9 @@ class MicrometerTest {
 				"reactor.pool.recycled.notable[tag(pool.name=testMetrics), tag(pool.recycling.path=slow)]",
 				"reactor.pool.reset[tag(pool.name=testMetrics)]",
 				"reactor.pool.resources.summary.lifetime[tag(pool.name=testMetrics)]",
-				"reactor.pool.resources.summary.idleness[tag(pool.name=testMetrics)]"
+				"reactor.pool.resources.summary.idleness[tag(pool.name=testMetrics)]",
+				"reactor.pool.pending[tag(pool.name=testMetrics), tag(pool.pending.outcome=success)]",
+				"reactor.pool.pending[tag(pool.name=testMetrics), tag(pool.pending.outcome=failure)]"
 			);
 	}
 }

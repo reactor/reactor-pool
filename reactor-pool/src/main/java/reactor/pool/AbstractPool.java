@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import static reactor.pool.AbstractPool.AbstractPooledRef.STATE_INVALIDATED;
  * related classes like {@link AbstractPooledRef} or {@link Borrower}.
  *
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 												 InstrumentedPool.PoolMetrics {
@@ -125,7 +126,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
 	/**
 	 * Note to implementors: stop the {@link Borrower} countdown by calling
-	 * {@link Borrower#stopPendingCountdown()} as soon as it is known that a resource is
+	 * {@link Borrower#stopPendingCountdown(boolean)} as soon as it is known that a resource is
 	 * available or is in the process of being allocated.
 	 */
 	abstract void doAcquire(Borrower<POOLABLE> borrower);
@@ -382,6 +383,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 	 * an {@link AbstractPool}.
 	 *
 	 * @author Simon Baslé
+	 * @author Violeta Georgieva
 	 */
 	static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription, Runnable  {
 
@@ -391,6 +393,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		final AbstractPool<POOLABLE> pool;
 		final Duration pendingAcquireTimeout;
 
+		long pendingAcquireStart;
 		Disposable timeoutTask;
 
 		Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual,
@@ -409,6 +412,8 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		@Override
 		public void run() {
 			if (Borrower.this.compareAndSet(false, true)) {
+				// this is failure, a timeout was observed
+				pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
 				pool.cancelAcquire(Borrower.this);
 				actual.onError(new PoolAcquireTimeoutException(pendingAcquireTimeout));
 			}
@@ -423,6 +428,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 				boolean noPermits = pool.poolConfig.allocationStrategy().estimatePermitCount() == 0;
 
 				if (!pendingAcquireTimeout.isZero() && noIdle && noPermits) {
+					pendingAcquireStart = pool.clock.millis();
 					timeoutTask = this.pool.config().pendingAcquireTimer().apply(this, pendingAcquireTimeout);
 				}
 				//doAcquire should interrupt the countdown if there is either an available
@@ -434,7 +440,14 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		/**
 		 * Stop the countdown started when calling {@link AbstractPool#doAcquire(Borrower)}.
 		 */
-		void stopPendingCountdown() {
+		void stopPendingCountdown(boolean success) {
+			if (!timeoutTask.isDisposed()) {
+				if (success) {
+					pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
+				} else {
+					pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
+				}
+			}
 			timeoutTask.dispose();
 		}
 
@@ -442,7 +455,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		public void cancel() {
 			set(true);
 			pool.cancelAcquire(this);
-			stopPendingCountdown();
+			stopPendingCountdown(true); // this is not failure, the subscription was canceled
 		}
 
 		@Override
@@ -457,7 +470,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		}
 
 		void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
-			stopPendingCountdown();
+			stopPendingCountdown(true);
 			if (get()) {
 				//CANCELLED
 				poolSlot.release().subscribe(aVoid -> {}, e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
@@ -470,7 +483,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		}
 
 		void fail(Throwable error) {
-			stopPendingCountdown();
+			stopPendingCountdown(false);
 			if (!get()) {
 				actual.onError(error);
 			}

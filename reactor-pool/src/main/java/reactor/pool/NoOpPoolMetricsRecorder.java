@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ package reactor.pool;
  * A No-Op {@link PoolMetricsRecorder} that can be used as a default if instrumentation is not desired.
  *
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
 
@@ -71,6 +72,16 @@ final class NoOpPoolMetricsRecorder implements PoolMetricsRecorder {
 
     @Override
     public void recordFastPath() {
+
+    }
+
+    @Override
+    public void recordPendingSuccessAndLatency(long latencyMs) {
+
+    }
+
+    @Override
+    public void recordPendingFailureAndLatency(long latencyMs) {
 
     }
 }

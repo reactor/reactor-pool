@@ -2693,15 +2693,18 @@ public class CommonPoolTest {
 				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
-		PooledRef<String> pooledRef = pool.acquire(Duration.ofMillis(1)).block(Duration.ofSeconds(1)); //success
+		//success, acquisition happens immediately
+		PooledRef<String> pooledRef = pool.acquire(Duration.ofMillis(1)).block(Duration.ofSeconds(1));
 		assertThat(pooledRef).isNotNull();
 
-		pool.acquire(Duration.ofMillis(50)).subscribe(); //success
+		//success, acquisition happens after pending some time
+		pool.acquire(Duration.ofMillis(50)).subscribe();
 
+		//error, timed out
 		pool.acquire(Duration.ofMillis(1))
 				.as(StepVerifier::create)
 				.expectError(PoolAcquireTimeoutException.class)
-				.verify(Duration.ofSeconds(1)); //error
+				.verify(Duration.ofSeconds(1));
 
 		pooledRef.release().block(Duration.ofSeconds(1));
 

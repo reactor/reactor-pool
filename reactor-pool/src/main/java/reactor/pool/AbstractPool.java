@@ -413,7 +413,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		public void run() {
 			if (Borrower.this.compareAndSet(false, true)) {
 				// this is failure, a timeout was observed
-				pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
+				stopPendingCountdown(false);
 				pool.cancelAcquire(Borrower.this);
 				actual.onError(new PoolAcquireTimeoutException(pendingAcquireTimeout));
 			}

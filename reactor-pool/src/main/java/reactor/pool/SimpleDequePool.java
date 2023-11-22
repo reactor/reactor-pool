@@ -366,7 +366,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						borrower.fail(new PoolShutdownException());
 						return;
 					}
-					borrower.stopPendingCountdown();
+					borrower.stopPendingCountdown(true);
 					ACQUIRED.incrementAndGet(this);
 					poolConfig.acquisitionScheduler()
 					          .schedule(() -> borrower.deliver(slot));
@@ -412,7 +412,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 							borrower.fail(new PoolShutdownException());
 							return;
 						}
-						borrower.stopPendingCountdown();
+						borrower.stopPendingCountdown(true);
 						long start = clock.millis();
 						Mono<POOLABLE> allocator = allocatorWithScheduler();
 

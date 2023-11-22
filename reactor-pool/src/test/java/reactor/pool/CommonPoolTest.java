@@ -76,6 +76,7 @@ import static org.hamcrest.Matchers.is;
 
 /**
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 public class CommonPoolTest {
 
@@ -2679,5 +2680,54 @@ public class CommonPoolTest {
 		StepVerifier.create(pool.acquire().flatMap(PooledRef::release)).verifyComplete();
 		assertThat(pool.config().allocationStrategy().estimatePermitCount()).isEqualTo(0);
 		assertThat(pool.metrics().idleSize()).isEqualTo(10);
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	@Tag("metrics")
+	void recordsPendingCountAndLatencies(PoolStyle configAdjuster) {
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.defer(() -> Mono.just("foo")))
+				.metricsRecorder(recorder)
+				.sizeBetween(0, 1)
+				.clock(recorder.getClock());
+		Pool<String> pool = configAdjuster.apply(builder);
+
+		//success, acquisition happens immediately
+		PooledRef<String> pooledRef = pool.acquire(Duration.ofMillis(1)).block(Duration.ofSeconds(1));
+		assertThat(pooledRef).isNotNull();
+
+		//success, acquisition happens after pending some time
+		pool.acquire(Duration.ofMillis(50)).subscribe();
+
+		//error, timed out
+		pool.acquire(Duration.ofMillis(1))
+				.as(StepVerifier::create)
+				.expectError(PoolAcquireTimeoutException.class)
+				.verify(Duration.ofSeconds(1));
+
+		pooledRef.release().block(Duration.ofSeconds(1));
+
+		assertThat(recorder.getPendingTotalCount())
+				.as("total pending")
+				.isEqualTo(2);
+		assertThat(recorder.getPendingSuccessCount())
+				.as("pending success")
+				.isEqualTo(1)
+				.isEqualTo(recorder.getPendingSuccessHistogram().getTotalCount());
+		assertThat(recorder.getPendingErrorCount())
+				.as("pending errors")
+				.isEqualTo(1)
+				.isEqualTo(recorder.getPendingErrorHistogram().getTotalCount());
+
+		long minSuccess = recorder.getPendingSuccessHistogram().getMinValue();
+		assertThat(minSuccess)
+				.as("pending success latency")
+				.isGreaterThanOrEqualTo(1L);
+
+		long minError = recorder.getPendingErrorHistogram().getMinValue();
+		assertThat(minError)
+				.as("pending error latency")
+				.isGreaterThanOrEqualTo(1L);
 	}
 }

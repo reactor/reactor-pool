@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,8 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 	private final Timer   resetMeter;
 	private final Timer   resourceSummaryIdleness;
 	private final Timer   resourceSummaryLifetime;
+	private final Timer   pendingSuccessTimer;
+	private final Timer   pendingFailureTimer;
 
 	MicrometerMetricsRecorder(String poolName, MeterRegistry registry) {
 		this.poolName = poolName;
@@ -70,6 +72,11 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 
 		resourceSummaryLifetime = this.meterRegistry.timer(SUMMARY_LIFETIME.getName(), nameTag);
 		resourceSummaryIdleness = this.meterRegistry.timer(SUMMARY_IDLENESS.getName(), nameTag);
+
+		pendingSuccessTimer = this.meterRegistry.timer(PENDING.getName(),
+				nameTag.and(PendingTags.OUTCOME_SUCCESS));
+		pendingFailureTimer = this.meterRegistry.timer(PENDING.getName(),
+				nameTag.and(PendingTags.OUTCOME_FAILURE));
 	}
 
 	@Override
@@ -115,5 +122,15 @@ final class MicrometerMetricsRecorder implements PoolMetricsRecorder {
 	@Override
 	public void recordFastPath() {
 		recycledNotableFastPathCounter.increment();
+	}
+
+	@Override
+	public void recordPendingSuccessAndLatency(long latencyMs) {
+		pendingSuccessTimer.record(latencyMs, TimeUnit.MILLISECONDS);
+	}
+
+	@Override
+	public void recordPendingFailureAndLatency(long latencyMs) {
+		pendingFailureTimer.record(latencyMs, TimeUnit.MILLISECONDS);
 	}
 }

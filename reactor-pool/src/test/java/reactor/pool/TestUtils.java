@@ -37,6 +37,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * @author Simon Baslé
+ * @author Violeta Georgieva
  */
 public class TestUtils {
 
@@ -153,6 +154,7 @@ public class TestUtils {
 	 * A simple in memory {@link PoolMetricsRecorder} based on HdrHistograms than can also be used to get the metrics.
 	 *
 	 * @author Simon Baslé
+	 * @author Violeta Georgieva
 	 */
 	public static class InMemoryPoolMetrics implements PoolMetricsRecorder {
 
@@ -160,6 +162,8 @@ public class TestUtils {
 		private final ShortCountsHistogram allocationErrorHistogram;
 		private final ShortCountsHistogram resetHistogram;
 		private final ShortCountsHistogram destroyHistogram;
+		private final ShortCountsHistogram pendingSuccessHistogram;
+		private final ShortCountsHistogram pendingErrorHistogram;
 		private final LongAdder recycledCounter;
 		private final LongAdder slowPathCounter;
 		private final LongAdder fastPathCounter;
@@ -176,6 +180,8 @@ public class TestUtils {
 			allocationErrorHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
 			resetHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
 			destroyHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+			pendingSuccessHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
+			pendingErrorHistogram = new ShortCountsHistogram(1L, maxLatency, precision);
 			lifetimeHistogram = new Histogram(precision);
 			idleTimeHistogram = new Histogram(precision);
 			recycledCounter = new LongAdder();
@@ -243,6 +249,16 @@ public class TestUtils {
 			this.fastPathCounter.increment();
 		}
 
+		@Override
+		public synchronized void recordPendingSuccessAndLatency(long latencyMs) {
+			pendingSuccessHistogram.recordValue(latencyMs);
+		}
+
+		@Override
+		public synchronized void recordPendingFailureAndLatency(long latencyMs) {
+			pendingErrorHistogram.recordValue(latencyMs);
+		}
+
 		public synchronized long getAllocationTotalCount() {
 			return allocationSuccessHistogram.getTotalCount() + allocationErrorHistogram.getTotalCount();
 		}
@@ -265,6 +281,18 @@ public class TestUtils {
 
 		public synchronized long getRecycledCount() {
 			return recycledCounter.sum();
+		}
+
+		public synchronized long getPendingTotalCount() {
+			return pendingSuccessHistogram.getTotalCount() + pendingErrorHistogram.getTotalCount();
+		}
+
+		public synchronized long getPendingSuccessCount() {
+			return pendingSuccessHistogram.getTotalCount();
+		}
+
+		public synchronized long getPendingErrorCount() {
+			return pendingErrorHistogram.getTotalCount();
 		}
 
 		public synchronized ShortCountsHistogram getAllocationSuccessHistogram() {
@@ -297,6 +325,14 @@ public class TestUtils {
 
 		public synchronized long getSlowPathCount() {
 			return slowPathCounter.sum();
+		}
+
+		public synchronized ShortCountsHistogram getPendingSuccessHistogram() {
+			return pendingSuccessHistogram;
+		}
+
+		public synchronized ShortCountsHistogram getPendingErrorHistogram() {
+			return pendingErrorHistogram;
 		}
 	}
 

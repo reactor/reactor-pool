@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,16 @@ public interface InstrumentedPool<POOLABLE> extends Pool<POOLABLE> {
 	 * @return a {@link PoolMetrics} object to be used to get live gauges about the {@link Pool}
 	 */
 	PoolMetrics metrics();
+
+	/**
+	 * Estimates if the pool can currently either reuse or create some resources
+	 * @return true if the pool can currently either reuse or create some resources, false if no idles resources are
+	 *         currently available and no more resources can be currently created.
+	 */
+	default boolean hasAvailableResources() {
+		PoolMetrics pm = metrics();
+		return (pm.idleSize() + config().allocationStrategy().estimatePermitCount()) - pm.pendingAcquireSize() >= 0;
+	}
 
 	/**
 	 * An object that can be used to get live information about a {@link Pool}, suitable

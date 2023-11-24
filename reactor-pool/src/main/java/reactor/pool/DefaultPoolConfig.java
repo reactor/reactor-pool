@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * A default {@link PoolConfig} that can be extended to bear more configuration options
@@ -50,6 +49,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final PoolMetricsRecorder                           metricsRecorder;
 	protected final Clock                                         clock;
 	protected final boolean                                       isIdleLRU;
+	protected final ResourceManager resourceManager;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -64,6 +64,26 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock,
 			boolean isIdleLRU) {
+		this(allocator, allocationStrategy, maxPending, pendingAcquireTimer, releaseHandler, destroyHandler,
+				evictionPredicate, evictInBackgroundInterval, evictInBackgroundScheduler, acquisitionScheduler,
+				metricsRecorder, clock, isIdleLRU,
+				PoolBuilder.DEFAULT_RESOURCE_MANAGER);
+	}
+
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Duration evictInBackgroundInterval,
+			Scheduler evictInBackgroundScheduler,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock,
+			boolean isIdleLRU,
+			ResourceManager resourceManager) {
 		this.pendingAcquireTimer = pendingAcquireTimer;
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
@@ -77,6 +97,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
 		this.isIdleLRU = isIdleLRU;
+		this.resourceManager = resourceManager;
 	}
 
 	/**
@@ -101,6 +122,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
 			this.clock = toCopyDpc.clock;
 			this.isIdleLRU = toCopyDpc.isIdleLRU;
+			this.resourceManager = toCopyDpc.resourceManager;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -116,6 +138,7 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopy.metricsRecorder();
 			this.clock = toCopy.clock();
 			this.isIdleLRU = toCopy.reuseIdleResourcesInLruOrder();
+			this.resourceManager = toCopy.resourceManager();
 		}
 	}
 
@@ -182,5 +205,10 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public boolean reuseIdleResourcesInLruOrder() {
 		return isIdleLRU;
+	}
+
+	@Override
+	public ResourceManager resourceManager() {
+		return resourceManager;
 	}
 }

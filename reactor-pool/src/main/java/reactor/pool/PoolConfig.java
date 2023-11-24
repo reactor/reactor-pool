@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,6 +139,10 @@ public interface PoolConfig<POOLABLE> {
 	 */
 	default BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer() {
 		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
+	}
+
+	default ResourceManager resourceManager() {
+		return PoolBuilder.DEFAULT_RESOURCE_MANAGER;
 	}
 
 }

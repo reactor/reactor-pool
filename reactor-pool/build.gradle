@@ -127,6 +127,7 @@ task japicmp(type: JapicmpTask) {
 	classExcludes = [
 	]
 	methodExcludes = [
+			"reactor.pool.decorators.InstrumentedPoolDecorators#concurrentPools(int, org.reactivestreams.Publisher, java.util.function.Function)"
 	]
 }
 check.dependsOn japicmp

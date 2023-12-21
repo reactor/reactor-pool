@@ -2730,4 +2730,43 @@ public class CommonPoolTest {
 				.as("pending error latency")
 				.isGreaterThanOrEqualTo(1L);
 	}
+
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void gh180_warmupIdempotent(PoolStyle configAdjuster) {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
+
+		AtomicInteger allocCounter = new AtomicInteger();
+		Mono<Integer> allocator = Mono.fromCallable(allocCounter::incrementAndGet);
+
+		PoolBuilder<Integer, ?> builder =
+				PoolBuilder.from(allocator)
+						.sizeBetween(10, 10)
+						.evictionPredicate((poolable, metadata) -> metadata.idleTime() >= 4000)
+						.evictInBackground(Duration.ofSeconds(5), vts)
+						.clock(SchedulerClock.of(vts));
+
+		InstrumentedPool<Integer> pool = configAdjuster.apply(builder);
+		pool.warmup().block();
+		assertThat(allocCounter).as("allocations").hasValue(10);
+		assertThat(pool.metrics().allocatedSize()).as("allocatedSize").isEqualTo(10);
+
+		assertThatCode(() -> vts.advanceTimeBy(Duration.ofSeconds(10))).doesNotThrowAnyException();
+
+		assertThat(pool.metrics().allocatedSize()).as("allocatedSize").isEqualTo(0);
+		assertThat(allocCounter).as("allocations").hasValue(10);
+
+		pool.warmup().block();
+		assertThat(allocCounter).as("allocations").hasValue(20);
+		assertThat(pool.metrics().allocatedSize()).as("allocatedSize").isEqualTo(10);
+
+		// Since warmup can be called at anytime, calling warmup again should not cause any troubles and should keep the
+		// pool unchanged.
+		pool.warmup().block();
+		assertThat(allocCounter).as("allocations").hasValue(20);
+		assertThat(pool.metrics().allocatedSize()).as("allocatedSize").isEqualTo(10);
+
+		pool.disposeLater().block(Duration.ofSeconds(3));
+	}
 }

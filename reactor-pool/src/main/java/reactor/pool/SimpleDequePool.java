@@ -230,6 +230,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				recordInteractionTimestamp();
 				int initSize = poolConfig.allocationStrategy()
 				                         .getPermits(0);
+				if (initSize <= 0) {
+					return Mono.just(0);
+				}
 				@SuppressWarnings({ "unchecked", "rawtypes" }) //rawtypes added since javac actually complains
 				Mono<POOLABLE>[] allWarmups = new Mono[initSize];
 				for (int i = 0; i < initSize; i++) {

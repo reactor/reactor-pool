@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -119,6 +119,27 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	public Mono<PooledRef<POOLABLE>> acquire(Duration timeout) {
 		return new QueueBorrowerMono<>(this,
 				timeout); //the mono is unknown to the pool until requested
+	}
+
+	@Override
+	public boolean transferBorrowersFrom(InstrumentedPool<POOLABLE> fromPool) {
+		SimpleDequePool<POOLABLE> other = (SimpleDequePool<POOLABLE>) fromPool;
+
+		if (!other.isDisposed()) {
+			ConcurrentLinkedDeque<Borrower<POOLABLE>> q = other.PENDING.get(other);
+			if (q == TERMINATED) {
+				return false;
+			}
+			Borrower<POOLABLE> b = other.pendingPoll(q);
+			if (b != null && !b.get()) {
+				// TODO check race conditions when timer expires or subscription is cancelled concurrently !
+				b.setPool(this);
+				doAcquire(b);
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	@Override
@@ -302,10 +323,12 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		drain();
 	}
 
-	void drain() {
+	boolean drain() {
 		if (WIP.getAndIncrement(this) == 0) {
 			drainLoop();
+			return true;
 		}
+		return false;
 	}
 
 	private void drainLoop() {
@@ -517,6 +540,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 		if (irq.offer(createSlot(element))) {
 			incrementIdle();
+			poolConfig.resourceManager().resourceAvailable();
 			return true;
 		}
 		return false;
@@ -538,12 +562,14 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						incrementIdle();
 					}
 					actual.onComplete();
-					drain();
+					boolean drained = drain();
 					if (isDisposed() && slot.markDestroy()) {
 						if (addedIdle) {
 							decrementIdle();
 						}
 						destroyPoolable(slot).subscribe(); //TODO manage errors?
+					} else if (drained && addedIdle && hasAvailableResources()) {
+						poolConfig.resourceManager().resourceAvailable();
 					}
 					return;
 				}

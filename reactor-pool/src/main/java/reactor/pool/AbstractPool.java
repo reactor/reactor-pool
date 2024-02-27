@@ -454,6 +454,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		@Override
 		public void cancel() {
 			System.out.println("Got cancel");
+			// This won't help much unfortunately in case the deliver signal happens
+			// before this very moment -> the downstream is already cancelled and will drop
+			// the delivery, while the Borrower doesn't yet consider itself as
+			// cancelled so marks the connection as acquired and waits calls onNext.
 			set(true);
 			pool.cancelAcquire(this);
 			stopPendingCountdown(true); // this is not failure, the subscription was canceled

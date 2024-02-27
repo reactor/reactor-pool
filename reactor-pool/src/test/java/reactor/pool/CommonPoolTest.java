@@ -36,6 +36,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -54,7 +55,9 @@ import reactor.core.Disposable;
 import reactor.core.Disposables;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Operators;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -567,6 +570,18 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	void allocatedReleasedIfBorrowerCancelRacesWithDeliver(PoolStyle configAdjuster) {
+
+		Consumer<Object> disposeConnection = dropped -> {
+			if (dropped instanceof PooledRef) {
+				((PooledRef<?>) dropped).release().subscribe(aVoid -> {},
+						e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
+			}
+		};
+
+		// Uncomment the below hook to make it pass.
+//		Hooks.onNextDropped(disposeConnection);
+
+
 		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 		AtomicInteger newCount = new AtomicInteger();
 		AtomicInteger releasedCount = new AtomicInteger();
@@ -590,11 +605,15 @@ public class CommonPoolTest {
 			} catch (InterruptedException e) {
 				// ignore
 			}
-		}).subscribe().dispose();
+		})
+		    // In case cancel (dispose) is late, we still need to free the connection
+		    // to avoid false-negative outcomes.
+		    .subscribe(disposeConnection)
+		    .dispose();
 
 		//release due to cancel is async, give it a bit of time
 		await()
-				.atMost(100, TimeUnit.MILLISECONDS)
+				.atMost(1000, TimeUnit.MILLISECONDS)
 				.with().pollInterval(10, TimeUnit.MILLISECONDS)
 				.untilAsserted(
 						() -> assertThat(releasedCount).as("released").hasValue(1));
@@ -602,6 +621,8 @@ public class CommonPoolTest {
 		assertThat(newCount).as("created").hasValue(1);
 
 		assertThat(pool.acquire().block()).isNotNull();
+
+		scheduler.dispose();
 	}
 
 

@@ -453,6 +453,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
 		@Override
 		public void cancel() {
+			System.out.println("Got cancel");
 			set(true);
 			pool.cancelAcquire(this);
 			stopPendingCountdown(true); // this is not failure, the subscription was canceled
@@ -476,7 +477,10 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 				poolSlot.release().subscribe(aVoid -> {}, e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
 			}
 			else {
+				System.out.println("Delivering");
 				poolSlot.markAcquired();
+				// If this delivery fails because actual is cancelled,
+				// then the poolSlot is never released and remains acquired.
 				actual.onNext(poolSlot);
 				actual.onComplete();
 			}

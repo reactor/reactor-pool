@@ -564,6 +564,46 @@ public class CommonPoolTest {
 		assertThat(newCount).as("created").hasValue(1);
 	}
 
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void allocatedReleasedIfBorrowerCancelRacesWithDeliver(PoolStyle configAdjuster) {
+		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
+		AtomicInteger newCount = new AtomicInteger();
+		AtomicInteger releasedCount = new AtomicInteger();
+
+		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
+				.from(Mono.defer(() -> Mono.delay(Duration.ofNanos(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
+				          .subscribeOn(scheduler))
+				.sizeBetween(0, 1)
+				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
+					poolableTest.clean();
+					releasedCount.incrementAndGet();
+				}))
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
+
+		Pool<PoolableTest> pool = configAdjuster.apply(builder);
+
+		//acquire the only element and immediately dispose
+		pool.acquire().doOnCancel(() -> {
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				// ignore
+			}
+		}).subscribe().dispose();
+
+		//release due to cancel is async, give it a bit of time
+		await()
+				.atMost(100, TimeUnit.MILLISECONDS)
+				.with().pollInterval(10, TimeUnit.MILLISECONDS)
+				.untilAsserted(
+						() -> assertThat(releasedCount).as("released").hasValue(1));
+
+		assertThat(newCount).as("created").hasValue(1);
+
+		assertThat(pool.acquire().block()).isNotNull();
+	}
+
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")

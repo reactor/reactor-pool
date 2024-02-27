@@ -457,7 +457,13 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 			// This won't help much unfortunately in case the deliver signal happens
 			// before this very moment -> the downstream is already cancelled and will drop
 			// the delivery, while the Borrower doesn't yet consider itself as
-			// cancelled so marks the connection as acquired and waits calls onNext.
+			// cancelled so marks the connection as acquired and calls onNext.
+			// Attempting to fix this race here is also of no use, because it might be
+			// that:
+			// 1. T1: the Subscriber marks itself as cancelled
+			// 2. T2: delivery happens, onNext is called
+			// 3. T2: Subscriber drops the onNext signal
+			// 4. T1: the Subscriber calls Borrower::cancel() which has no effect
 			set(true);
 			pool.cancelAcquire(this);
 			stopPendingCountdown(true); // this is not failure, the subscription was canceled

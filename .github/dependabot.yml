@@ -10,6 +10,10 @@ updates:
   target-branch: "0.2.x"
   labels:
   - type/dependency-upgrade
+  ignore:
+  # Don't update Reactor projects
+  - dependency-name: io.projectreactor:*
+  - dependency-name: io.projectreactor.addons:*
   rebase-strategy: disabled
 - package-ecosystem: github-actions
   directory: "/"

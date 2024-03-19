@@ -14,6 +14,21 @@ updates:
   # Don't update Reactor projects
   - dependency-name: io.projectreactor:*
   - dependency-name: io.projectreactor.addons:*
+  # Versions > 6.13 require JDK11+
+  - dependency-name: com.diffplug.spotless
+    versions:
+    - "[6.14.a, 7.0]"
+  # Versions > 4 require JDK11+
+  - dependency-name: org.mockito:mockito-core
+    versions:
+    - "[5.a, 6]"
+  # Versions > 6 require JDK17+
+  - dependency-name: biz.aQute.bnd.builder
+    versions:
+    - "[7.a, 8]"
+ - dependency-name: org.slf4j:*
+    versions:
+    - "[2.a, 3]"
   rebase-strategy: disabled
 - package-ecosystem: github-actions
   directory: "/"

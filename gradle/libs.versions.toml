@@ -24,7 +24,7 @@ mockito = "org.mockito:mockito-core:4.11.0"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 reactor-extra = { module = "io.projectreactor.addons:reactor-extra", version.ref = "reactorAddons" }
-rxjava2 = "io.reactivex.rxjava2:rxjava:2.2.7"
+rxjava2 = "io.reactivex.rxjava2:rxjava:2.2.21"
 slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-jcl = { module = "org.slf4j:jcl-over-slf4j", version.ref = "slf4j" }
 

@@ -7,7 +7,7 @@ jobs:
     name: checks
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+    - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       with:
         fetch-depth: 0 # for spotless
     - uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93

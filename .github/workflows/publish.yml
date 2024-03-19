@@ -18,7 +18,7 @@ jobs:
       versionType: ${{ steps.version.outputs.versionType }}
       fullVersion: ${{ steps.version.outputs.fullVersion }}
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - name: setup java
         uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93
         with:
@@ -39,7 +39,7 @@ jobs:
     name: slowChecks
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - name: setup java
         uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93
         with:
@@ -57,7 +57,7 @@ jobs:
     if: needs.prepare.outputs.versionType == 'SNAPSHOT'
     environment: snapshots
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93
         with:
           distribution: 'temurin'
@@ -77,7 +77,7 @@ jobs:
     if: needs.prepare.outputs.versionType == 'MILESTONE'
     environment: releases
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93
         with:
           distribution: 'temurin'
@@ -99,7 +99,7 @@ jobs:
     if: needs.prepare.outputs.versionType == 'RELEASE'
     environment: releases
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93
         with:
           distribution: 'temurin'
@@ -122,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - name: tag
         run: |
           git config --local user.name 'reactorbot'
@@ -136,7 +136,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - name: tag
         run: |
           git config --local user.name 'reactorbot'

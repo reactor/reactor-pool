@@ -443,22 +443,17 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		 * Stop the countdown started when calling {@link AbstractPool#doAcquire(Borrower)}.
 		 */
 		void stopPendingCountdown(boolean success) {
-			if (timeoutTask == null) {
-				return;
+			if (pendingAcquireStart > 0) {
+				if (success) {
+					pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
+				} else {
+					pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
+				}
+
+				pendingAcquireStart = 0;
 			}
 
 			timeoutTask.dispose();
-			timeoutTask = null;
-
-			if (pendingAcquireStart == 0) {
-				return;
-			}
-
-			if (success) {
-				pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
-			} else {
-				pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
-			}
 		}
 
 		@Override

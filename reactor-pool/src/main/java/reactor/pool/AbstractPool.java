@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -427,9 +427,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 				boolean noIdle = pool.idleSize() == 0;
 				boolean noPermits = pool.poolConfig.allocationStrategy().estimatePermitCount() == 0;
 
-				if (!pendingAcquireTimeout.isZero() && noIdle && noPermits) {
+				if (noIdle && noPermits) {
 					pendingAcquireStart = pool.clock.millis();
-					timeoutTask = this.pool.config().pendingAcquireTimer().apply(this, pendingAcquireTimeout);
+					if (!pendingAcquireTimeout.isZero()) {
+						timeoutTask = this.pool.config().pendingAcquireTimer().apply(this, pendingAcquireTimeout);
+					}
 				}
 				//doAcquire should interrupt the countdown if there is either an available
 				//resource or the pool can allocate one
@@ -441,14 +443,22 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		 * Stop the countdown started when calling {@link AbstractPool#doAcquire(Borrower)}.
 		 */
 		void stopPendingCountdown(boolean success) {
-			if (!timeoutTask.isDisposed()) {
-				if (success) {
-					pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
-				} else {
-					pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
-				}
+			if (timeoutTask == null) {
+				return;
 			}
+
 			timeoutTask.dispose();
+			timeoutTask = null;
+
+			if (pendingAcquireStart == 0) {
+				return;
+			}
+
+			if (success) {
+				pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
+			} else {
+				pool.metricsRecorder.recordPendingFailureAndLatency(pool.clock.millis() - pendingAcquireStart);
+			}
 		}
 
 		@Override

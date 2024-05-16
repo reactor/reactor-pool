@@ -452,7 +452,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
 				pendingAcquireStart = 0;
 			}
-
 			timeoutTask.dispose();
 		}
 

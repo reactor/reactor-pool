@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2689,16 +2689,23 @@ public class CommonPoolTest {
 		PoolBuilder<String, ?> builder = PoolBuilder
 				.from(Mono.defer(() -> Mono.just("foo")))
 				.metricsRecorder(recorder)
-				.sizeBetween(0, 1)
+				.sizeBetween(0, 2)
 				.clock(recorder.getClock());
 		Pool<String> pool = configAdjuster.apply(builder);
 
 		//success, acquisition happens immediately
-		PooledRef<String> pooledRef = pool.acquire(Duration.ofMillis(1)).block(Duration.ofSeconds(1));
-		assertThat(pooledRef).isNotNull();
+		PooledRef<String> pooledRef1 = pool.acquire(Duration.ofMillis(1)).block(Duration.ofSeconds(1));
+		assertThat(pooledRef1).isNotNull();
+
+		// success, acquisition happens immediately without timeout
+		PooledRef<String> pooledRef2 = pool.acquire().block(Duration.ofSeconds(1));
+		assertThat(pooledRef2).isNotNull();
 
 		//success, acquisition happens after pending some time
 		pool.acquire(Duration.ofMillis(50)).subscribe();
+
+		// success, acquisition happens after pending some time without timeout
+		pool.acquire().subscribe();
 
 		//error, timed out
 		pool.acquire(Duration.ofMillis(1))
@@ -2706,14 +2713,15 @@ public class CommonPoolTest {
 				.expectError(PoolAcquireTimeoutException.class)
 				.verify(Duration.ofSeconds(1));
 
-		pooledRef.release().block(Duration.ofSeconds(1));
+		pooledRef1.release().block(Duration.ofSeconds(1));
+		pooledRef2.release().block(Duration.ofSeconds(1));
 
 		assertThat(recorder.getPendingTotalCount())
 				.as("total pending")
-				.isEqualTo(2);
+				.isEqualTo(3);
 		assertThat(recorder.getPendingSuccessCount())
 				.as("pending success")
-				.isEqualTo(1)
+				.isEqualTo(2)
 				.isEqualTo(recorder.getPendingSuccessHistogram().getTotalCount());
 		assertThat(recorder.getPendingErrorCount())
 				.as("pending errors")

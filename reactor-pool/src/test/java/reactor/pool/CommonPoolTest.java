@@ -31,6 +31,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1115,6 +1117,31 @@ public class CommonPoolTest {
 		finally {
 			Loggers.resetLoggerFactory();
 		}
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void pendingTimeout(PoolStyle configAdjuster) throws Exception {
+		PoolBuilder<String, ?> builder = PoolBuilder
+				.from(Mono.just("pendingTimeout"))
+				.sizeBetween(0, 1)
+				.maxPendingAcquire(10);
+		AbstractPool<String> pool = configAdjuster.apply(builder);
+
+		CountDownLatch latch = new CountDownLatch(3);
+		ExecutorService executorService = Executors.newFixedThreadPool(20);
+		CompletableFuture<?>[] completableFutures = new CompletableFuture<?>[4];
+		for (int i = 0; i < completableFutures.length; i++) {
+			completableFutures[i] = CompletableFuture.runAsync(
+					() -> pool.acquire(Duration.ofMillis(10))
+							.doOnError(t -> latch.countDown())
+							.onErrorResume(PoolAcquireTimeoutException.class, t -> Mono.empty())
+							.block(),
+					executorService);
+		}
+
+		Mono.fromCompletionStage(CompletableFuture.allOf(completableFutures)).block(Duration.ofSeconds(5));
+		assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 	}
 
 	@ParameterizedTestWithName

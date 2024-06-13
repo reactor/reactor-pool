@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -509,6 +509,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	@Override
+	void applyPendingAcquireTimeout(Borrower<POOLABLE> borrower) {
+		// Pending acquire timeout is applied when pendingOffer() is invoked
+	}
+
+	@Override
 	boolean elementOffer(POOLABLE element) {
 		@SuppressWarnings("unchecked")
 		Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
@@ -571,7 +576,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	 * @param pending a new {@link reactor.pool.AbstractPool.Borrower} to add to the queue and later either serve or consider pending
 	 */
 	void pendingOffer(Borrower<POOLABLE> pending) {
-		int maxPending = poolConfig.maxPending();
 		ConcurrentLinkedDeque<Borrower<POOLABLE>> pendingQueue = this.pending;
 		if (pendingQueue == TERMINATED) {
 			return;
@@ -581,6 +585,17 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			postOffer = PENDING_SIZE.incrementAndGet(this);
 		}
 
+		boolean noIdle = idleSize == 0;
+		int estimatePermitCount = poolConfig.allocationStrategy().estimatePermitCount();
+
+		if (noIdle && (estimatePermitCount == 0 || estimatePermitCount < postOffer)) {
+			pending.pendingAcquireStart = clock.millis();
+			if (!pending.pendingAcquireTimeout.isZero()) {
+				pending.timeoutTask = config().pendingAcquireTimer().apply(pending, pending.pendingAcquireTimeout);
+			}
+		}
+
+		int maxPending = poolConfig.maxPending();
 		if (WIP.getAndIncrement(this) == 0) {
 			if (maxPending >= 0 && postOffer > maxPending && idleSize == 0 && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
 				//fail fast. differentiate slightly special case of maxPending == 0

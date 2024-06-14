@@ -122,18 +122,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 
 	// == common methods to interact with idle/pending queues ==
 
-	void applyPendingAcquireTimeout(Borrower<POOLABLE> borrower) {
-		boolean noIdle = idleSize() == 0;
-		boolean noPermits = poolConfig.allocationStrategy().estimatePermitCount() == 0;
-
-		if (noIdle && noPermits) {
-			borrower.pendingAcquireStart = clock.millis();
-			if (!borrower.pendingAcquireTimeout.isZero()) {
-				borrower.timeoutTask = config().pendingAcquireTimer().apply(borrower, borrower.pendingAcquireTimeout);
-			}
-		}
-	}
-
 	abstract boolean elementOffer(POOLABLE element); //used in tests
 
 	/**
@@ -434,11 +422,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
 		@Override
 		public void request(long n) {
 			if (Operators.validate(n)) {
-				//start the countdown
-				pool.applyPendingAcquireTimeout(this);
-
-				//doAcquire should interrupt the countdown if there is either an available
-				//resource or the pool can allocate one
+				// doAcquire will check for acquire timeout
 				pool.doAcquire(this);
 			}
 		}

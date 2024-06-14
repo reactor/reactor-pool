@@ -509,11 +509,6 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	@Override
-	void applyPendingAcquireTimeout(Borrower<POOLABLE> borrower) {
-		// Pending acquire timeout is applied when pendingOffer() is invoked
-	}
-
-	@Override
 	boolean elementOffer(POOLABLE element) {
 		@SuppressWarnings("unchecked")
 		Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);

@@ -583,6 +583,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		int idle = idleSize;
 		int estimatePermitCount = poolConfig.allocationStrategy().estimatePermitCount();
 
+		// This is "best effort"
 		if (idle + estimatePermitCount < postOffer) {
 			pending.pendingAcquireStart = clock.millis();
 			if (!pending.pendingAcquireTimeout.isZero()) {
@@ -590,8 +591,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			}
 		}
 
-		int maxPending = poolConfig.maxPending();
 		if (WIP.getAndIncrement(this) == 0) {
+			int maxPending = poolConfig.maxPending();
 			if (maxPending >= 0 && postOffer > maxPending && idleSize == 0 && poolConfig.allocationStrategy().estimatePermitCount() == 0) {
 				//fail fast. differentiate slightly special case of maxPending == 0
 				Borrower<POOLABLE> toCull = pendingQueue.pollLast();

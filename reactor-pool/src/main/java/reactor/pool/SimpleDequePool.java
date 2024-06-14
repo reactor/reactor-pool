@@ -585,10 +585,10 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			postOffer = PENDING_SIZE.incrementAndGet(this);
 		}
 
-		boolean noIdle = idleSize == 0;
+		int idle = idleSize;
 		int estimatePermitCount = poolConfig.allocationStrategy().estimatePermitCount();
 
-		if (noIdle && (estimatePermitCount == 0 || estimatePermitCount < postOffer)) {
+		if (idle + estimatePermitCount < postOffer) {
 			pending.pendingAcquireStart = clock.millis();
 			if (!pending.pendingAcquireTimeout.isZero()) {
 				pending.timeoutTask = config().pendingAcquireTimer().apply(pending, pending.pendingAcquireTimeout);

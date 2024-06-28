@@ -14,11 +14,11 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: 8
-    - uses: gradle/actions/setup-gradle@4c39dd82cd5e1ec7c6fa0173bb41b4b6bb3b86ff
+    - uses: gradle/actions/setup-gradle@dbbdc275be76ac10734476cc723d82dfe7ec6eda
       name: license header check
       with:
         arguments: spotlessCheck -PspotlessFrom=origin/${{ github.base_ref }}
-    - uses: gradle/actions/setup-gradle@4c39dd82cd5e1ec7c6fa0173bb41b4b6bb3b86ff
+    - uses: gradle/actions/setup-gradle@dbbdc275be76ac10734476cc723d82dfe7ec6eda
       name: gradle
       with:
         arguments: check javadoc

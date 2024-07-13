@@ -46,8 +46,7 @@ import static reactor.pool.AbstractPool.AbstractPooledRef.STATE_INVALIDATED;
  * @author Simon Baslé
  * @author Violeta Georgieva
  */
-abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>,
-												 InstrumentedPool.PoolMetrics {
+abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, InstrumentedPool.PoolMetrics {
 
 	//A pool should be rare enough that having instance loggers should be ok
 	//This helps with testability of some methods that for now mainly log

@@ -11,7 +11,7 @@ reactiveStreams = "1.0.4"
 
 [libraries]
 assertj = "org.assertj:assertj-core:3.26.3"
-awaitility = "org.awaitility:awaitility:4.2.1"
+awaitility = "org.awaitility:awaitility:4.2.2"
 hdrHistogram = "org.hdrhistogram:HdrHistogram:2.2.2"
 jsr305 = "com.google.code.findbugs:jsr305:3.0.1"
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

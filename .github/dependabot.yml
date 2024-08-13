@@ -17,7 +17,7 @@ updates:
   # Don't update Micrometer
   - dependency-name: io.micrometer:micrometer-bom
     versions:
-    - "> 1.13.0"
+    - "> 1.10.0"
   # JSR305 backport is fixed to last version with annotations (3.0.1)
   - dependency-name: "com.google.code.findbugs:jsr305"
   # Versions > 6.13 require JDK11+

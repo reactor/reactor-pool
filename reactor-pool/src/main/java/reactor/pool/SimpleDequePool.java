@@ -55,8 +55,18 @@ import reactor.util.annotation.Nullable;
  *     <li>any thread on which a resource was recently released</li>
  *     <li>any thread on which an {@link Pool#acquire()} {@link Mono} was subscribed</li>
  * </ul>
- * For a more deterministic approach, the {@link PoolBuilder#acquisitionScheduler(Scheduler)} property of the builder can be used.
+ * <p>
+ * There are two ways to achieve a more deterministic execution policy for the delivery:
+ * <ul>
+ *     <li>if the poolable resource is an {@link java.util.concurrent.Executor} the
+ *     resource itself will be delivered via {@link java.util.concurrent.Executor#execute(Runnable)}.</li>
+ *     <li>the {@link PoolBuilder#acquisitionScheduler(Scheduler)} property of the
+ *     builder can be used.</li>
+ * </ul>
  *
+ * Combining both might lead to unnecessary thread switching so it is advised to pick
+ * one depending on the use case.
+ * </p>
  * @author Simon Baslé
  */
 public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {

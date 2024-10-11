@@ -20,6 +20,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
@@ -461,6 +462,19 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		}
 
 		void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
+			POOLABLE resource = poolSlot.poolable();
+			// Since slots can be delivered from a drain operation to multiple
+			// Borrowers on a single Thread (e.g. an event loop) we take the chance to
+			// reschedule the actual delivery in case there is another Executor
+			// associated with the poolable to avoid overwhelming a single CPU core.
+			if (resource instanceof Executor) {
+				((Executor) resource).execute(() -> doDeliver(poolSlot));
+			} else {
+				doDeliver(poolSlot);
+			}
+		}
+
+		private void doDeliver(AbstractPooledRef<POOLABLE> poolSlot) {
 			stopPendingCountdown(true);
 			if (get()) {
 				//CANCELLED

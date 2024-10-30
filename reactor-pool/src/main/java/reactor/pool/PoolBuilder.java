@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,6 +78,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder         = true;
 	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer = DEFAULT_PENDING_ACQUIRE_TIMER;
+
+	ResourceManager resourceManager = DEFAULT_RESOURCE_MANAGER;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -445,6 +447,11 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		return this;
 	}
 
+	public PoolBuilder<T, CONF> resourceManager(ResourceManager resourceManager) {
+		this.resourceManager = resourceManager;
+		return this;
+	}
+
 	/**
 	 * Add implementation-specific configuration, changing the type of {@link PoolConfig}
 	 * passed to the {@link Pool} factory in {@link #build(Function)}.
@@ -508,7 +515,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				acquisitionScheduler,
 				metricsRecorder,
 				clock,
-				idleLruOrder);
+				idleLruOrder,
+				resourceManager);
 
 		return this.configModifier.apply(baseConfig);
 	}
@@ -531,4 +539,6 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
 	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);
 	static final int DEFAULT_WARMUP_PARALLELISM = 1;
+
+	static final ResourceManager DEFAULT_RESOURCE_MANAGER = () -> {};
 }

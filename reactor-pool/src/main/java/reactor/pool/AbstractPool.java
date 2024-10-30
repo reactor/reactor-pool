@@ -22,6 +22,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import org.reactivestreams.Publisher;
@@ -389,7 +390,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		static final Disposable TIMEOUT_DISPOSED = Disposables.disposed();
 
 		final CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual;
-		final AbstractPool<POOLABLE> pool;
+		final AtomicReference<AbstractPool<POOLABLE>> pool;
 		final Duration pendingAcquireTimeout;
 
 		long pendingAcquireStart;
@@ -399,7 +400,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 				AbstractPool<POOLABLE> pool,
 				Duration pendingAcquireTimeout) {
 			this.actual = actual;
-			this.pool = pool;
+			this.pool = new AtomicReference<>(pool);
 			this.pendingAcquireTimeout = pendingAcquireTimeout;
 			this.timeoutTask = TIMEOUT_DISPOSED;
 		}
@@ -413,7 +414,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 			if (Borrower.this.compareAndSet(false, true)) {
 				// this is failure, a timeout was observed
 				stopPendingCountdown(false);
-				pool.cancelAcquire(Borrower.this);
+				pool().cancelAcquire(Borrower.this);
 				actual.onError(new PoolAcquireTimeoutException(pendingAcquireTimeout));
 			}
 		}
@@ -422,7 +423,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		public void request(long n) {
 			if (Operators.validate(n)) {
 				// doAcquire will check for acquire timeout
-				pool.doAcquire(this);
+				pool().doAcquire(this);
 			}
 		}
 
@@ -431,6 +432,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		 */
 		void stopPendingCountdown(boolean success) {
 			if (pendingAcquireStart > 0) {
+				AbstractPool<POOLABLE> pool = pool();
 				if (success) {
 					pool.metricsRecorder.recordPendingSuccessAndLatency(pool.clock.millis() - pendingAcquireStart);
 				} else {
@@ -445,7 +447,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		@Override
 		public void cancel() {
 			set(true);
-			pool.cancelAcquire(this);
+			pool().cancelAcquire(this);
 			stopPendingCountdown(true); // this is not failure, the subscription was canceled
 		}
 
@@ -483,6 +485,14 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		@Override
 		public String toString() {
 			return get() ? "Borrower(cancelled)" : "Borrower";
+		}
+
+		AbstractPool<POOLABLE> pool() {
+			return pool.get();
+		}
+
+		void setPool(AbstractPool<POOLABLE> replace) {
+			pool.set(replace);
 		}
 	}
 

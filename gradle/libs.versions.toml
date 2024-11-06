@@ -1,7 +1,8 @@
 [versions]
 # Baselines, should be updated on every release
 baseline-pool-api = "1.0.8"
-reactorCore = "3.5.21-SNAPSHOT"
+# Reactor Core 3.5.20 is the last OSS release for 3.5.x series
+reactorCore = "3.5.20"
 reactorAddons = "3.5.3-SNAPSHOT"
 
 # Other shared versions

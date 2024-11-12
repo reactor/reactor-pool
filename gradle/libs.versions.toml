@@ -7,7 +7,7 @@ reactorAddons = "3.6.0-SNAPSHOT"
 # Other shared versions
 junit = "5.11.3"
 slf4j = "1.7.36"
-micrometer = "1.14.0-SNAPSHOT"
+micrometer = "1.14.0"
 reactiveStreams = "1.0.4"
 
 [libraries]

@@ -536,19 +536,16 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatedReleasedIfBorrowerCancelled(PoolStyle configAdjuster) {
+	void cancelAllocatorIfBorrowerCancelled(PoolStyle configAdjuster) {
 		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 		AtomicInteger newCount = new AtomicInteger();
-		AtomicInteger releasedCount = new AtomicInteger();
 
 		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
-				.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
+                .from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50))
+								.flatMap(__->Mono.fromSupplier(()-> new PoolableTest(newCount.incrementAndGet()))))
 				          .subscribeOn(scheduler))
 				.sizeBetween(0, 1)
-				.releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
-					poolableTest.clean();
-					releasedCount.incrementAndGet();
-				}))
+				.releaseHandler(poolableTest -> Mono.fromRunnable(poolableTest::clean))
 				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
@@ -561,28 +558,23 @@ public class CommonPoolTest {
 				.atMost(100, TimeUnit.MILLISECONDS)
 				.with().pollInterval(10, TimeUnit.MILLISECONDS)
 				.untilAsserted(
-						() -> assertThat(releasedCount).as("released").hasValue(1));
-
-		assertThat(newCount).as("created").hasValue(1);
+						() -> assertThat(newCount).as("created").hasValue(0));
 	}
 
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
-	void allocatedReleasedIfBorrowerInScopeCancelled(PoolStyle configAdjuster) {
+	void cancelAllocatorIfBorrowerInScopeCancelled(PoolStyle configAdjuster) {
 		Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 		AtomicInteger newCount = new AtomicInteger();
-		AtomicInteger releasedCount = new AtomicInteger();
 
-		PoolBuilder<PoolableTest, ?> builder =
-				PoolBuilder.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
-				                     .subscribeOn(scheduler))
-				           .sizeBetween(0, 1)
-				           .releaseHandler(poolableTest -> Mono.fromRunnable(() -> {
-					           poolableTest.clean();
-					           releasedCount.incrementAndGet();
-				           }))
-				           .evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
+		PoolBuilder<PoolableTest, ?> builder = PoolBuilder
+				.from(Mono.defer(() -> Mono.delay(Duration.ofMillis(50))
+								.flatMap(__ -> Mono.fromSupplier(() -> new PoolableTest(newCount.incrementAndGet()))))
+						.subscribeOn(scheduler))
+				.sizeBetween(0, 1)
+				.releaseHandler(poolableTest -> Mono.fromRunnable(poolableTest::clean))
+				.evictionPredicate((poolable, metadata) -> !poolable.isHealthy());
 		Pool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		//acquire the only element and immediately dispose
@@ -593,9 +585,7 @@ public class CommonPoolTest {
 				.atMost(100, TimeUnit.MILLISECONDS)
 				.with().pollInterval(10, TimeUnit.MILLISECONDS)
 				.untilAsserted(
-						() -> assertThat(releasedCount).as("released").hasValue(1));
-
-		assertThat(newCount).as("created").hasValue(1);
+						() -> assertThat(newCount).as("created").hasValue(0));
 	}
 
 	@ParameterizedTestWithName

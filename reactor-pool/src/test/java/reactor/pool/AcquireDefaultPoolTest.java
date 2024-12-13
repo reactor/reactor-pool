@@ -171,8 +171,9 @@ class AcquireDefaultPoolTest {
 			try {
 
 				InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
-						Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
-							.subscribeOn(scheduler),
+						Mono.defer(() -> Mono.delay(Duration.ofMillis(50))
+										.flatMap(__->Mono.fromSupplier(()->new PoolableTest(newCount.incrementAndGet()))))
+								.subscribeOn(scheduler),
 						pt -> releasedCount.incrementAndGet())
 .buildPool();
 
@@ -562,7 +563,8 @@ class AcquireDefaultPoolTest {
 			Scheduler scheduler = Schedulers.newParallel("poolable test allocator");
 
 			InstrumentedPool<PoolableTest> pool = poolableTestBuilder(0, 1,
-					Mono.defer(() -> Mono.delay(Duration.ofMillis(50)).thenReturn(new PoolableTest(newCount.incrementAndGet())))
+					Mono.defer(() -> Mono.delay(Duration.ofMillis(50))
+									.flatMap(__->Mono.fromSupplier(()->new PoolableTest(newCount.incrementAndGet()))))
 						.subscribeOn(scheduler),
 					pt -> releasedCount.incrementAndGet())
 .buildPool();

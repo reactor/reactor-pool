@@ -439,7 +439,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 						if (permits == 1) {
 							//subscribe to the primary, which will directly feed to the borrower
-							primary.subscribe(alreadyPropagated -> { }, alreadyPropagatedOrLogged -> drain(), this::drain);
+							Disposable disposable = primary.subscribe(alreadyPropagated -> {
+							}, alreadyPropagatedOrLogged -> drain(), this::drain);
+							borrower.onCancel(disposable);
 						}
 						else {
 							/*=============================================*

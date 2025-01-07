@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -293,6 +293,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	@Override
 	void doAcquire(Borrower<POOLABLE> borrower) {
+		if (borrower.get()) {
+			// Borrower is cancelled, do nothing
+			return;
+		}
+
 		if (isDisposed()) {
 			borrower.fail(new PoolShutdownException());
 			return;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
 import reactor.core.Exceptions;
@@ -812,6 +813,21 @@ public class CommonPoolTest {
 		assertThat(acquired2.isDisposed()).as("acquired2 held").isFalse();
 		assertThat(acquired3.isDisposed()).as("acquired3 held").isFalse();
 		assertThat(borrowerError.get()).hasMessage("Pool has been shut down");
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void doAcquireNotCalledIfBorrowerInScopeCancelledEarly(PoolStyle configAdjuster) {
+		AtomicInteger allocator = new AtomicInteger();
+		PoolBuilder<Integer, ?> builder = PoolBuilder.from(Mono.fromCallable(allocator::incrementAndGet));
+		Pool<Integer> pool = configAdjuster.apply(builder);
+
+		assertThat(allocator).as("before invoking acquire").hasValue(0);
+
+		// Borrower is in state cancelled before the actual acquisition
+		pool.acquire().doOnSubscribe(Subscription::cancel).subscribe();
+
+		assertThat(allocator).as("after invoking acquire").hasValue(0);
 	}
 
 	@ParameterizedTestWithName

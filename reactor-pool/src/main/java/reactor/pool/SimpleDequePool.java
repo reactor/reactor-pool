@@ -358,7 +358,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						continue;
 					}
 					Borrower<POOLABLE> borrower = pendingPoll(borrowers);
-					if (borrower == null) {
+					if (borrower == null || borrower.get()) {
 						if (idleResourceLeastRecentlyUsed) {
 							resources.offerFirst(slot);
 						}
@@ -367,6 +367,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						}
 						incrementIdle();
 						//we expect to detect a disposed pool in the next round
+						//or the Borrower was cancelled
 						continue;
 					}
 					if (isDisposed()) {
@@ -413,8 +414,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						 * ... and CAN ALLOCATE  => Subscribe to allocator + Warmup *
 						 *=======================*/
 						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
-						if (borrower == null) {
-							continue; //we expect to detect pool is shut down in next round
+						if (borrower == null || borrower.get()) {
+							continue; //we expect to detect pool is shut down in next round or the Borrower was cancelled
 						}
 						if (isDisposed()) {
 							borrower.fail(new PoolShutdownException());

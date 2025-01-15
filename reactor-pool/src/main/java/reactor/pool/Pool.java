@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2024 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -178,4 +178,14 @@ public interface Pool<POOLABLE> extends Disposable {
 	 * @return a Mono triggering the shutdown of the pool once subscribed.
 	 */
 	Mono<Void> disposeLater();
+
+	/**
+	 * Transfer some pending borrowers from another pool into this pool.
+	 *
+	 * @param from another pool to steal resources from
+	 * @return true if some borrowers have been moved from <code>from</code> into this pool instance
+	 */
+	default boolean transferBorrowersFrom(InstrumentedPool<POOLABLE> from) {
+		return false;
+	}
 }

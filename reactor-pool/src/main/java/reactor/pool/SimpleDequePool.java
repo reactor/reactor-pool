@@ -415,6 +415,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						 *=======================*/
 						Borrower<POOLABLE> borrower = pendingPoll(borrowers);
 						if (borrower == null || borrower.get()) {
+							poolConfig.allocationStrategy().returnPermits(permits);
 							continue; //we expect to detect pool is shut down in next round or the Borrower was cancelled
 						}
 						if (isDisposed()) {

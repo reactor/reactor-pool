@@ -840,6 +840,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		@Override
+		@Nullable
 		@SuppressWarnings("rawtypes")
 		public Object scanUnsafe(Scannable.Attr key) {
 			if (key == Attr.ACTUAL) {

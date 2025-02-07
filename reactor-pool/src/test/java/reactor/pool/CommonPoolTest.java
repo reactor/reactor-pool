@@ -322,8 +322,11 @@ public class CommonPoolTest {
 		AbstractPool<PoolableTest> pool = configAdjuster.apply(builder);
 
 		PooledRef<PoolableTest> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<PoolableTest> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
 		PooledRef<PoolableTest> ref3 = pool.acquire().block();
+		assertThat(ref3).isNotNull();
 
 		ref2.release().block();
 		ref1.release().block();
@@ -401,8 +404,11 @@ public class CommonPoolTest {
 		final PoolMetrics metrics = ((InstrumentedPool) pool).metrics();
 
 		final PooledRef<PoolableTest> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		final PooledRef<PoolableTest> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
 		final PooledRef<PoolableTest> ref3 = pool.acquire().block();
+		assertThat(ref3).isNotNull();
 		final PooledRef<PoolableTest> ref4 = pool.acquire().block();
 
 		assertThat(metrics.allocatedSize()).as("initial allocated").isEqualTo(4);
@@ -612,6 +618,7 @@ public class CommonPoolTest {
 			AbstractPool<Integer> pool = configAdjuster.apply(builder);
 			pool.warmup().block();
 			PooledRef<Integer> hold = pool.acquire().block();
+			assertThat(hold).isNotNull();
 
 			AtomicReference<Throwable> error = new AtomicReference<>();
 			AtomicInteger errorCount = new AtomicInteger();
@@ -660,6 +667,7 @@ public class CommonPoolTest {
 			AbstractPool<Integer> pool = configAdjuster.apply(builder);
 			pool.warmup().block();
 			PooledRef<Integer> hold = pool.acquire().block();
+			assertThat(hold).isNotNull();
 
 			AtomicReference<Throwable> error = new AtomicReference<>();
 			AtomicInteger errorCount = new AtomicInteger();
@@ -1299,6 +1307,7 @@ public class CommonPoolTest {
 		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
+		assertThat(acquire1).isNotNull();
 
 		Mono<Void> releaserMono1 = acquire1.release();
 		releaserMono1.block();
@@ -1309,7 +1318,10 @@ public class CommonPoolTest {
 
 		assertThat(resource).as("first acquire multi-release").hasValue(1);
 
-		Mono<Void> releaserMono3 = pool.acquire().block().release();
+		PooledRef<AtomicInteger> acquire3 = pool.acquire().block();
+		assertThat(acquire3).isNotNull();
+
+		Mono<Void> releaserMono3 = acquire3.release();
 		releaserMono3.block();
 		releaserMono3.block();
 
@@ -1327,6 +1339,7 @@ public class CommonPoolTest {
 		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 		PooledRef<AtomicInteger> acquire1 = pool.acquire().block();
+		assertThat(acquire1).isNotNull();
 
 		Mono<Void> invalidateMono1 = acquire1.invalidate();
 		invalidateMono1.block();
@@ -1337,7 +1350,10 @@ public class CommonPoolTest {
 
 		assertThat(resource).as("first acquire multi-invalidate").hasValue(1);
 
-		final Mono<Void> invalidateMono3 = pool.acquire().block().invalidate();
+		PooledRef<AtomicInteger> acquire3 = pool.acquire().block();
+		assertThat(acquire3).isNotNull();
+
+		final Mono<Void> invalidateMono3 = acquire3.invalidate();
 		invalidateMono3.block();
 		invalidateMono3.block();
 
@@ -1653,20 +1669,26 @@ public class CommonPoolTest {
 
 		//first round
 		PooledRef<Integer> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<Integer> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
 		Thread.sleep(250);
 		ref1.release().block();
 		ref2.release().block();
 
 		//second round
 		ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
 		Thread.sleep(300);
 		ref1.release().block();
 		ref2.release().block();
 
 		//extra acquire to show 3 allocations
-		pool.acquire().block().release().block();
+		PooledRef<Integer> ref3 = pool.acquire().block();
+		assertThat(ref3).isNotNull();
+		ref3.release().block();
 
 		assertThat(allocCounter).as("allocations").hasValue(3);
 		assertThat(destroyCounter).as("destructions").hasValue(2);
@@ -1725,7 +1747,9 @@ public class CommonPoolTest {
 
 		//first round
 		PooledRef<Integer> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<Integer> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
 
 		ref1.release().block();
 		//ref1 idle for 100ms more than ref2
@@ -1806,6 +1830,7 @@ public class CommonPoolTest {
 		assertThat(poolMetrics.allocatedSize()).as("allocated at start").isZero();
 
 		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
 
 		assertThat(poolMetrics.allocatedSize()).as("allocated at first acquire").isOne();
 		assertThat(poolMetrics.idleSize()).as("idle at first acquire").isZero();
@@ -1878,6 +1903,7 @@ public class CommonPoolTest {
 		PoolMetrics poolMetrics = pool.metrics();
 
 		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
 
 		assertThat(poolMetrics.pendingAcquireSize()).as("first acquire not pending").isZero();
 
@@ -1956,6 +1982,7 @@ public class CommonPoolTest {
 
 		for (int i = 0; i < loops; i++) {
 			final PooledRef<Integer> pooledRef = pool.acquire().block();
+			assertThat(pooledRef).isNotNull();
 			RaceTestUtils.race(() -> pooledRef.release().subscribe(v -> {}, e -> latch.countDown(),
 					latch::countDown),
 					() -> pooledRef.invalidate().subscribe(v -> {}, e -> latch.countDown(),
@@ -2000,7 +2027,9 @@ public class CommonPoolTest {
 		//set the release predicate to release <= 3 on acquire
 		releasedIndex.set(4);
 
-		assertThat(pool.acquire().block().poolable()).as("allocated post idle").isEqualTo(5);
+		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
+		assertThat(ref.poolable()).as("allocated post idle").isEqualTo(5);
 		assertThat(intSource).as("did generate a new value").hasValue(5);
 		assertThat(destroyed).as("single acquire released all idle")
 		                     .containsExactly(1, 2, 3, 4);
@@ -2026,6 +2055,7 @@ public class CommonPoolTest {
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 			PooledRef<AtomicInteger> ref = pool.acquire().block();
+			assertThat(ref).isNotNull();
 
 			final CountDownLatch latch = new CountDownLatch(2);
 			//acquire-and-release, vs pool disposal
@@ -2063,6 +2093,7 @@ public class CommonPoolTest {
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(builder);
 
 			PooledRef<AtomicInteger> ref = pool.acquire().block();
+			assertThat(ref).isNotNull();
 
 			final CountDownLatch latch = new CountDownLatch(2);
 			//acquire-and-release, vs pool disposal
@@ -2142,6 +2173,7 @@ public class CommonPoolTest {
 			errorRef.set(null);
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
 			PooledRef<AtomicInteger> aiRef = pool.acquire().block();
+			assertThat(aiRef).isNotNull();
 
 			if (i % 2 == 0) {
 				RaceTestUtils.race(
@@ -2186,6 +2218,7 @@ public class CommonPoolTest {
 			errorRef.set(null);
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
 			PooledRef<AtomicInteger> aiRef = pool.acquire().block();
+			assertThat(aiRef).isNotNull();
 
 			if (i % 2 == 0) {
 				RaceTestUtils.race(
@@ -2297,10 +2330,12 @@ public class CommonPoolTest {
 		final PooledRef<Integer> ref1 = pool.acquire()
 		                                    .contextWrite(Context.of("ifNew", 1))
 		                                    .block(Duration.ofSeconds(5));
+		assertThat(ref1).isNotNull();
 
 		final PooledRef<Integer> ref2 = pool.acquire()
 		                                    .contextWrite(Context.of("ifNew", 2))
 		                                    .block(Duration.ofSeconds(5));
+		assertThat(ref2).isNotNull();
 
 		assertThat(ref1.poolable()).as("atomic 1 via ref1").isEqualTo(1);
 		assertThat(ref2.poolable()).as("atomic 2 via ref2").isEqualTo(2);
@@ -2309,6 +2344,7 @@ public class CommonPoolTest {
 		final PooledRef<Integer> ref3 = pool.acquire()
 		                                    .contextWrite(Context.of("ifNew", 3))
 		                                    .block(Duration.ofSeconds(5));
+		assertThat(ref3).isNotNull();
 
 		assertThat(ref3.poolable()).as("atomic 1 via ref3").isEqualTo(1);
 
@@ -2316,6 +2352,7 @@ public class CommonPoolTest {
 		final PooledRef<Integer> ref4 = pool.acquire()
 		                                    .contextWrite(Context.of("ifNew", 4))
 		                                    .block(Duration.ofSeconds(5));
+		assertThat(ref4).isNotNull();
 
 		assertThat(ref4.poolable()).as("atomic 2 via ref4").isEqualTo(2);
 	}
@@ -2338,9 +2375,13 @@ public class CommonPoolTest {
 		    .verify(Duration.ofSeconds(5));
 
 		final PooledRef<String> ref1 = pool.acquire().block(Duration.ofSeconds(5));
+		assertThat(ref1).isNotNull();
 		final PooledRef<String> ref2 = pool.acquire().block(Duration.ofSeconds(5));
+		assertThat(ref2).isNotNull();
 		final PooledRef<String> ref3 = pool.acquire().block(Duration.ofSeconds(5));
+		assertThat(ref3).isNotNull();
 		final PooledRef<String> ref4 = pool.acquire().block(Duration.ofSeconds(5));
+		assertThat(ref4).isNotNull();
 
 		//since values are warmed up in batches and put in the idle queue, LRU-MRU has consequences
 		assertThat(ref1.poolable()).as("ref1").isEqualTo(style.isLru ? "1warmup" : "2warmup");
@@ -2655,6 +2696,7 @@ public class CommonPoolTest {
 		InstrumentedPool<AtomicBoolean> pool = style.apply(configBuilder);
 
 		PooledRef<AtomicBoolean> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 		ref1.release().block();
 
 		Assumptions.assumeThat(pool).isInstanceOf(SimpleDequePool.class);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,7 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		PooledRef<String> ref1 = pool.acquire().block();
+		assertThat(ref1).isNotNull();
 
 		pool.disposeGracefully(Duration.ofMinutes(1)).subscribe();
 
@@ -127,6 +128,7 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		GracefulRef ref = (GracefulRef) gsPool.acquire().block();
+		assertThat(ref).isNotNull();
 
 		assertThat(ref.poolable()).as("poolable").isSameAs(ref.originalRef.poolable());
 		assertThat(ref.metadata()).as("metadata").isSameAs(ref.originalRef.metadata());
@@ -404,7 +406,9 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		PooledRef<Long> ref1 = gsPool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<Long> ref2 = gsPool.acquire().block();
+		assertThat(ref2).isNotNull();
 
 		assertThat(gsPool.acquireTracker).hasValue(2);
 
@@ -430,7 +434,9 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		PooledRef<Long> ref1 = gsPool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<Long> ref2 = gsPool.acquire().block();
+		assertThat(ref2).isNotNull();
 
 		assertThat(gsPool.acquireTracker).hasValue(2);
 
@@ -456,7 +462,9 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		PooledRef<Long> ref1 = gsPool.acquire().block();
+		assertThat(ref1).isNotNull();
 		PooledRef<Long> ref2 = gsPool.acquire().block();
+		assertThat(ref2).isNotNull();
 
 		assertThat(gsPool.acquireTracker).hasValue(2);
 

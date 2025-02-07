@@ -33,17 +33,24 @@ javadoc {
 	options.author = true
 	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
 
-	String[] links = [
-		"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
-		jdkJavadoc,
-		//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
-		"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
-	]
-	if (project.name != 'reactor-pool') {
-		//TODO currently java 8 cannot link to Micrometer javadocs deployed to javadoc.io
-		links += "https://projectreactor.io/docs/pool/${libs.versions.baseline.pool.api.get()}/api/"
+	if (project.name == 'reactor-pool') {
+		options.links([
+				"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+				jdkJavadoc,
+				//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
+				"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
+		] as String[])
 	}
-	options.links(links)
+	else {
+		options.links([
+				"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
+				jdkJavadoc,
+				//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
+				"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
+				//TODO currently java 8 cannot link to Micrometer javadocs deployed to javadoc.io
+				"https://projectreactor.io/docs/pool/${libs.versions.baseline.pool.api.get()}/api/"
+		] as String[])
+	}
 
 	maxMemory = "1024m"
 	destinationDir = new File(project.buildDir, "docs/javadoc")

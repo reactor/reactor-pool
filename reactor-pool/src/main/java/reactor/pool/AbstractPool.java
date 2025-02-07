@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
@@ -34,7 +35,6 @@ import reactor.core.Scannable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Operators;
 import reactor.util.Logger;
-import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
 
 import static reactor.pool.AbstractPool.AbstractPooledRef.STATE_INVALIDATED;
@@ -450,9 +450,8 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		}
 
 		@Override
-		@Nullable
 		@SuppressWarnings("rawtypes")
-		public Object scanUnsafe(Attr key) {
+		public @Nullable Object scanUnsafe(Attr key) {
 			if (key == Attr.CANCELLED) return get();
 			if (key == Attr.REQUESTED_FROM_DOWNSTREAM) return 1;
 			if (key == Attr.ACTUAL) return actual;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2022-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,8 +50,7 @@ dependencies {
     testImplementation platform(libs.micrometer.bom)
     testImplementation libs.micrometer.test
 
-    // JSR-305 annotations
-    compileOnly libs.jsr305
+    api libs.jspecify
 
     // Testing
     testImplementation libs.assertj

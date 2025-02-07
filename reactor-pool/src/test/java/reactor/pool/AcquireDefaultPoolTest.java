@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -503,8 +503,16 @@ class AcquireDefaultPoolTest {
 
 				for (int i = 0; i < 100; i++) {
 					RaceTestUtils.race(racer,
-							() -> pool.acquire().block().release().block(),
-							() -> pool.acquire().block().release().block());
+							() -> {
+								PooledRef<PoolableTest> ref = pool.acquire().block();
+								assertThat(ref).isNotNull();
+								ref.release().block();
+							},
+							() -> {
+								PooledRef<PoolableTest> ref = pool.acquire().block();
+								assertThat(ref).isNotNull();
+								ref.release().block();
+							});
 				}
 				//we expect that only 3 element was created
 				assertThat(newCount).as("elements created in total").hasValue(4);

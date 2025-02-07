@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.assertj.core.data.Offset;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -110,7 +111,7 @@ class AcquireDefaultPoolTest {
 	@Test
 	void demonstrateAcquireInScopePipeline() throws InterruptedException {
 		AtomicInteger counter = new AtomicInteger();
-		AtomicReference<String> releaseRef = new AtomicReference<>();
+		AtomicReference<@Nullable String> releaseRef = new AtomicReference<>();
 
 		InstrumentedPool<String> pool =
 				from(Mono.just("Hello Reactive World"))

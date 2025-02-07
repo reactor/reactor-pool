@@ -47,6 +47,7 @@ import org.assertj.core.api.Assumptions;
 import org.assertj.core.data.Offset;
 import org.awaitility.Awaitility;
 import org.hamcrest.CoreMatchers;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -1799,7 +1800,8 @@ public class CommonPoolTest {
 		uniqueElement.release().block();
 		assertThat(uniqueElement.metadata().acquireCount()).as("acquireCount post timeout-then-release").isOne();
 
-		assertThat(pool.acquire().block()).isNotNull();
+		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
 		assertThat(allocCounter).as("final allocation count").hasValue(1);
 		assertThat(didReset).hasValue(1);
 	}
@@ -2123,7 +2125,7 @@ public class CommonPoolTest {
 				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
 				.sizeBetween(0, 1);
 
-		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		AtomicReference<@Nullable Throwable> errorRef = new AtomicReference<>();
 		for (int i = 0; i < 100_000; i++) {
 			errorRef.set(null);
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
@@ -2146,10 +2148,11 @@ public class CommonPoolTest {
 						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
 				);
 			}
-			if (errorRef.get() != null) {
-				errorRef.get().printStackTrace();
+			Throwable t = errorRef.get();
+			if (t != null) {
+				t.printStackTrace();
 			}
-			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+			assertThat(t).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
 		}
 		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
 	}
@@ -2168,7 +2171,7 @@ public class CommonPoolTest {
 				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
 				.sizeBetween(0, 1);
 
-		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		AtomicReference<@Nullable Throwable> errorRef = new AtomicReference<>();
 		for (int i = 0; i < 100_000; i++) {
 			errorRef.set(null);
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
@@ -2191,10 +2194,11 @@ public class CommonPoolTest {
 						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
 				);
 			}
-			if (errorRef.get() != null) {
-				errorRef.get().printStackTrace();
+			Throwable t = errorRef.get();
+			if (t != null) {
+				t.printStackTrace();
 			}
-			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+			assertThat(t).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
 		}
 		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
 	}
@@ -2213,7 +2217,7 @@ public class CommonPoolTest {
 				.destroyHandler(resource -> Mono.fromRunnable(resource::decrementAndGet))
 				.sizeBetween(0, 1);
 
-		AtomicReference<Throwable> errorRef = new AtomicReference<>();
+		AtomicReference<@Nullable Throwable> errorRef = new AtomicReference<>();
 		for (int i = 0; i < 100_000; i++) {
 			errorRef.set(null);
 			InstrumentedPool<AtomicInteger> pool = configAdjuster.apply(configBuilder);
@@ -2236,10 +2240,11 @@ public class CommonPoolTest {
 						() -> pool.disposeLater().subscribe(v -> {}, errorRef::set)
 				);
 			}
-			if (errorRef.get() != null) {
-				errorRef.get().printStackTrace();
+			Throwable t = errorRef.get();
+			if (t != null) {
+				t.printStackTrace();
 			}
-			assertThat(errorRef.get()).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
+			assertThat(t).as("exception in " + configAdjuster.toString() + " iteration " + i).isNull();
 		}
 		assertThat(ai).as("creates and destroys stabilizes to 0").hasValue(0);
 	}
@@ -2258,13 +2263,15 @@ public class CommonPoolTest {
 		assertThat(pool.warmup().block(Duration.ofSeconds(1))).as("warmup").isOne();
 
 		//there is one idle resource
-		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+		PooledRef<Integer> ref1 = pool.acquire().block(Duration.ofSeconds(1));
+		assertThat(ref1)
 				.as("acquire on idle")
 				.isNotNull()
 				.returns(1 , PooledRef::poolable);
 
 		//there is now idle resource, but still capacity
-		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+		PooledRef<Integer> ref2 = pool.acquire().block(Duration.ofSeconds(1));
+		assertThat(ref2)
 				.as("acquire on allocate")
 				.isNotNull()
 				.returns(2 , PooledRef::poolable);
@@ -2291,13 +2298,15 @@ public class CommonPoolTest {
 		assertThat(pool.warmup().block(Duration.ofSeconds(1))).as("warmup").isOne();
 
 		//there is one idle resource
-		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+		PooledRef<Integer> ref1 = pool.acquire().block(Duration.ofSeconds(1));
+		assertThat(ref1)
 				.as("acquire on idle")
 				.isNotNull()
 				.returns(1 , PooledRef::poolable);
 
 		//there is now idle resource, but still capacity
-		assertThat(pool.acquire().block(Duration.ofSeconds(1)))
+		PooledRef<Integer> ref2 = pool.acquire().block(Duration.ofSeconds(1));
+		assertThat(ref2)
 				.as("acquire on allocate")
 				.isNotNull()
 				.returns(2 , PooledRef::poolable);

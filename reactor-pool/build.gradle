@@ -144,7 +144,6 @@ jar {
 jcstress {
 	mode = 'default' //quick, default, tough
 }
-tasks.jcstressJar.classifier("jcstress") // make sure jcstress jar doesn't override our own
 tasks.check.dependsOn(tasks.jcstress)
 
 check.dependsOn jacocoTestReport

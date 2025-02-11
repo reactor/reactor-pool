@@ -1,9 +1,9 @@
 [versions]
 # Baselines, should be updated on every release
-baseline-pool-api = "1.0.9"
+baseline-pool-api = "1.0.10"
 # Reactor Core 3.5.20 is the last OSS release for 3.5.x series
 reactorCore = "3.5.20"
-reactorAddons = "3.5.2"
+reactorAddons = "3.5.3-SNAPSHOT"
 
 # Other shared versions
 junit = "5.11.4"

@@ -3,7 +3,7 @@
 baseline-pool-api = "1.0.9"
 # Reactor Core 3.5.20 is the last OSS release for 3.5.x series
 reactorCore = "3.5.20"
-reactorAddons = "3.5.3-SNAPSHOT"
+reactorAddons = "3.5.2"
 
 # Other shared versions
 junit = "5.11.4"

@@ -831,7 +831,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 		@Override
 		public void request(long l) {
-			if (upstream != null && Operators.validate(l)) {
+			assert upstream != null;
+			if (Operators.validate(l)) {
 				upstream.request(l);
 				// we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
 				if (ONCE.compareAndSet(this, 0, 1)) {

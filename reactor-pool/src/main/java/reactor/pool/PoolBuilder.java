@@ -26,6 +26,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 
 import reactor.core.Disposable;
@@ -67,7 +68,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	final Mono<T>                          allocator;
 	final Function<PoolConfig<T>, CONF>    configModifier;
 	int                                    maxPending                  = -1;
-	AllocationStrategy                     allocationStrategy          = null;
+	@Nullable AllocationStrategy           allocationStrategy          = null;
 	Function<T, ? extends Publisher<Void>> releaseHandler              = noopHandler();
 	Function<T, ? extends Publisher<Void>> destroyHandler              = noopHandler();
 	BiPredicate<T, PooledRefMetadata>      evictionPredicate           = neverPredicate();

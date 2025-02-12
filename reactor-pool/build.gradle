@@ -42,8 +42,7 @@ ext {
 dependencies {
 	api libs.reactor.core
 
-	// JSR-305 annotations
-	compileOnly libs.jsr305
+	api libs.jspecify
 
 	// Testing
 	testImplementation libs.assertj

@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
@@ -43,7 +44,6 @@ import reactor.core.publisher.Operators;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.Loggers;
-import reactor.util.annotation.Nullable;
 
 /**
  * The {@link SimpleDequePool} is based on {@link Deque} for idle resources and pending {@link Pool#acquire()} Monos,
@@ -629,8 +629,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	/**
 	 * @return the next {@link reactor.pool.AbstractPool.Borrower} to serve
 	 */
-	@Nullable
-	Borrower<POOLABLE> pendingPoll(Deque<Borrower<POOLABLE>> borrowers) {
+	@Nullable Borrower<POOLABLE> pendingPoll(Deque<Borrower<POOLABLE>> borrowers) {
 		Borrower<POOLABLE> b = borrowers.pollFirst();
 		if (b != null) {
 			PENDING_SIZE.decrementAndGet(this);
@@ -840,9 +839,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		@Override
-		@Nullable
 		@SuppressWarnings("rawtypes")
-		public Object scanUnsafe(Scannable.Attr key) {
+		public @Nullable Object scanUnsafe(Scannable.Attr key) {
 			if (key == Attr.ACTUAL) {
 				return actual;
 			}
@@ -877,9 +875,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		}
 
 		@Override
-		@Nullable
 		@SuppressWarnings("rawtypes")
-		public Object scanUnsafe(Attr key) {
+		public @Nullable Object scanUnsafe(Attr key) {
 			if (key == Attr.PREFETCH) {
 				return Integer.MAX_VALUE;
 			}

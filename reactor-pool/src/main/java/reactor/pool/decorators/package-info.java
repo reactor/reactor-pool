@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@NonNullApi
+@NullMarked
 package reactor.pool.decorators;
 
-import reactor.util.annotation.NonNullApi;
+import org.jspecify.annotations.NullMarked;

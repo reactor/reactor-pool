@@ -752,9 +752,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		final SimpleDequePool<T>           pool;
 
 		//poolable can be checked for null to protect against protocol errors
-		@Nullable QueuePooledRef<T>       pooledRef;
-		@Nullable Subscription            upstream;
-		long                              start;
+		@Nullable QueuePooledRef<T>                     pooledRef;
+		//upstream is initialized on onSubscribe,
+		//the current usage doesn't require checking it for null value
+		@SuppressWarnings("NullAway.Init") Subscription upstream;
+		long                                            start;
 
 		//once protects against multiple requests
 		volatile     int once;
@@ -831,8 +833,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 		@Override
 		public void request(long l) {
-			assert upstream != null;
 			if (Operators.validate(l)) {
+				//upstream is initialized on onSubscribe,
+				//the current usage doesn't require checking it for null value
 				upstream.request(l);
 				// we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
 				if (ONCE.compareAndSet(this, 0, 1)) {

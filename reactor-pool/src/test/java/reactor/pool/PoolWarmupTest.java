@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package reactor.pool;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -94,7 +95,7 @@ public class PoolWarmupTest {
      * Each DBConnection will use one of the following DBConnection Executor
      */
     final static class DBConnectionThread implements Executor {
-        final static ThreadLocal<DBConnectionThread> current = ThreadLocal.withInitial(() -> null);
+        final static ThreadLocal<@Nullable DBConnectionThread> current = ThreadLocal.withInitial(() -> null);
 
         final ExecutorService dbThread;
         final AtomicBoolean used = new AtomicBoolean(false);

@@ -68,7 +68,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	volatile Deque<QueuePooledRef<POOLABLE>> idleResources;
 	@SuppressWarnings("rawtypes")
-	protected static final AtomicReferenceFieldUpdater<SimpleDequePool, Deque> IDLE_RESOURCES =
+	protected static final AtomicReferenceFieldUpdater<SimpleDequePool, @Nullable Deque> IDLE_RESOURCES =
 			AtomicReferenceFieldUpdater.newUpdater(SimpleDequePool.class, Deque.class, "idleResources");
 
 	volatile             int                                        acquired;
@@ -97,7 +97,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	private static final AtomicIntegerFieldUpdater<SimpleDequePool> IDLE_SIZE =
 		AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "idleSize");
 
-	Disposable evictionTask;
+	@Nullable Disposable evictionTask;
 
 	SimpleDequePool(PoolConfig<POOLABLE> poolConfig) {
 		super(poolConfig, Loggers.getLogger(SimpleDequePool.class));
@@ -187,7 +187,9 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					PENDING.getAndSet(this, TERMINATED);
 			if (q != TERMINATED) {
 				//stop reaper thread
-				this.evictionTask.dispose();
+				if (this.evictionTask != null) {
+					this.evictionTask.dispose();
+				}
 
 				Borrower<POOLABLE> p;
 				while ((p = q.pollFirst()) != null) {
@@ -750,8 +752,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		final SimpleDequePool<T>           pool;
 
 		//poolable can be checked for null to protect against protocol errors
-		QueuePooledRef<T> pooledRef;
-		Subscription                      upstream;
+		@Nullable QueuePooledRef<T>       pooledRef;
+		@Nullable Subscription            upstream;
 		long                              start;
 
 		//once protects against multiple requests
@@ -829,6 +831,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 		@Override
 		public void request(long l) {
+			assert upstream != null;
 			if (Operators.validate(l)) {
 				upstream.request(l);
 				// we decrement ACQUIRED EXACTLY ONCE to indicate that the poolable was released by the user
@@ -867,7 +870,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			implements Scannable {
 
 		final Publisher<Void>                                    source;
-		final AtomicReference<QueuePooledRef<T>> slotRef;
+		final AtomicReference<@Nullable QueuePooledRef<T>> slotRef;
 
 		QueuePoolRecyclerMono(Publisher<Void> source, QueuePooledRef<T> poolSlot) {
 			this.source = source;

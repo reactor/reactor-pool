@@ -66,7 +66,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	final boolean idleResourceLeastRecentlyUsed;
 
-	volatile Deque<QueuePooledRef<POOLABLE>> idleResources;
+	volatile @Nullable Deque<QueuePooledRef<POOLABLE>> idleResources;
 	@SuppressWarnings("rawtypes")
 	protected static final AtomicReferenceFieldUpdater<SimpleDequePool, @Nullable Deque> IDLE_RESOURCES =
 			AtomicReferenceFieldUpdater.newUpdater(SimpleDequePool.class, Deque.class, "idleResources");
@@ -245,8 +245,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 						                          metricsRecorder.recordAllocationSuccessAndLatency(
 								                          clock.millis() - start);
 						                          //the pool slot won't access this pool instance until after it has been constructed
-												  incrementIdle();
-						                          this.idleResources.offerLast(createSlot(p));
+					                              elementOffer(p);
 					                          })
 					                          .doOnError(e -> {
 						                          metricsRecorder.recordAllocationFailureAndLatency(

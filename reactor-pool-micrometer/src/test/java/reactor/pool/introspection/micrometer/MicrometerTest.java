@@ -58,6 +58,7 @@ class MicrometerTest {
 		InstrumentedPool<String> pool = PoolBuilder.from(Mono.just("testResource"))
 			.metricsRecorder(recorder)
 			.buildPool();
+		assertThat(pool).isNotNull();
 
 		assertThat(r.getMeters().stream()
 			.map(m -> {
@@ -86,6 +87,7 @@ class MicrometerTest {
 
 		InstrumentedPool<String> pool = Micrometer.instrumentedPool(PoolBuilder.from(Mono.just("testResource")),
 			"testMetrics", r);
+		assertThat(pool).isNotNull();
 
 		assertThat(r.getMeters().stream()
 			.map(m -> {

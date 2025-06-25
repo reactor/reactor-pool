@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2025 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -194,7 +194,7 @@ public final class GracefulShutdownInstrumentedPool<T> implements InstrumentedPo
 							.disposeLater()
 							.doFinally(st -> {
 								TimeoutException timeoutError = new TimeoutException("Pool has forcefully shut down after graceful timeout of " + gracefulTimeout);
-								Sinks.EmitResult emitResult = gracefulNotifier.tryEmitError(timeoutError);
+								gracefulNotifier.tryEmitError(timeoutError);
 								//ignored on purpose: only interesting case is terminated. let the other one win
 							})
 							.subscribe(v -> { },

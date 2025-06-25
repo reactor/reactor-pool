@@ -368,14 +368,14 @@ public class CommonPoolTest {
 
 		assertThat(metrics.allocatedSize()).as("constructor allocated").isEqualTo(0);
 
-		final PooledRef<PoolableTest> firstAcquire = pool.acquire()
-		                                                 .block();
+		final PooledRef<PoolableTest> firstAcquire = pool.acquire().block();
+		assertThat(firstAcquire).isNotNull();
 
 		assertThat(metrics.allocatedSize()).as("first acquire allocated").isEqualTo(4);
 		assertThat(metrics.idleSize()).as("warmup idle").isEqualTo(3);
 
-		final PooledRef<PoolableTest> secondAcquire = pool.acquire()
-		                                                  .block();
+		final PooledRef<PoolableTest> secondAcquire = pool.acquire().block();
+		assertThat(secondAcquire).isNotNull();
 
 		assertThat(metrics.allocatedSize()).as("second acquire allocated").isEqualTo(4);
 		assertThat(metrics.idleSize()).as("second acquire idle").isEqualTo(2);
@@ -410,6 +410,7 @@ public class CommonPoolTest {
 		final PooledRef<PoolableTest> ref3 = pool.acquire().block();
 		assertThat(ref3).isNotNull();
 		final PooledRef<PoolableTest> ref4 = pool.acquire().block();
+		assertThat(ref4).isNotNull();
 
 		assertThat(metrics.allocatedSize()).as("initial allocated").isEqualTo(4);
 		assertThat(metrics.idleSize()).as("initial idle").isEqualTo(0);
@@ -421,8 +422,8 @@ public class CommonPoolTest {
 		assertThat(metrics.allocatedSize()).as("3 releases: allocated").isEqualTo(1);
 		assertThat(metrics.idleSize()).as("3 releases: idle").isEqualTo(0);
 
-		PooledRef<PoolableTest> ref5 = pool.acquire()
-		                                   .block();
+		PooledRef<PoolableTest> ref5 = pool.acquire().block();
+		assertThat(ref5).isNotNull();
 
 		assertThat(metrics.allocatedSize()).as("second acquire allocated").isEqualTo(3); //1 borrowed, 1 acquiring, 1 extra matches min of 3
 		assertThat(metrics.idleSize()).as("second acquire idle").isEqualTo(1); //only 1 extra created this time
@@ -1222,6 +1223,7 @@ public class CommonPoolTest {
 		AbstractPool<String> pool = configAdjuster.apply(builder);
 
 		PooledRef<String> uniqueRef = pool.acquire().block();
+		assertThat(uniqueRef).isNotNull();
 
 		StepVerifier.withVirtualTime(() -> pool.acquire(Duration.ofMillis(100)).map(PooledRef::poolable))
 		            .expectSubscription()

@@ -249,6 +249,7 @@ class GracefulShutdownInstrumentedPoolTest {
 
 		//this will cause graceful shutdown to block
 		PooledRef<String> ref1 = gsPool.acquire().block();
+		assertThat(ref1).isNotNull();
 
 		final boolean[] timedOut = new boolean[2];
 		final Mono<Void>[] disposeMonos = new Mono[2];
@@ -305,6 +306,7 @@ class GracefulShutdownInstrumentedPoolTest {
 		GracefulShutdownInstrumentedPool<String> gsPool = InstrumentedPoolDecorators.gracefulShutdown(pool);
 
 		PooledRef<String> ref1 = gsPool.acquire().block();
+		assertThat(ref1).isNotNull();
 
 		StepVerifier.create(gsPool.disposeGracefully(Duration.ofSeconds(20)),
 				StepVerifierOptions.create().virtualTimeSchedulerSupplier(() -> scheduler))
@@ -320,6 +322,7 @@ class GracefulShutdownInstrumentedPoolTest {
 			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
 
 		PooledRef<String> ref = gsPool.acquire().block();
+		assertThat(ref).isNotNull();
 
 		assertThat(gsPool.isGracefullyShuttingDown()).as("isGracefullyShuttingDown before").isFalse();
 		assertThat(gsPool.isInGracePeriod()).as("isInGracePeriod before").isFalse();

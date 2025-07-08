@@ -5,7 +5,7 @@ reactorCore = "3.8.0-SNAPSHOT"
 reactorAddons = "3.5.3-SNAPSHOT"
 
 # Other shared versions
-junit = "5.13.2"
+junit = "5.13.3"
 slf4j = "1.7.36"
 micrometer = "1.15.0"
 reactiveStreams = "1.0.4"

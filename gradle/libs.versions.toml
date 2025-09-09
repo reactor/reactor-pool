@@ -1,8 +1,8 @@
 [versions]
 # Baselines, should be updated on every release
-baseline-pool-api = "1.1.3"
-reactorCore = "3.7.8-SNAPSHOT"
-reactorAddons = "3.5.3-SNAPSHOT"
+baseline-pool-api = "1.1.4"
+reactorCore = "3.7.11"
+reactorAddons = "3.5.4"
 
 # Other shared versions
 junit = "5.13.4"

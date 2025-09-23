@@ -11,7 +11,7 @@ micrometer = "1.16.0-M3"
 reactiveStreams = "1.0.4"
 
 [libraries]
-assertj = "org.assertj:assertj-core:3.27.5"
+assertj = "org.assertj:assertj-core:3.27.6"
 awaitility = "org.awaitility:awaitility:4.3.0"
 hdrHistogram = "org.hdrhistogram:HdrHistogram:2.2.2"
 jspecify = "org.jspecify:jspecify:1.0.0"

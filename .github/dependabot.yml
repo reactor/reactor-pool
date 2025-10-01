@@ -42,6 +42,10 @@ updates:
   - dependency-name: "com.jfrog.artifactory"
     versions:
     - ">= 5.0.a"
+  # Versions > 5 require JDK17+
+  - dependency-name: org.junit:junit-bom
+    versions:
+    - "[6.a, 7]"
   rebase-strategy: disabled
 - package-ecosystem: github-actions
   directory: "/"

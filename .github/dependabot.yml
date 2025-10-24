@@ -46,6 +46,10 @@ updates:
   - dependency-name: org.junit:junit-bom
     versions:
     - "[6.a, 7]"
+  # Versions > 8 require Gradle 9
+  - dependency-name: io.github.reyerizo.gradle.jcstress
+    versions:
+    - "[9.a, 10]"
   rebase-strategy: disabled
 - package-ecosystem: github-actions
   directory: "/"

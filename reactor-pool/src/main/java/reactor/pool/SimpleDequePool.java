@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -594,8 +594,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		// This is "best effort"
 		if (idle + estimatePermitCount < postOffer) {
 			pending.pendingAcquireStart = clock.millis();
-			if (!pending.pendingAcquireTimeout.isZero()) {
-				pending.timeoutTask = config().pendingAcquireTimer().apply(pending, pending.pendingAcquireTimeout);
+			if (!pending.pendingAcquireTimeout.isZero() && pending.timeoutTask == Borrower.TIMEOUT_DISPOSED) {
+				Disposable task = config().pendingAcquireTimer().apply(pending, pending.pendingAcquireTimeout);
+				if (!pending.setTimeoutTask(task)) {
+					task.dispose();
+				}
 			}
 		}
 

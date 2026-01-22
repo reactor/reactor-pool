@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 
 import org.jspecify.annotations.Nullable;
@@ -387,13 +388,17 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 	static final class Borrower<POOLABLE> extends AtomicBoolean implements Scannable, Subscription, Runnable  {
 
 		static final Disposable TIMEOUT_DISPOSED = Disposables.disposed();
+		static final Disposable TIMEOUT_STOPPED = Disposables.disposed();
 
 		final CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual;
 		final AbstractPool<POOLABLE> pool;
 		final Duration pendingAcquireTimeout;
 
 		long pendingAcquireStart;
-		Disposable timeoutTask;
+		volatile Disposable timeoutTask;
+		@SuppressWarnings("rawtypes")
+		static final AtomicReferenceFieldUpdater<Borrower, Disposable> TIMEOUT_TASK =
+				AtomicReferenceFieldUpdater.newUpdater(Borrower.class, Disposable.class, "timeoutTask");
 
 		Borrower(CoreSubscriber<? super AbstractPooledRef<POOLABLE>> actual,
 				AbstractPool<POOLABLE> pool,
@@ -427,6 +432,16 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		}
 
 		/**
+		 * Atomically set the timeout task if not already stopped.
+		 *
+		 * @return true if the task was set, false if countdown was already stopped
+		 * @see #stopPendingCountdown(boolean) 
+		 */
+		boolean setTimeoutTask(Disposable task) {
+			return TIMEOUT_TASK.compareAndSet(this, TIMEOUT_DISPOSED, task);
+		}
+
+		/**
 		 * Stop the countdown started when calling {@link AbstractPool#doAcquire(Borrower)}.
 		 */
 		void stopPendingCountdown(boolean success) {
@@ -439,7 +454,8 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 
 				pendingAcquireStart = 0;
 			}
-			timeoutTask.dispose();
+			Disposable task = TIMEOUT_TASK.getAndSet(this, TIMEOUT_STOPPED);
+			task.dispose();
 		}
 
 		@Override

@@ -69,7 +69,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	volatile @Nullable Deque<QueuePooledRef<POOLABLE>> idleResources;
 	@SuppressWarnings("rawtypes")
 	protected static final AtomicReferenceFieldUpdater<SimpleDequePool, @Nullable Deque> IDLE_RESOURCES =
-			AtomicReferenceFieldUpdater.<SimpleDequePool, @Nullable Deque>newUpdater(SimpleDequePool.class, Deque.class, "idleResources");
+			AtomicReferenceFieldUpdater.newUpdater(SimpleDequePool.class, Deque.class, "idleResources");
 
 	volatile             int                                        acquired;
 	@SuppressWarnings("rawtypes")

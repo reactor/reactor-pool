@@ -50,6 +50,9 @@ updates:
   - dependency-name: io.github.reyerizo.gradle.jcstress
     versions:
     - "[0.9.a, 1]"
+  - dependency-name: gradle-wrapper
+    versions:
+    - "[8.5.a, 10]"
   rebase-strategy: disabled
 - package-ecosystem: github-actions
   directory: "/"

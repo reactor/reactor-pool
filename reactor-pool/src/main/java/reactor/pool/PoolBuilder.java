@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,6 +79,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	PoolMetricsRecorder                    metricsRecorder             = NoOpPoolMetricsRecorder.INSTANCE;
 	boolean                                idleLruOrder                = true;
 	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer     = DEFAULT_PENDING_ACQUIRE_TIMER;
+	Duration                               maxLifeTime                 = Duration.ZERO;
+	double                                 maxLifeTimeVariance         = 0d;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -101,6 +103,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		this.clock = source.clock;
 		this.idleLruOrder = source.idleLruOrder;
 		this.pendingAcquireTimer = source.pendingAcquireTimer;
+		this.maxLifeTime = source.maxLifeTime;
+		this.maxLifeTimeVariance = source.maxLifeTimeVariance;
 	}
 
 	/**
@@ -267,6 +271,55 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	public PoolBuilder<T, CONF> evictInBackground(Duration evictionInterval, Scheduler reaperTaskScheduler) {
 		this.evictionBackgroundInterval = evictionInterval;
 		this.evictionBackgroundScheduler = reaperTaskScheduler;
+		return this;
+	}
+
+	/**
+	 * Set the maximum lifetime for pooled resources. Resources that have been alive for longer
+	 * than this duration will be evicted on acquire, release, or during background eviction.
+	 * <p>
+	 * This is independent of {@link #evictionPredicate(BiPredicate)} and {@link #evictionIdle(Duration)} —
+	 * a resource is evicted if any of these conditions triggers.
+	 * <p>
+	 * Defaults to {@link Duration#ZERO} (disabled).
+	 *
+	 * @param maxLifeTime maximum resource lifetime (resolution: ms), or {@link Duration#ZERO} to disable
+	 * @return this {@link Pool} builder
+	 * @see #maxLifeTimeVariance(double)
+	 */
+	public PoolBuilder<T, CONF> maxLifeTime(Duration maxLifeTime) {
+		Objects.requireNonNull(maxLifeTime, "maxLifeTime");
+		if (maxLifeTime.isNegative()) {
+			throw new IllegalArgumentException("maxLifeTime must not be negative, was " + maxLifeTime);
+		}
+		this.maxLifeTime = maxLifeTime;
+		return this;
+	}
+
+	/**
+	 * Set a variance percentage for {@link #maxLifeTime(Duration)}, introducing per-resource
+	 * jitter to prevent simultaneous expiry of resources created around the same time.
+	 * <p>
+	 * The effective max lifetime for each resource will be in the range:
+	 * {@code [maxLifeTime * (1 - variance/100), maxLifeTime]}, spreading resource renewal over
+	 * a window instead of a single point in time.
+	 * <p>
+	 * For example, with a {@code maxLifeTime} of 60 seconds and a variance of 2.5%, resources
+	 * would expire between 58.5s and 60s.
+	 * <p>
+	 * Only meaningful when {@link #maxLifeTime(Duration)} is configured (non-zero).
+	 * Defaults to 0 (no variance — all resources expire at exactly {@code maxLifeTime}).
+	 *
+	 * @param variancePercent percentage of maxLifeTime to use as the variance range (0–100)
+	 * @return this {@link Pool} builder
+	 * @see #maxLifeTime(Duration)
+	 */
+	public PoolBuilder<T, CONF> maxLifeTimeVariance(double variancePercent) {
+		if (variancePercent < 0 || variancePercent > 100) {
+			throw new IllegalArgumentException(
+					"maxLifeTimeVariance must be between 0 and 100, was " + variancePercent);
+		}
+		this.maxLifeTimeVariance = variancePercent;
 		return this;
 	}
 
@@ -509,7 +562,9 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				acquisitionScheduler,
 				metricsRecorder,
 				clock,
-				idleLruOrder);
+				idleLruOrder,
+				maxLifeTime,
+				maxLifeTimeVariance);
 
 		return this.configModifier.apply(baseConfig);
 	}

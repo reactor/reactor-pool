@@ -153,7 +153,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				Iterator<QueuePooledRef<POOLABLE>> iterator = e.iterator();
 				while (iterator.hasNext()) {
 					QueuePooledRef<POOLABLE> pooledRef = iterator.next();
-					if (evictionPredicate.test(pooledRef.poolable, pooledRef)) {
+					if (evictionPredicate.test(pooledRef.poolable, pooledRef) || isMaxLifeTimeExceeded(pooledRef)) {
 						//note that usually a manually released ref will put a new ref in the queue, so we expect refs to be pristine here
 						if (pooledRef.markDestroy()) {
 							recordInteractionTimestamp();
@@ -289,7 +289,11 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	QueuePooledRef<POOLABLE> createSlot(POOLABLE element) {
-		return new QueuePooledRef<>(this, element);
+		return new QueuePooledRef<>(this, element, computeMaxLifeTime(poolConfig));
+	}
+
+	private boolean isMaxLifeTimeExceeded(QueuePooledRef<POOLABLE> ref) {
+		return ref.maxLifeTimeMs > 0 && ref.lifeTime() >= ref.maxLifeTimeMs;
 	}
 
 	@Override
@@ -350,7 +354,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					decrementIdle();
 					//check it is still valid
-					if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
+					if (poolConfig.evictionPredicate().test(slot.poolable, slot) || isMaxLifeTimeExceeded(slot)) {
 						if (slot.markDestroy()) {
 							destroyPoolable(slot).subscribe(null,
 									error -> drain(),
@@ -535,7 +539,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (!isDisposed()) {
 			recordInteractionTimestamp();
 			if (!poolConfig.evictionPredicate()
-			               .test(poolSlot.poolable, poolSlot)) {
+			               .test(poolSlot.poolable, poolSlot) && !isMaxLifeTimeExceeded(poolSlot)) {
 				metricsRecorder.recordRecycled();
 				@SuppressWarnings("unchecked")
 				Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
@@ -660,8 +664,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		//TODO we can probably have a Mono<Void> field to always return the same mono to invalidate/release calls
 		//TODO we should also be able to collapse QueuePoolRecyclerMono and QueuePoolRecyclerInner (since it is intended to be idempotent)
 
-		QueuePooledRef(SimpleDequePool<T> pool, T poolable) {
-			super(poolable, pool.metricsRecorder, pool.clock);
+		QueuePooledRef(SimpleDequePool<T> pool, T poolable, long maxLifeTimeMs) {
+			super(poolable, pool.metricsRecorder, pool.clock, maxLifeTimeMs);
 			this.pool = pool;
 		}
 

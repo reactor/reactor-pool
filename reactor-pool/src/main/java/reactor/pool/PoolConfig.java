@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,6 +139,38 @@ public interface PoolConfig<POOLABLE> {
 	 */
 	default BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer() {
 		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
+	}
+
+	/**
+	 * The maximum lifetime for pooled resources. Resources that have been alive for longer
+	 * than this duration will be evicted on acquire, release, or during background eviction.
+	 * <p>
+	 * {@link Duration#ZERO} disables lifetime-based eviction (the default).
+	 * <p>
+	 * This check is independent of the {@link #evictionPredicate()} — a resource is evicted
+	 * if either the predicate or the max lifetime check triggers.
+	 *
+	 * @return the maximum lifetime for pooled resources, or {@link Duration#ZERO} if disabled
+	 * @see #maxLifeTimeVariance()
+	 */
+	default Duration maxLifeTime() {
+		return Duration.ZERO;
+	}
+
+	/**
+	 * A variance percentage (0–100) applied to {@link #maxLifeTime()} to introduce per-resource
+	 * jitter. Each resource's effective max lifetime will fall in the range
+	 * {@code [maxLifeTime * (1 - variance/100), maxLifeTime]}, spreading resource renewal over
+	 * a window instead of a single point in time.
+	 * <p>
+	 * Only meaningful when {@link #maxLifeTime()} is configured (non-zero).
+	 * Default is {@code 0} (no variance — all resources expire at exactly {@link #maxLifeTime()}).
+	 *
+	 * @return the variance percentage, between 0 and 100
+	 * @see #maxLifeTime()
+	 */
+	default double maxLifeTimeVariance() {
+		return 0d;
 	}
 
 }

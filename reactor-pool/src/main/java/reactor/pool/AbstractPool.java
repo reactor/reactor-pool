@@ -194,6 +194,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		final Clock               clock;
 		final T                   poolable;
 		final int                 acquireCount;
+		final long                maxLifeTimeMs;
 
 		long releaseTimestamp;
 
@@ -206,8 +207,9 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		 * @param poolable the newly created poolable
 		 * @param metricsRecorder the recorder to use for metrics
 		 * @param clock the {@link Clock} to use for timestamps
+		 * @param maxLifeTimeMs effective max lifetime in ms for this resource (0 = disabled)
 		 */
-		AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder, Clock clock) {
+		AbstractPooledRef(T poolable, PoolMetricsRecorder metricsRecorder, Clock clock, long maxLifeTimeMs) {
 			this.poolable = poolable;
 			this.metricsRecorder = metricsRecorder;
 			this.clock = clock;
@@ -215,6 +217,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 			this.acquireCount = 0;
 			this.releaseTimestamp = -2L;
 			this.state = STATE_IDLE;
+			this.maxLifeTimeMs = maxLifeTimeMs;
 		}
 
 		/**
@@ -227,6 +230,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 			this.creationTimestamp = oldRef.creationTimestamp;
 			this.acquireCount = oldRef.acquireCount(); //important to use method since the count variable is final
 			this.releaseTimestamp = oldRef.releaseTimestamp; //important to carry over the markReleased for metrics
+			this.maxLifeTimeMs = oldRef.maxLifeTimeMs; //preserve effective lifetime across recycling
 			//we're dealing with a new slot that was created when the previous one was released
 			this.state = oldRef.state == STATE_INVALIDATED ?
 					STATE_INVALIDATED :
@@ -333,6 +337,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		@Override
 		public long allocationTimestamp() {
 			return creationTimestamp;
+		}
+
+		@Override
+		public long maxLifeTimeMs() {
+			return maxLifeTimeMs;
 		}
 
 		@Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2877,5 +2877,109 @@ public class CommonPoolTest {
 		assertThat(pool.metrics().allocatedSize()).as("allocatedSize").isEqualTo(10);
 
 		pool.disposeLater().block(Duration.ofSeconds(3));
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void maxLifeTime_evictsOnAcquire(PoolStyle configAdjuster) {
+		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		AtomicInteger allocCounter = new AtomicInteger();
+
+		AbstractPool<Integer> pool = configAdjuster.apply(
+				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				           .sizeBetween(0, 1)
+				           .maxLifeTime(Duration.ofSeconds(30))
+				           .clock(clock));
+
+		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
+		assertThat(ref.poolable()).isEqualTo(1);
+		ref.release().block();
+
+		clock.advanceTimeBy(Duration.ofSeconds(31));
+
+		PooledRef<Integer> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
+		assertThat(ref2.poolable()).as("should be a new allocation").isEqualTo(2);
+		ref2.release().block();
+
+		pool.disposeLater().block();
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void maxLifeTime_evictsOnRelease(PoolStyle configAdjuster) {
+		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		AtomicInteger allocCounter = new AtomicInteger();
+
+		AbstractPool<Integer> pool = configAdjuster.apply(
+				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				           .sizeBetween(0, 1)
+				           .maxLifeTime(Duration.ofSeconds(30))
+				           .clock(clock));
+
+		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
+
+		clock.advanceTimeBy(Duration.ofSeconds(31));
+
+		ref.release().block();
+
+		assertThat(pool.metrics().idleSize()).isZero();
+
+		pool.disposeLater().block();
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void maxLifeTime_doesNotEvictUnderLimit(PoolStyle configAdjuster) {
+		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		AtomicInteger allocCounter = new AtomicInteger();
+
+		AbstractPool<Integer> pool = configAdjuster.apply(
+				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				           .sizeBetween(0, 1)
+				           .maxLifeTime(Duration.ofSeconds(30))
+				           .clock(clock));
+
+		PooledRef<Integer> ref = pool.acquire().block();
+		assertThat(ref).isNotNull();
+		ref.release().block();
+
+		clock.advanceTimeBy(Duration.ofSeconds(20));
+
+		PooledRef<Integer> ref2 = pool.acquire().block();
+		assertThat(ref2).isNotNull();
+		assertThat(ref2.poolable()).as("should reuse same resource").isEqualTo(1);
+		ref2.release().block();
+
+		pool.disposeLater().block();
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void maxLifeTimeVariance_effectiveLifetimeWithinRange(PoolStyle configAdjuster) {
+		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		AtomicInteger allocCounter = new AtomicInteger();
+
+		// 10% variance on 60s = effective lifetime in [54s, 60s]
+		AbstractPool<Integer> pool = configAdjuster.apply(
+				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				           .sizeBetween(0, 1)
+				           .maxLifeTime(Duration.ofSeconds(60))
+				           .maxLifeTimeVariance(10)
+				           .clock(clock));
+
+		// run multiple iterations to exercise jitter bounds
+		for (int i = 0; i < 20; i++) {
+			PooledRef<Integer> ref = pool.acquire().block();
+			assertThat(ref).isNotNull();
+			ref.invalidate().block();
+
+			long effectiveMs = pool.poolConfig.generateMaxLifeTimeMs();
+			assertThat(effectiveMs).isBetween(54_000L, 60_000L);
+		}
+
+		pool.disposeLater().block();
 	}
 }

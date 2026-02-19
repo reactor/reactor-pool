@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ import reactor.test.StepVerifier;
 import reactor.test.publisher.PublisherProbe;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 class PoolBuilderTest {
 
@@ -123,6 +125,41 @@ class PoolBuilderTest {
 		PoolConfig<Integer> config = poolBuilder.buildConfig();
 
 		assertThat(config.pendingAcquireTimer()).isSameAs(customizedBiFunction);
+	}
+
+	@Test
+	void maxLifeTimeValidation() {
+		assertThatNullPointerException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).maxLifeTime(null));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).maxLifeTime(Duration.ofSeconds(-1)));
+
+		PoolConfig<String> config = PoolBuilder.from(Mono.just("test"))
+				.maxLifeTime(Duration.ofSeconds(30))
+				.buildConfig();
+		assertThat(config.maxLifeTime()).as("configured value").isEqualTo(Duration.ofSeconds(30));
+
+		PoolConfig<String> disabled = PoolBuilder.from(Mono.just("test")).buildConfig();
+		assertThat(disabled.maxLifeTime()).as("default disabled").isEqualTo(Duration.ZERO);
+	}
+
+	@Test
+	void maxLifeTimeVarianceValidation() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).maxLifeTimeVariance(-1));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).maxLifeTimeVariance(101));
+
+		PoolConfig<String> config = PoolBuilder.from(Mono.just("test"))
+				.maxLifeTime(Duration.ofSeconds(60))
+				.maxLifeTimeVariance(2.5)
+				.extraConfiguration(DefaultPoolConfig::new)
+				.buildConfig();
+		assertThat(config.maxLifeTimeVariance()).as("configured value").isEqualTo(2.5);
+		assertThat(config.maxLifeTime()).as("copied through extraConfiguration").isEqualTo(Duration.ofSeconds(60));
+
+		PoolConfig<String> defaults = PoolBuilder.from(Mono.just("test")).buildConfig();
+		assertThat(defaults.maxLifeTimeVariance()).as("default disabled").isZero();
 	}
 
 	@Test

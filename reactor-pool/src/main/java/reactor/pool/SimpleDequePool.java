@@ -289,7 +289,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	QueuePooledRef<POOLABLE> createSlot(POOLABLE element) {
-		return new QueuePooledRef<>(this, element);
+		return new QueuePooledRef<>(this, element, poolConfig.generateMaxLifeTimeMs());
 	}
 
 	@Override
@@ -660,8 +660,8 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		//TODO we can probably have a Mono<Void> field to always return the same mono to invalidate/release calls
 		//TODO we should also be able to collapse QueuePoolRecyclerMono and QueuePoolRecyclerInner (since it is intended to be idempotent)
 
-		QueuePooledRef(SimpleDequePool<T> pool, T poolable) {
-			super(poolable, pool.metricsRecorder, pool.clock);
+		QueuePooledRef(SimpleDequePool<T> pool, T poolable, long maxLifeTimeMs) {
+			super(poolable, pool.metricsRecorder, pool.clock, maxLifeTimeMs);
 			this.pool = pool;
 		}
 

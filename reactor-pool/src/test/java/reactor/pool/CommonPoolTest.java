@@ -2976,7 +2976,7 @@ public class CommonPoolTest {
 			assertThat(ref).isNotNull();
 			ref.invalidate().block();
 
-			long effectiveMs = AbstractPool.computeMaxLifeTime(pool.poolConfig);
+			long effectiveMs = pool.poolConfig.generateMaxLifeTimeMs();
 			assertThat(effectiveMs).isBetween(54_000L, 60_000L);
 		}
 

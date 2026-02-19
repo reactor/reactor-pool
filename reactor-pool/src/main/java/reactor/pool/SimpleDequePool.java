@@ -153,7 +153,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				Iterator<QueuePooledRef<POOLABLE>> iterator = e.iterator();
 				while (iterator.hasNext()) {
 					QueuePooledRef<POOLABLE> pooledRef = iterator.next();
-					if (evictionPredicate.test(pooledRef.poolable, pooledRef) || isMaxLifeTimeExceeded(pooledRef)) {
+					if (evictionPredicate.test(pooledRef.poolable, pooledRef)) {
 						//note that usually a manually released ref will put a new ref in the queue, so we expect refs to be pristine here
 						if (pooledRef.markDestroy()) {
 							recordInteractionTimestamp();
@@ -289,11 +289,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 	}
 
 	QueuePooledRef<POOLABLE> createSlot(POOLABLE element) {
-		return new QueuePooledRef<>(this, element, computeMaxLifeTime(poolConfig));
-	}
-
-	private boolean isMaxLifeTimeExceeded(QueuePooledRef<POOLABLE> ref) {
-		return ref.maxLifeTimeMs > 0 && ref.lifeTime() >= ref.maxLifeTimeMs;
+		return new QueuePooledRef<>(this, element, poolConfig.generateMaxLifeTimeMs());
 	}
 
 	@Override
@@ -354,7 +350,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 					}
 					decrementIdle();
 					//check it is still valid
-					if (poolConfig.evictionPredicate().test(slot.poolable, slot) || isMaxLifeTimeExceeded(slot)) {
+					if (poolConfig.evictionPredicate().test(slot.poolable, slot)) {
 						if (slot.markDestroy()) {
 							destroyPoolable(slot).subscribe(null,
 									error -> drain(),
@@ -539,7 +535,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		if (!isDisposed()) {
 			recordInteractionTimestamp();
 			if (!poolConfig.evictionPredicate()
-			               .test(poolSlot.poolable, poolSlot) && !isMaxLifeTimeExceeded(poolSlot)) {
+			               .test(poolSlot.poolable, poolSlot)) {
 				metricsRecorder.recordRecycled();
 				@SuppressWarnings("unchecked")
 				Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);

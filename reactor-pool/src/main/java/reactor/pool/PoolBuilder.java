@@ -278,8 +278,8 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * Set the maximum lifetime for pooled resources. Resources that have been alive for longer
 	 * than this duration will be evicted on acquire, release, or during background eviction.
 	 * <p>
-	 * This is independent of {@link #evictionPredicate(BiPredicate)} and {@link #evictionIdle(Duration)} —
-	 * a resource is evicted if any of these conditions triggers.
+	 * When configured, this is composed with any {@link #evictionPredicate(BiPredicate)} using OR logic —
+	 * a resource is evicted if either condition triggers.
 	 * <p>
 	 * Defaults to {@link Duration#ZERO} (disabled).
 	 *
@@ -548,6 +548,12 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 
 	//kept package-private for the benefit of tests
 	CONF buildConfig() {
+		BiPredicate<T, PooledRefMetadata> effectivePredicate = evictionPredicate;
+		if (!maxLifeTime.isZero()) {
+			effectivePredicate = effectivePredicate.or(
+					(poolable, meta) -> meta.maxLifeTimeMs() > 0 && meta.lifeTime() >= meta.maxLifeTimeMs());
+		}
+
 		PoolConfig<T> baseConfig = new DefaultPoolConfig<>(allocator,
 				allocationStrategy == null ?
 						new AllocationStrategies.UnboundedAllocationStrategy() :
@@ -556,7 +562,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				pendingAcquireTimer,
 				releaseHandler,
 				destroyHandler,
-				evictionPredicate,
+				effectivePredicate,
 				evictionBackgroundInterval,
 				evictionBackgroundScheduler,
 				acquisitionScheduler,

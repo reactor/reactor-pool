@@ -20,7 +20,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
@@ -119,23 +118,6 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		//since acquiredSize() is computed from idleSize and allocatedSize, no need to involve it
 		return idleSize() == 0 && pendingAcquireSize() == 0 && allocatedSize() == 0
 				&& secondsSinceLastInteraction() >= duration.getSeconds();
-	}
-
-	static long computeMaxLifeTime(PoolConfig<?> config) {
-		Duration maxLifeTime = config.maxLifeTime();
-		if (maxLifeTime.isZero()) {
-			return 0L;
-		}
-		long maxLifeTimeMs = maxLifeTime.toMillis();
-		double variancePercent = config.maxLifeTimeVariance();
-		if (variancePercent == 0d) {
-			return maxLifeTimeMs;
-		}
-		long varianceMs = (long) (maxLifeTimeMs * variancePercent / 100.0);
-		if (varianceMs <= 0) {
-			return maxLifeTimeMs;
-		}
-		return maxLifeTimeMs - ThreadLocalRandom.current().nextLong(varianceMs + 1);
 	}
 
 	// == common methods to interact with idle/pending queues ==
@@ -355,6 +337,11 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 		@Override
 		public long allocationTimestamp() {
 			return creationTimestamp;
+		}
+
+		@Override
+		public long maxLifeTimeMs() {
+			return maxLifeTimeMs;
 		}
 
 		@Override

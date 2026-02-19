@@ -18,6 +18,7 @@ package reactor.pool;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -147,8 +148,8 @@ public interface PoolConfig<POOLABLE> {
 	 * <p>
 	 * {@link Duration#ZERO} disables lifetime-based eviction (the default).
 	 * <p>
-	 * This check is independent of the {@link #evictionPredicate()} — a resource is evicted
-	 * if either the predicate or the max lifetime check triggers.
+	 * When configured, this is composed with the {@link #evictionPredicate()} using OR logic —
+	 * a resource is evicted if either condition triggers.
 	 *
 	 * @return the maximum lifetime for pooled resources, or {@link Duration#ZERO} if disabled
 	 * @see #maxLifeTimeVariance()
@@ -171,6 +172,30 @@ public interface PoolConfig<POOLABLE> {
 	 */
 	default double maxLifeTimeVariance() {
 		return 0d;
+	}
+
+	/**
+	 * Generate an effective max lifetime in milliseconds for a single resource, applying
+	 * {@link #maxLifeTimeVariance()} jitter to {@link #maxLifeTime()}. Each call may return
+	 * a different value — call once per resource at creation time.
+	 *
+	 * @return effective max lifetime in milliseconds, or {@literal 0L} if disabled
+	 */
+	default long generateMaxLifeTimeMs() {
+		Duration maxLifeTime = maxLifeTime();
+		if (maxLifeTime.isZero()) {
+			return 0L;
+		}
+		long maxLifeTimeMs = maxLifeTime.toMillis();
+		double variancePercent = maxLifeTimeVariance();
+		if (variancePercent == 0d) {
+			return maxLifeTimeMs;
+		}
+		long varianceMs = (long) (maxLifeTimeMs * variancePercent / 100.0);
+		if (varianceMs <= 0) {
+			return maxLifeTimeMs;
+		}
+		return maxLifeTimeMs - ThreadLocalRandom.current().nextLong(varianceMs + 1);
 	}
 
 }

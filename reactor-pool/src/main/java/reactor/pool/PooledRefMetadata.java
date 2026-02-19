@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,4 +88,15 @@ public interface PooledRefMetadata {
 	 * @return the creation timestamp
 	 */
 	long allocationTimestamp();
+
+	/**
+	 * Return the effective maximum lifetime in milliseconds for this resource, which may include
+	 * per-resource jitter to spread renewal over a window. Returns {@literal 0L} if max lifetime
+	 * is not configured.
+	 *
+	 * @return effective max lifetime in milliseconds, or {@literal 0L} if disabled
+	 */
+	default long maxLifeTimeMs() {
+		return 0L;
+	}
 }

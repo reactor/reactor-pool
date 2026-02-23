@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package reactor.pool;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -139,6 +140,62 @@ public interface PoolConfig<POOLABLE> {
 	 */
 	default BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer() {
 		return PoolBuilder.DEFAULT_PENDING_ACQUIRE_TIMER;
+	}
+
+	/**
+	 * The maximum lifetime for pooled resources. Resources that have been alive for longer
+	 * than this duration will be evicted on acquire, release, or during background eviction.
+	 * <p>
+	 * {@link Duration#ZERO} disables lifetime-based eviction (the default).
+	 * <p>
+	 * When configured, this is composed with the {@link #evictionPredicate()} using OR logic —
+	 * a resource is evicted if either condition triggers.
+	 *
+	 * @return the maximum lifetime for pooled resources, or {@link Duration#ZERO} if disabled
+	 * @see #maxLifeTimeVariance()
+	 */
+	default Duration maxLifeTime() {
+		return Duration.ZERO;
+	}
+
+	/**
+	 * A variance percentage (0–100) applied to {@link #maxLifeTime()} to introduce per-resource
+	 * jitter. Each resource's effective max lifetime will fall in the range
+	 * {@code [maxLifeTime * (1 - variance/100), maxLifeTime]}, spreading resource renewal over
+	 * a window instead of a single point in time.
+	 * <p>
+	 * Only meaningful when {@link #maxLifeTime()} is configured (non-zero).
+	 * Default is {@code 0} (no variance — all resources expire at exactly {@link #maxLifeTime()}).
+	 *
+	 * @return the variance percentage, between 0 and 100
+	 * @see #maxLifeTime()
+	 */
+	default double maxLifeTimeVariance() {
+		return 0d;
+	}
+
+	/**
+	 * Generate an effective max lifetime in milliseconds for a single resource, applying
+	 * {@link #maxLifeTimeVariance()} jitter to {@link #maxLifeTime()}. Each call may return
+	 * a different value — call once per resource at creation time.
+	 *
+	 * @return effective max lifetime in milliseconds, or {@literal 0L} if disabled
+	 */
+	default long generateMaxLifeTimeMs() {
+		Duration maxLifeTime = maxLifeTime();
+		if (maxLifeTime.isZero()) {
+			return 0L;
+		}
+		long maxLifeTimeMs = maxLifeTime.toMillis();
+		double variancePercent = maxLifeTimeVariance();
+		if (variancePercent == 0d) {
+			return maxLifeTimeMs;
+		}
+		long varianceMs = (long) (maxLifeTimeMs * variancePercent / 100.0);
+		if (varianceMs <= 0) {
+			return maxLifeTimeMs;
+		}
+		return maxLifeTimeMs - ThreadLocalRandom.current().nextLong(varianceMs + 1);
 	}
 
 }

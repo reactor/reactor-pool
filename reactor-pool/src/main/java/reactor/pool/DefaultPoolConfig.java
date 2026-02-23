@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2019-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final PoolMetricsRecorder                           metricsRecorder;
 	protected final Clock                                         clock;
 	protected final boolean                                       isIdleLRU;
+	protected final Duration                                      maxLifeTime;
+	protected final double                                        maxLifeTimeVariance;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -63,6 +65,28 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			PoolMetricsRecorder metricsRecorder,
 			Clock clock,
 			boolean isIdleLRU) {
+		this(allocator, allocationStrategy, maxPending, pendingAcquireTimer,
+				releaseHandler, destroyHandler, evictionPredicate,
+				evictInBackgroundInterval, evictInBackgroundScheduler,
+				acquisitionScheduler, metricsRecorder, clock, isIdleLRU,
+				Duration.ZERO, 0d);
+	}
+
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Duration evictInBackgroundInterval,
+			Scheduler evictInBackgroundScheduler,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock,
+			boolean isIdleLRU,
+			Duration maxLifeTime,
+			double maxLifeTimeVariance) {
 		this.pendingAcquireTimer = pendingAcquireTimer;
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
@@ -76,6 +100,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.metricsRecorder = metricsRecorder;
 		this.clock = clock;
 		this.isIdleLRU = isIdleLRU;
+		this.maxLifeTime = maxLifeTime;
+		this.maxLifeTimeVariance = maxLifeTimeVariance;
 	}
 
 	/**
@@ -100,6 +126,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopyDpc.metricsRecorder;
 			this.clock = toCopyDpc.clock;
 			this.isIdleLRU = toCopyDpc.isIdleLRU;
+			this.maxLifeTime = toCopyDpc.maxLifeTime;
+			this.maxLifeTimeVariance = toCopyDpc.maxLifeTimeVariance;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -115,6 +143,8 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.metricsRecorder = toCopy.metricsRecorder();
 			this.clock = toCopy.clock();
 			this.isIdleLRU = toCopy.reuseIdleResourcesInLruOrder();
+			this.maxLifeTime = toCopy.maxLifeTime();
+			this.maxLifeTimeVariance = toCopy.maxLifeTimeVariance();
 		}
 	}
 
@@ -181,5 +211,15 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public boolean reuseIdleResourcesInLruOrder() {
 		return isIdleLRU;
+	}
+
+	@Override
+	public Duration maxLifeTime() {
+		return this.maxLifeTime;
+	}
+
+	@Override
+	public double maxLifeTimeVariance() {
+		return this.maxLifeTimeVariance;
 	}
 }

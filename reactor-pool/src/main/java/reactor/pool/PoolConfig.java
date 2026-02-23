@@ -153,6 +153,7 @@ public interface PoolConfig<POOLABLE> {
 	 *
 	 * @return the maximum lifetime for pooled resources, or {@link Duration#ZERO} if disabled
 	 * @see #maxLifeTimeVariance()
+	 * @since 1.2.4
 	 */
 	default Duration maxLifeTime() {
 		return Duration.ZERO;
@@ -169,6 +170,7 @@ public interface PoolConfig<POOLABLE> {
 	 *
 	 * @return the variance percentage, between 0 and 100
 	 * @see #maxLifeTime()
+	 * @since 1.2.4
 	 */
 	default double maxLifeTimeVariance() {
 		return 0d;
@@ -180,6 +182,7 @@ public interface PoolConfig<POOLABLE> {
 	 * a different value — call once per resource at creation time.
 	 *
 	 * @return effective max lifetime in milliseconds, or {@literal 0L} if disabled
+	 * @since 1.2.4
 	 */
 	default long generateMaxLifeTimeMs() {
 		Duration maxLifeTime = maxLifeTime();

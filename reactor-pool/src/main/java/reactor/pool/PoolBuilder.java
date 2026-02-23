@@ -286,6 +286,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * @param maxLifeTime maximum resource lifetime (resolution: ms), or {@link Duration#ZERO} to disable
 	 * @return this {@link Pool} builder
 	 * @see #maxLifeTimeVariance(double)
+	 * @since 1.2.4
 	 */
 	public PoolBuilder<T, CONF> maxLifeTime(Duration maxLifeTime) {
 		Objects.requireNonNull(maxLifeTime, "maxLifeTime");
@@ -313,6 +314,7 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	 * @param variancePercent percentage of maxLifeTime to use as the variance range (0–100)
 	 * @return this {@link Pool} builder
 	 * @see #maxLifeTime(Duration)
+	 * @since 1.2.4
 	 */
 	public PoolBuilder<T, CONF> maxLifeTimeVariance(double variancePercent) {
 		if (variancePercent < 0 || variancePercent > 100) {

@@ -95,6 +95,7 @@ public interface PooledRefMetadata {
 	 * is not configured.
 	 *
 	 * @return effective max lifetime in milliseconds, or {@literal 0L} if disabled
+	 * @since 1.2.4
 	 */
 	default long maxLifeTimeMs() {
 		return 0L;

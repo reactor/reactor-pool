@@ -375,6 +375,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 			return "PooledRef{" +
 					"poolable=" + poolable +
 					", lifeTime=" + lifeTime() + "ms" +
+					", maxLifeTimeMs=" + maxLifeTimeMs() + "ms" +
 					", idleTime=" + idleTime() + "ms" +
 					", acquireCount=" + acquireCount +
 					'}';

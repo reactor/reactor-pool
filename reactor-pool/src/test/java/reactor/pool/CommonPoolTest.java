@@ -38,6 +38,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -2882,26 +2883,41 @@ public class CommonPoolTest {
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
 	void maxLifeTime_evictsOnAcquire(PoolStyle configAdjuster) {
-		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		maxLifeTimeEviction(configAdjuster, (config, scheduler) -> config);
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void maxLifeTime_evictsInBackground(PoolStyle configAdjuster) {
+		maxLifeTimeEviction(configAdjuster, (config, scheduler) -> config.evictInBackground(Duration.ofSeconds(5), scheduler));
+	}
+
+	private static void maxLifeTimeEviction(PoolStyle configAdjuster,
+			BiFunction<PoolBuilder<Integer, PoolConfig<Integer>>, Scheduler, PoolBuilder<Integer, PoolConfig<Integer>>> configCustomizer) {
+		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
 		AtomicInteger allocCounter = new AtomicInteger();
 
-		AbstractPool<Integer> pool = configAdjuster.apply(
+		AbstractPool<Integer> pool = configAdjuster.apply(configCustomizer.apply(
 				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
 				           .sizeBetween(0, 1)
 				           .maxLifeTime(Duration.ofSeconds(30))
-				           .clock(clock));
+				           .clock(SchedulerClock.of(vts)), vts));
 
 		PooledRef<Integer> ref = pool.acquire().block();
 		assertThat(ref).isNotNull();
 		assertThat(ref.poolable()).isEqualTo(1);
 		ref.release().block();
 
-		clock.advanceTimeBy(Duration.ofSeconds(31));
+		assertThat(pool.metrics().idleSize()).isEqualTo(1);
+
+		vts.advanceTimeBy(Duration.ofSeconds(31));
 
 		PooledRef<Integer> ref2 = pool.acquire().block();
 		assertThat(ref2).isNotNull();
 		assertThat(ref2.poolable()).as("should be a new allocation").isEqualTo(2);
 		ref2.release().block();
+
+		assertThat(pool.metrics().idleSize()).isEqualTo(1);
 
 		pool.disposeLater().block();
 	}
@@ -2958,6 +2974,41 @@ public class CommonPoolTest {
 
 	@ParameterizedTestWithName
 	@MethodSource("allPools")
+	void maxLifeTime_composesWithCustomEvictionPredicate(PoolStyle configAdjuster) {
+		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
+		AtomicInteger allocCounter = new AtomicInteger();
+
+		AbstractPool<Integer> pool = configAdjuster.apply(
+				PoolBuilder.from(Mono.fromCallable(allocCounter::incrementAndGet))
+				           .sizeBetween(0, 1)
+				           .maxLifeTime(Duration.ofSeconds(60))
+				           .evictionPredicate((poolable, meta) -> meta.acquireCount() >= 2)
+				           .clock(clock));
+
+		for (int i = 0; i < 2; i++) {
+			PooledRef<Integer> ref = pool.acquire().block();
+			assertThat(ref).isNotNull();
+			assertThat(ref.poolable()).as("should reuse same resource").isEqualTo(1);
+			ref.release().block();
+		}
+
+		PooledRef<Integer> ref3 = pool.acquire().block();
+		assertThat(ref3).isNotNull();
+		assertThat(ref3.poolable()).as("custom predicate triggered eviction").isEqualTo(2);
+		ref3.release().block();
+
+		clock.advanceTimeBy(Duration.ofSeconds(61));
+
+		PooledRef<Integer> ref4 = pool.acquire().block();
+		assertThat(ref4).isNotNull();
+		assertThat(ref4.poolable()).as("maxLifeTime triggered eviction").isEqualTo(3);
+		ref4.release().block();
+
+		pool.disposeLater().block();
+	}
+
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
 	void maxLifeTimeVariance_effectiveLifetimeWithinRange(PoolStyle configAdjuster) {
 		TestUtils.VirtualClock clock = new TestUtils.VirtualClock(java.time.Instant.ofEpochMilli(1));
 		AtomicInteger allocCounter = new AtomicInteger();
@@ -2974,6 +3025,7 @@ public class CommonPoolTest {
 		for (int i = 0; i < 20; i++) {
 			PooledRef<Integer> ref = pool.acquire().block();
 			assertThat(ref).isNotNull();
+			assertThat(ref.metadata().maxLifeTimeMs()).isBetween(54_000L, 60_000L);
 			ref.invalidate().block();
 
 			long effectiveMs = pool.poolConfig.generateMaxLifeTimeMs();

@@ -29,9 +29,9 @@ slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-jcl = { module = "org.slf4j:jcl-over-slf4j", version.ref = "slf4j" }
 
 [plugins]
-artifactory = { id = "com.jfrog.artifactory", version = "4.33.1" }
-bnd = { id = "biz.aQute.bnd.builder", version = "6.4.0" }
+artifactory = { id = "com.jfrog.artifactory", version = "6.0.4" }
+bnd = { id = "biz.aQute.bnd.builder", version = "7.2.1" }
 download = { id = "de.undercouch.download", version = "5.7.0" }
 japicmp = { id = "me.champeau.gradle.japicmp", version = "0.4.6" }
-jcstress = { id = "io.github.reyerizo.gradle.jcstress", version = "0.8.15" }
-spotless = { id = "com.diffplug.spotless", version = "6.13.0" }
+jcstress = { id = "io.github.reyerizo.gradle.jcstress", version = "0.9.0" }
+spotless = { id = "com.diffplug.spotless", version = "8.3.0" }

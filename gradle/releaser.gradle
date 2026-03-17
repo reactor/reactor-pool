@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ task copyReadme(type: Copy, group: "releaser helpers", description: "copies the 
 	from(rootProject.rootDir) {
 		include "README.md"
 	}
-	into rootProject.buildDir
+	into rootProject.layout.buildDirectory
 }
 
 task bumpVersionsInReadme(type: Copy, group: "releaser helpers", description: "replaces versions in README") {
@@ -38,7 +38,7 @@ task bumpVersionsInReadme(type: Copy, group: "releaser helpers", description: "r
 	doLast {
 		println "Will replace $oldVersion with $currentVersion and $oldSnapshot with $nextVersion"
 	}
-	from(rootProject.buildDir) {
+	from(rootProject.layout.buildDirectory) {
 		include 'README.md'
 	}
 	into rootProject.rootDir
@@ -74,20 +74,22 @@ if (project.hasProperty("artifactory_publish_password")) {
 		apply plugin: "com.jfrog.artifactory"
 		def buildNumber = getOrGenerateBuildNumber()
 		artifactory {
-			contextUrl = "${artifactory_publish_contextUrl}"
 			publish {
+				contextUrl = "${artifactory_publish_contextUrl}"
 				repository {
 					repoKey = "${artifactory_publish_repoKey}"
 					username = "${artifactory_publish_username}"
 					password = "${artifactory_publish_password}"
 				}
 			}
-			clientConfig.setIncludeEnvVars(false)
-			clientConfig.info.setBuildName('Reactor - Pool')
-			clientConfig.info.setBuildNumber(buildNumber)
-			if (System.getenv("GITHUB_ACTIONS") == "true") {
-				clientConfig.info.setBuildUrl(System.getenv("GITHUB_SERVER_URL") + "/" + System.getenv("GITHUB_REPOSITORY") + "/actions/runs/" + System.getenv("GITHUB_RUN_ID"))
-				clientConfig.info.setVcsRevision(System.getenv("GITHUB_SHA"))
+			clientConfig.isIncludeEnvVars = false
+			buildInfo {
+				setBuildName('Reactor - Pool')
+				setBuildNumber(buildNumber)
+				if (System.getenv("GITHUB_ACTIONS") == "true") {
+					setBuildUrl(System.getenv("GITHUB_SERVER_URL") + "/" + System.getenv("GITHUB_REPOSITORY") + "/actions/runs/" + System.getenv("GITHUB_RUN_ID"))
+					setVcsRevision(System.getenv("GITHUB_SHA"))
+				}
 			}
 		}
 	}

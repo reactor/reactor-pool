@@ -167,6 +167,9 @@ configure(subprojects) { project ->
     include '**/*Tests.*'
     include '**/*Test.*'
     exclude '**/*Abstract*.*'
+    javaLauncher = javaToolchains.launcherFor {
+      languageVersion = JavaLanguageVersion.of(8)
+    }
   }
 
   test {

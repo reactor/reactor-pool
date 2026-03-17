@@ -15,15 +15,30 @@
  */
 
 import java.text.SimpleDateFormat
+import org.gradle.api.attributes.java.TargetJvmVersion
 
 plugins {
   id "idea"
-  alias(libs.plugins.artifactory)
+  alias(libs.plugins.artifactory) apply false // applied conditionally from releaser.gradle
   alias(libs.plugins.bnd) apply false
   alias(libs.plugins.japicmp)
   alias(libs.plugins.download)
   alias(libs.plugins.jcstress) apply false
   alias(libs.plugins.spotless)
+}
+
+// The Artifactory plugin (applied from releaser.gradle) adds maven-publish to subprojects
+// in afterEvaluate, which resets TargetJvmVersion on consumable configurations to the
+// running JDK (17). This pre-registers a callback to force JVM 8 on those configurations,
+// keeping them consistent with options.release = 8.
+subprojects {
+  plugins.withType(JavaPlugin) {
+    configurations.matching { it.name == 'apiElements' || it.name == 'runtimeElements' }.configureEach { conf ->
+      conf.attributes {
+        attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 8)
+      }
+    }
+  }
 }
 
 apply from: 'gradle/releaser.gradle'
@@ -102,6 +117,11 @@ configure(subprojects) { project ->
   apply plugin: 'biz.aQute.bnd.builder'
   apply from: "${rootDir}/gradle/doc.gradle"
   apply from: "${rootDir}/gradle/setup.gradle"
+
+  java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+  }
 
   jacocoTestReport {
     reports {

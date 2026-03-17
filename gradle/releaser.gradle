@@ -82,7 +82,7 @@ if (project.hasProperty("artifactory_publish_password")) {
 					password = "${artifactory_publish_password}"
 				}
 			}
-			clientConfig.isIncludeEnvVars = false
+			clientConfig.includeEnvVars = false
 			buildInfo {
 				setBuildName('Reactor - Pool')
 				setBuildNumber(buildNumber)

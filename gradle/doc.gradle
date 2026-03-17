@@ -24,30 +24,25 @@ javadoc {
 		options.header = "$shortName"
 	}
 
-	if (JavaVersion.current().isJava8Compatible()) {
-		options.addStringOption('Xdoclint:none', '-quiet')
-	}
+	options.addStringOption('Xdoclint:none', '-quiet')
 	options.addStringOption('charSet', 'UTF-8')
 	options.tags = [ "apiNote:a:API Note:"]
 	options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PROTECTED
 	options.author = true
-	options.stylesheetFile = file("$rootDir/docs/api/stylesheet.css")
 
 	if (project.name == 'reactor-pool') {
 		options.links([
 				"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
 				jdkJavadoc,
-				//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
-				"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/"
+				"https://www.reactive-streams.org/reactive-streams-1.0.4-javadoc/"
 		] as String[])
 	}
 	else {
 		options.links([
 				"https://projectreactor.io/docs/core/${libs.versions.reactorCore.get()}/api/",
 				jdkJavadoc,
-				//forcing RS javadoc on version 1.0.3 as it appears 1.0.4 cannot be reached/consumed
-				"https://www.reactive-streams.org/reactive-streams-1.0.3-javadoc/",
-				//TODO currently java 8 cannot link to Micrometer javadocs deployed to javadoc.io
+				"https://www.reactive-streams.org/reactive-streams-1.0.4-javadoc/",
+				"https://javadoc.io/doc/io.micrometer/micrometer-core/${libs.versions.micrometer.get()}/",
 				"https://projectreactor.io/docs/pool/${libs.versions.baseline.pool.api.get()}/api/"
 		] as String[])
 	}
@@ -55,8 +50,9 @@ javadoc {
 	maxMemory = "1024m"
 	destinationDir = layout.buildDirectory.dir("docs/javadoc").get().asFile
 	source project.sourceSets.main.allJava
+	def mainCompileClasspath = project.sourceSets.main.compileClasspath
 	doFirst {
-		classpath = files(project.sourceSets.main.compileClasspath)
+		classpath = files(mainCompileClasspath)
 	}
 }
 

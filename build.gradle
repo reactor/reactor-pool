@@ -77,10 +77,7 @@ ext {
   isCiServer = System.getenv().containsKey("CI") //doesn't detect Bamboo
 
   jdk = JavaVersion.current().majorVersion
-  jdkJavadoc = "https://docs.oracle.com/javase/$jdk/docs/api/"
-  if (JavaVersion.current().isJava11Compatible()) {
-    jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
-  }
+  jdkJavadoc = "https://docs.oracle.com/en/java/javase/$jdk/docs/api/"
   println "JDK Javadoc link for this build is ${rootProject.jdkJavadoc}"
 }
 

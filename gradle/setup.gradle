@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import org.gradle.util.VersionNumber
 
 apply plugin: 'maven-publish'
 //we also conditionally apply artifactory and signing plugins below
@@ -49,21 +47,21 @@ task javadocJar(type: Jar) {
 }
 
 static def qualifyVersion(String v) {
-	def versionNumber = VersionNumber.parse(v)
+	def m = (v =~ /^(\d+)\.(\d+)\.(\d+)(?:[.-](.+))?$/)
+	if (!m.matches()) return "BAD"
 
-	if (versionNumber == VersionNumber.UNKNOWN) return "BAD";
+	def qualifier = m.group(4)
 
-	if (versionNumber.qualifier == null || versionNumber.qualifier.size() == 0) return "RELEASE" //new scheme
-	if (versionNumber.qualifier == "RELEASE") return "RELEASE" //old scheme
-	if (versionNumber.qualifier.matches("(?:M|RC)\\d+")) return "MILESTONE"
-	if (versionNumber.qualifier == "SNAPSHOT" || versionNumber.qualifier == "BUILD-SNAPSHOT") return "SNAPSHOT"
+	if (qualifier == null || qualifier.isEmpty()) return "RELEASE"
+	if (qualifier.matches("(?:M|RC)\\d+")) return "MILESTONE"
+	if (qualifier == "SNAPSHOT") return "SNAPSHOT"
 
 	return "BAD"
 }
 
 ext {
-	isReleaseVersion = version.matches('[0-9].[0-9].[0-9]')
-	isMilestoneVersion = version.matches('[0-9].[0-9].[0-9]-M[0-9]+') || version.matches('[0-9].[0-9].[0-9]-RC[0-9]+')
+	isReleaseVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+')
+	isMilestoneVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+-M[0-9]+') || version.matches('[0-9]+\\.[0-9]+\\.[0-9]+-RC[0-9]+')
 	isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
 
 	resolveVersion = { String version ->
@@ -101,8 +99,8 @@ task qualifyVersionGha() {
 		//we ensure that if at least _one_ submodule version is BAD, we only output versionType=BAD + job fails
 		if (versionType == "BAD") {
 			outputToGha(versionType, version)
-			println "::error ::Unable to parse $version to a VersionNumber with recognizable qualifier"
-			throw new TaskExecutionException(tasks.getByName("qualifyVersionGha"), new IllegalArgumentException("Unable to parse $version to a VersionNumber with recognizable qualifier"))
+			println "::error ::Unable to parse $version with recognizable qualifier"
+			throw new TaskExecutionException(tasks.getByName("qualifyVersionGha"), new IllegalArgumentException("Unable to parse $version with recognizable qualifier"))
 		}
 		println "Recognized $version as $versionType"
 
@@ -117,7 +115,7 @@ publishing {
 	repositories {
 		maven {
 			name = "mock"
-			url = "${rootProject.buildDir}/mockRepo"
+			url = rootProject.layout.buildDirectory.dir("mockRepo").get().asFile.toURI().toString()
 		}
 		if (qualifyVersion("$version") in ["RELEASE", "MILESTONE"]) {
 			maven {

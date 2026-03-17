@@ -20,7 +20,7 @@ logback = "ch.qos.logback:logback-classic:1.2.13"
 micrometer-bom = { module = "io.micrometer:micrometer-bom", version.ref = "micrometer" }
 micrometer-core = { module = "io.micrometer:micrometer-core" }
 micrometer-test = { module = "io.micrometer:micrometer-test" }
-mockito = "org.mockito:mockito-core:4.11.0"
+mockito = "org.mockito:mockito-core:5.23.0"
 reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorCore" }
 reactor-test = { module = "io.projectreactor:reactor-test", version.ref = "reactorCore" }
 reactor-extra = { module = "io.projectreactor.addons:reactor-extra", version.ref = "reactorAddons" }

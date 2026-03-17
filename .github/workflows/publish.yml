@@ -22,7 +22,9 @@ jobs:
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: |
+            8
+            17
       - name: interpret version
         id: version
         #we only run the qualifyVersionGha task so that no other console printing can hijack this step's output
@@ -43,7 +45,9 @@ jobs:
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: |
+            8
+            17
       - name: run slow tests
         id: slowTests
         run: ./gradlew test -Pjunit-tags=slow
@@ -60,7 +64,9 @@ jobs:
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: |
+            8
+            17
       - name: deploy
         env:
           ORG_GRADLE_PROJECT_artifactory_publish_username: ${{secrets.ARTIFACTORY_SNAPSHOT_USERNAME}}
@@ -80,7 +86,9 @@ jobs:
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: |
+            8
+            17
       - name: deploy
         env:
           ORG_GRADLE_PROJECT_artifactory_publish_username: ${{secrets.ARTIFACTORY_USERNAME}}
@@ -102,7 +110,9 @@ jobs:
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: |
+            8
+            17
       - name: deploy
         env:
           ORG_GRADLE_PROJECT_artifactory_publish_username: ${{secrets.ARTIFACTORY_USERNAME}}

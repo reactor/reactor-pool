@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2018-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import org.gradle.util.VersionNumber
 import java.text.SimpleDateFormat
 
 plugins {
@@ -32,21 +31,28 @@ apply from: 'gradle/releaser.gradle'
 description = 'Reactive Object Pool root build'
 
 def osgiVersion(String v) {
-  def versionNumber = VersionNumber.parse(v)
+  def m = (v =~ /^(\d+)\.(\d+)\.(\d+)(?:[.-](.+))?$/)
+  if (!m.matches()) {
+    throw new GradleException("Cannot parse version: $v")
+  }
+  def major = m.group(1)
+  def minor = m.group(2)
+  def micro = m.group(3)
+  def qualifier = m.group(4)
   def result
-  if (versionNumber.qualifier == null || versionNumber.qualifier.size() == 0) {
+  if (qualifier == null || qualifier.isEmpty()) {
     result = "${v}.RELEASE"
     println "$v is a release, will use $result for bnd"
   }
-  else if (versionNumber.qualifier.equalsIgnoreCase("SNAPSHOT")) {
+  else if (qualifier.equalsIgnoreCase("SNAPSHOT")) {
     def sdf = new SimpleDateFormat("yyyyMMddHHmm");
     sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
     def buildTimestamp = sdf.format(new Date())
-    result = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.BUILD-$buildTimestamp"
+    result = "${major}.${minor}.${micro}.BUILD-$buildTimestamp"
     println "$v is a snapshot, will use $result for bnd"
   }
   else {
-    result = "${versionNumber.major}.${versionNumber.minor}.${versionNumber.micro}.${versionNumber.qualifier}"
+    result = "${major}.${minor}.${micro}.${qualifier}"
     println "$v is neither release nor snapshot, will use $result for bnd"
   }
   return result
@@ -75,7 +81,7 @@ spotless {
   }
   else if (isCiServer) {
     println "[Spotless] CI detected without explicit branch, not enforcing check"
-    enforceCheck false
+    enforceCheck = false
   }
   else {
     String spotlessBranch = "origin/1.1.x"
@@ -125,17 +131,12 @@ configure(subprojects) { project ->
   ]
 
   compileJava {
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
+    options.release = 8
   }
 
   compileTestJava {
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
-  }
-
-  if (JavaVersion.current().isJava8Compatible()) {
-    compileTestJava.options.compilerArgs += "-parameters"
+    options.release = 8
+    options.compilerArgs += "-parameters"
   }
 
   [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
@@ -162,19 +163,19 @@ configure(subprojects) { project ->
     }
     testLogging {
       events  "passed", "failed"
-      showExceptions true
-      exceptionFormat "full"
-      showStandardStreams true
+      showExceptions = true
+      exceptionFormat = "full"
+      showStandardStreams = true
     }
   }
 
   repositories {
     mavenCentral()
-    maven { url "https://oss.sonatype.org/content/repositories/releases/" }
+    maven { url = "https://oss.sonatype.org/content/repositories/releases/" }
     if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots
-      maven { url 'https://repo.spring.io/snapshot' }
+      maven { url = 'https://repo.spring.io/snapshot' }
     }
-    maven { url 'https://repo.spring.io/milestone' }
+    maven { url = 'https://repo.spring.io/milestone' }
   }
 }
 

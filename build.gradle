@@ -30,7 +30,7 @@ plugins {
 
 // The Artifactory plugin (applied from releaser.gradle) adds maven-publish to subprojects
 // in afterEvaluate, which resets TargetJvmVersion on consumable configurations to the
-// running JDK (17). This pre-registers a callback to force JVM 8 on those configurations,
+// toolchain JDK (21). This pre-registers a callback to force JVM 8 on those configurations,
 // keeping them consistent with options.release = 8.
 subprojects {
   plugins.withType(JavaPlugin) {
@@ -118,8 +118,9 @@ configure(subprojects) { project ->
   apply from: "${rootDir}/gradle/setup.gradle"
 
   java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+    toolchain {
+      languageVersion = JavaLanguageVersion.of(21)
+    }
   }
 
   jacocoTestReport {
@@ -150,9 +151,6 @@ configure(subprojects) { project ->
   ]
 
   tasks.withType(JavaCompile).configureEach { task ->
-    javaCompiler = javaToolchains.compilerFor {
-      languageVersion = JavaLanguageVersion.of(21)
-    }
     if (task.name.matches("compile(\\d+)?Java")) {
       options.errorprone {
         option("NullAway:AssertsEnabled", "true")

@@ -113,15 +113,16 @@ configure(subprojects) { project ->
   apply plugin: 'java-library'
   apply plugin: 'jacoco'
   apply plugin: 'biz.aQute.bnd.builder'
-  apply plugin: 'io.spring.nullability'
-  apply from: "${rootDir}/gradle/doc.gradle"
-  apply from: "${rootDir}/gradle/setup.gradle"
 
   java {
     toolchain {
       languageVersion = JavaLanguageVersion.of(21)
     }
   }
+
+  apply plugin: 'io.spring.nullability'
+  apply from: "${rootDir}/gradle/doc.gradle"
+  apply from: "${rootDir}/gradle/setup.gradle"
 
   jacocoTestReport {
     reports {

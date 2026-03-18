@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import reactor.pool.PoolBuilder;
 public final class SamplingAllocationStrategy implements AllocationStrategy {
 
 	//TODO replace with a more direct call to the standard strategy in case we make something public, eg. AllocationStrategies factory methods
+	@SuppressWarnings("NullAway")
 	static AllocationStrategy sizeBetweenHelper(int min, int max) {
 		AllocationStrategy[] as = new AllocationStrategy[1];
 		PoolBuilder.from(Mono.empty())

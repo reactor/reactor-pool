@@ -24,6 +24,7 @@ plugins {
   alias(libs.plugins.japicmp)
   alias(libs.plugins.download)
   alias(libs.plugins.jcstress) apply false
+  alias(libs.plugins.nullability) apply false
   alias(libs.plugins.spotless)
 }
 
@@ -112,6 +113,7 @@ configure(subprojects) { project ->
   apply plugin: 'java-library'
   apply plugin: 'jacoco'
   apply plugin: 'biz.aQute.bnd.builder'
+  apply plugin: 'io.spring.nullability'
   apply from: "${rootDir}/gradle/doc.gradle"
   apply from: "${rootDir}/gradle/setup.gradle"
 
@@ -146,6 +148,17 @@ configure(subprojects) { project ->
                                                            "-Xlint:-fallthrough", // intentionally disabled
                                                            "-Xlint:rawtypes"
   ]
+
+  tasks.withType(JavaCompile).configureEach { task ->
+    javaCompiler = javaToolchains.compilerFor {
+      languageVersion = JavaLanguageVersion.of(21)
+    }
+    if (task.name.matches("compile(\\d+)?Java")) {
+      options.errorprone {
+        option("NullAway:AssertsEnabled", "true")
+      }
+    }
+  }
 
   compileJava {
     options.release = 8

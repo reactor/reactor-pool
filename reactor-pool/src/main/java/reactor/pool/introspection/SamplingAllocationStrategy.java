@@ -44,6 +44,7 @@ import reactor.pool.PoolBuilder;
 public final class SamplingAllocationStrategy implements AllocationStrategy {
 
 	//TODO replace with a more direct call to the standard strategy in case we make something public, eg. AllocationStrategies factory methods
+	@SuppressWarnings("NullAway")
 	static AllocationStrategy sizeBetweenHelper(int min, int max) {
 		AllocationStrategy[] as = new AllocationStrategy[1];
 		PoolBuilder.from(Mono.empty())

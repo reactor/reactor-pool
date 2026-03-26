@@ -30,7 +30,7 @@ slf4j-jcl = { module = "org.slf4j:jcl-over-slf4j", version.ref = "slf4j" }
 
 [plugins]
 artifactory = { id = "com.jfrog.artifactory", version = "6.0.4" }
-bnd = { id = "biz.aQute.bnd.builder", version = "7.2.2" }
+bnd = { id = "biz.aQute.bnd.builder", version = "7.2.3" }
 download = { id = "de.undercouch.download", version = "5.7.0" }
 japicmp = { id = "me.champeau.gradle.japicmp", version = "0.4.6" }
 jcstress = { id = "io.github.reyerizo.gradle.jcstress", version = "0.9.0" }

@@ -47,10 +47,12 @@ task javadocJar(type: Jar) {
 }
 
 static def qualifyVersion(String v) {
-	def m = (v =~ /^(\d+)\.(\d+)\.(\d+)(?:[.-](.+))?$/)
+	// Only the qualifier is needed here, so major/minor/micro/patch use non-capturing
+	// groups (?:...). The qualifier is the sole capturing group → m.group(1).
+	def m = (v =~ /^(?:\d+)\.(?:\d+)\.(?:\d+)(?:\.\d+)?(?:[.-](.+))?$/)
 	if (!m.matches()) return "BAD"
 
-	def qualifier = m.group(4)
+	def qualifier = m.group(1)
 
 	if (qualifier == null || qualifier.isEmpty()) return "RELEASE"
 	if (qualifier.matches("(?:M|RC)\\d+")) return "MILESTONE"
@@ -60,8 +62,8 @@ static def qualifyVersion(String v) {
 }
 
 ext {
-	isReleaseVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+')
-	isMilestoneVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+-M[0-9]+') || version.matches('[0-9]+\\.[0-9]+\\.[0-9]+-RC[0-9]+')
+	isReleaseVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+(?:\\.[0-9]+)?')
+	isMilestoneVersion = version.matches('[0-9]+\\.[0-9]+\\.[0-9]+(?:\\.[0-9]+)?-M[0-9]+') || version.matches('[0-9]+\\.[0-9]+\\.[0-9]+(?:\\.[0-9]+)?-RC[0-9]+')
 	isSnapshotVersion = !(isReleaseVersion || isMilestoneVersion)
 
 	resolveVersion = { String version ->

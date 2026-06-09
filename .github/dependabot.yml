@@ -7,7 +7,7 @@ updates:
   open-pull-requests-limit: 10
   assignees:
   - violetagg
-  target-branch: "1.1.x"
+  target-branch: "main"
   labels:
   - type/dependency-upgrade
   ignore:
@@ -17,7 +17,7 @@ updates:
   # Don't update Micrometer
   - dependency-name: io.micrometer:micrometer-bom
     versions:
-    - "> 1.14.0"
+    - "> 1.16.0"
   # JSR305 backport is fixed to last version with annotations (3.0.1)
   - dependency-name: "com.google.code.findbugs:jsr305"
   # Versions > 4 require JDK11+
@@ -42,7 +42,7 @@ updates:
   open-pull-requests-limit: 10
   assignees:
       - violetagg
-  target-branch: "1.1.x"
+  target-branch: "main"
   labels:
       - type/dependency-upgrade
   rebase-strategy: disabled

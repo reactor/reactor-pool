@@ -38,6 +38,10 @@ import reactor.pool.PoolBuilder;
  * bitset over 100 slots, which are then applied to windows of 100 calls.
  * Access to the {@link #delegate} field is possible, as well as {@link #gettingSamplingRate}/{@link #returningSamplingRate}
  * configuration fields and {@link #gettingSamples}/{@link #returningSamples} collections.
+ * <p>
+ * <strong>Note:</strong> This strategy is intended for debugging and introspection only.
+ * It is <strong>not recommended for production use</strong> as it introduces significant performance overhead,
+ * thread contention, and unbounded memory consumption.
  *
  * @author Simon Baslé
  */

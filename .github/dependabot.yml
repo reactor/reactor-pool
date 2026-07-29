@@ -29,7 +29,7 @@ updates:
     - "[2.a, 3]"
   - dependency-name: ch.qos.logback:logback-classic
     versions:
-    - "[1.3.a, 1.6]"
+    - "[1.3.a, 1.7]"
   # Versions > 5 require JDK17+
   - dependency-name: org.junit:junit-bom
     versions:

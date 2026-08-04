@@ -213,10 +213,43 @@ configure(subprojects) { project ->
   }
 
   repositories {
-    mavenCentral()
+    if (System.getenv()["GITHUB_ACTION"] != null) {
+      maven {
+        name "spring-commercial-release"
+        url System.env.COMMERCIAL_RELEASE_REPO_URL
+        credentials {
+          username System.env.COMMERCIAL_REPO_USERNAME
+          password System.env.COMMERCIAL_REPO_PASSWORD
+        }
+      }
+    }
+    // On CI use only USW1 (proxies Maven Central) to avoid 429 from Maven Central
+    if (System.getenv("GITHUB_ACTION") != null && System.getenv("GITHUB_ACTOR") != "dependabot[bot]") {
+      maven {
+        name = "usw1-spring-maven-virtual"
+        url = "https://usw1.packages.broadcom.com/artifactory/spring-maven-virtual"
+        credentials {
+          username = System.getenv("COMMERCIAL_REPO_USERNAME")
+          password = System.getenv("COMMERCIAL_REPO_PASSWORD")
+        }
+      }
+    }
+    else {
+      mavenCentral()
+    }
     maven { url = "https://oss.sonatype.org/content/repositories/releases/" }
     if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots
       maven { url = 'https://repo.spring.io/snapshot' }
+      if (System.getenv()["GITHUB_ACTION"] != null) {
+        maven {
+          name "spring-commercial-snapshot"
+          url System.env.COMMERCIAL_SNAPSHOT_REPO_URL
+          credentials {
+            username System.env.COMMERCIAL_REPO_USERNAME
+            password System.env.COMMERCIAL_REPO_PASSWORD
+          }
+        }
+      }
     }
   }
 }

@@ -209,9 +209,29 @@ configure(subprojects) { project ->
 
   repositories {
     mavenCentral()
+    if (System.getenv()["GITHUB_ACTION"] != null) {
+      maven {
+        name "spring-commercial-release"
+        url System.env.COMMERCIAL_RELEASE_REPO_URL
+        credentials {
+          username System.env.COMMERCIAL_REPO_USERNAME
+          password System.env.COMMERCIAL_REPO_PASSWORD
+        }
+      }
+    }
     maven { url = "https://oss.sonatype.org/content/repositories/releases/" }
     if (version.endsWith('-SNAPSHOT') || version.contains('-SNAPSHOT-')) { //classic or customized snapshots
       maven { url = 'https://repo.spring.io/snapshot' }
+      if (System.getenv()["GITHUB_ACTION"] != null) {
+        maven {
+          name "spring-commercial-snapshot"
+          url System.env.COMMERCIAL_SNAPSHOT_REPO_URL
+          credentials {
+            username System.env.COMMERCIAL_REPO_USERNAME
+            password System.env.COMMERCIAL_REPO_PASSWORD
+          }
+        }
+      }
     }
   }
 }

@@ -1,13 +1,13 @@
 [versions]
 # Baselines, should be updated on every release
 baseline-pool-api = "1.2.6"
-reactorCore = "3.8.7-INTERNAL-SNAPSHOT"
-reactorAddons = "3.6.1-INTERNAL-SNAPSHOT"
+reactorCore = "3.8.7"
+reactorAddons = "3.6.1"
 
 # Other shared versions
 junit = "5.14.4"
 slf4j = "1.7.36"
-micrometer = "1.16.7-INTERNAL-SNAPSHOT"
+micrometer = "1.16.7"
 reactiveStreams = "1.0.4"
 
 [libraries]

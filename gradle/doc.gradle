@@ -42,7 +42,6 @@ javadoc {
 				"https://projectreactor.io/docs/core/release/api/",
 				jdkJavadoc,
 				"https://www.reactive-streams.org/reactive-streams-1.0.4-javadoc/",
-				"https://javadoc.io/doc/io.micrometer/micrometer-core/${libs.versions.micrometer.get()}/",
 				"https://projectreactor.io/docs/pool/release/api/"
 		] as String[])
 	}

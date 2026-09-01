@@ -81,6 +81,11 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 	BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer     = DEFAULT_PENDING_ACQUIRE_TIMER;
 	Duration                               maxLifeTime                 = Duration.ZERO;
 	double                                 maxLifeTimeVariance         = 0d;
+	BiFunction<T, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck = alwaysHealthy();
+	Duration                               healthCheckInBackgroundInterval  = Duration.ZERO;
+	Scheduler                              healthCheckInBackgroundScheduler = Schedulers.immediate();
+	Duration                               healthCheckTimeout          = Duration.ZERO;
+	int                                    healthCheckParallelism      = 1;
 
 	PoolBuilder(Mono<T> allocator, Function<PoolConfig<T>, CONF> configModifier) {
 		this.allocator = allocator;
@@ -105,6 +110,11 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		this.pendingAcquireTimer = source.pendingAcquireTimer;
 		this.maxLifeTime = source.maxLifeTime;
 		this.maxLifeTimeVariance = source.maxLifeTimeVariance;
+		this.healthCheck = source.healthCheck;
+		this.healthCheckInBackgroundInterval = source.healthCheckInBackgroundInterval;
+		this.healthCheckInBackgroundScheduler = source.healthCheckInBackgroundScheduler;
+		this.healthCheckTimeout = source.healthCheckTimeout;
+		this.healthCheckParallelism = source.healthCheckParallelism;
 	}
 
 	/**
@@ -322,6 +332,127 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 					"maxLifeTimeVariance must be between 0 and 100, was " + variancePercent);
 		}
 		this.maxLifeTimeVariance = variancePercent;
+		return this;
+	}
+
+	/**
+	 * Provide an asynchronous health check {@link BiFunction} that a background reaping process can use to detect
+	 * idle resources that have become unhealthy (eg. a database connection silently dropped by the network or the
+	 * server) despite being within their configured idle/life time.
+	 * <p>
+	 * Unlike {@link #evictionPredicate(BiPredicate)}, which is synchronous, this returns a {@link Publisher},
+	 * allowing the check to perform a non-blocking remote call (eg. a validation query) without blocking the pool.
+	 * The resource under test is excluded from acquisition for the duration of the check: it cannot be handed out
+	 * concurrently while the returned {@link Publisher} is still active. A {@code true} emission (or the absence of
+	 * any emission) is interpreted as healthy; a {@code false} emission, an error, or exceeding
+	 * {@link #healthCheckTimeout(Duration)} is interpreted as unhealthy and destroys the resource, after which the
+	 * pool attempts to warm back up to its configured minimum size.
+	 * <p>
+	 * This only takes effect once background health checks are enabled via {@link #healthCheckInBackground(Duration)}.
+	 * Defaults to a health check that always considers the resource healthy (a no-op).
+	 *
+	 * @param healthCheck the asynchronous {@link BiFunction} that checks resource health
+	 * @return this {@link Pool} builder
+	 * @see #healthCheckInBackground(Duration)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheck(BiFunction<T, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck) {
+		this.healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+		return this;
+	}
+
+	/**
+	 * Disable background health checks entirely.
+	 *
+	 * @return this {@link Pool} builder
+	 * @see #healthCheckInBackground(Duration)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheckInBackgroundDisabled() {
+		return healthCheckInBackground(Duration.ZERO);
+	}
+
+	/**
+	 * Enable background health checks so that the {@link #healthCheck(BiFunction) health check} is regularly applied
+	 * to idle elements in the pool, on {@link Schedulers#parallel()}.
+	 * <p>
+	 * Providing a {@code healthCheckInterval} of {@link Duration#ZERO zero} is similar to
+	 * {@link #healthCheckInBackgroundDisabled() disabling} background health checks.
+	 *
+	 * @param healthCheckInterval the {@link Duration} between two background health check sweeps
+	 * @return this {@link Pool} builder
+	 * @see #healthCheckInBackground(Duration, Scheduler)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheckInBackground(Duration healthCheckInterval) {
+		if (healthCheckInterval == Duration.ZERO) {
+			this.healthCheckInBackgroundInterval = Duration.ZERO;
+			this.healthCheckInBackgroundScheduler = Schedulers.immediate();
+			return this;
+		}
+		return this.healthCheckInBackground(healthCheckInterval, Schedulers.parallel());
+	}
+
+	/**
+	 * Enable background health checks so that the {@link #healthCheck(BiFunction) health check} is regularly applied
+	 * to idle elements in the pool, on the provided {@link Scheduler}.
+	 * <p>
+	 * Providing a {@code healthCheckInterval} of {@link Duration#ZERO zero} is similar to
+	 * {@link #healthCheckInBackgroundDisabled() disabling} background health checks.
+	 *
+	 * @param healthCheckInterval the {@link Duration} between two background health check sweeps
+	 * @param reaperTaskScheduler the {@link Scheduler} on which the background health check task is scheduled
+	 * @return this {@link Pool} builder
+	 * @see #healthCheckInBackground(Duration)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheckInBackground(Duration healthCheckInterval, Scheduler reaperTaskScheduler) {
+		Objects.requireNonNull(healthCheckInterval, "healthCheckInterval");
+		Objects.requireNonNull(reaperTaskScheduler, "reaperTaskScheduler");
+		if (healthCheckInterval.isNegative()) {
+			throw new IllegalArgumentException("healthCheckInterval must not be negative, was " + healthCheckInterval);
+		}
+		this.healthCheckInBackgroundInterval = healthCheckInterval;
+		this.healthCheckInBackgroundScheduler = reaperTaskScheduler;
+		return this;
+	}
+
+	/**
+	 * Set the maximum {@link Duration} a single {@link #healthCheck(BiFunction) health check} invocation is allowed
+	 * to take before the corresponding resource is considered unhealthy and destroyed.
+	 * <p>
+	 * Defaults to {@link Duration#ZERO}, meaning no timeout is applied.
+	 *
+	 * @param healthCheckTimeout the maximum {@link Duration} a health check is allowed to take, or {@link Duration#ZERO} to disable
+	 * @return this {@link Pool} builder
+	 * @see #healthCheck(BiFunction)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheckTimeout(Duration healthCheckTimeout) {
+		Objects.requireNonNull(healthCheckTimeout, "healthCheckTimeout");
+		if (healthCheckTimeout.isNegative()) {
+			throw new IllegalArgumentException("healthCheckTimeout must not be negative, was " + healthCheckTimeout);
+		}
+		this.healthCheckTimeout = healthCheckTimeout;
+		return this;
+	}
+
+	/**
+	 * Set the maximum number of idle resources that can be concurrently undergoing a background
+	 * {@link #healthCheck(BiFunction) health check} at any given time.
+	 * <p>
+	 * Defaults to {@literal 1}.
+	 *
+	 * @param healthCheckParallelism the maximum concurrency of background health checks, must be positive
+	 * @return this {@link Pool} builder
+	 * @see #healthCheck(BiFunction)
+	 * @since 1.3.0
+	 */
+	public PoolBuilder<T, CONF> healthCheckParallelism(int healthCheckParallelism) {
+		if (healthCheckParallelism < 1) {
+			throw new IllegalArgumentException("healthCheckParallelism must be positive, was " + healthCheckParallelism);
+		}
+		this.healthCheckParallelism = healthCheckParallelism;
 		return this;
 	}
 
@@ -572,7 +703,12 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 				clock,
 				idleLruOrder,
 				maxLifeTime,
-				maxLifeTimeVariance);
+				maxLifeTimeVariance,
+				healthCheck,
+				healthCheckInBackgroundInterval,
+				healthCheckInBackgroundScheduler,
+				healthCheckTimeout,
+				healthCheckParallelism);
 
 		return this.configModifier.apply(baseConfig);
 	}
@@ -591,6 +727,12 @@ public class PoolBuilder<T, CONF extends PoolConfig<T>> {
 		return (poolable, meta) -> meta.idleTime() >= maxIdleTime.toMillis();
 	}
 
+	@SuppressWarnings("unchecked")
+	static <T> BiFunction<T, PooledRefMetadata, ? extends Publisher<Boolean>> alwaysHealthy() {
+		return (BiFunction<T, PooledRefMetadata, ? extends Publisher<Boolean>>) ALWAYS_HEALTHY;
+	}
+
+	static final BiFunction<?, ?, ? extends Publisher<Boolean>> ALWAYS_HEALTHY = (ignored1, ignored2) -> Mono.just(true);
 	static final Function<?, Mono<Void>> NOOP_HANDLER    = it -> Mono.empty();
 	static final BiPredicate<?, ?>       NEVER_PREDICATE = (ignored1, ignored2) -> false;
 	static final BiFunction<Runnable, Duration, Disposable> DEFAULT_PENDING_ACQUIRE_TIMER = (r, d) -> Schedulers.parallel().schedule(r, d.toNanos(), TimeUnit.NANOSECONDS);

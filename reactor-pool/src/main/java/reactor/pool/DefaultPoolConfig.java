@@ -27,6 +27,7 @@ import org.reactivestreams.Publisher;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * A default {@link PoolConfig} that can be extended to bear more configuration options
@@ -51,6 +52,11 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	protected final boolean                                       isIdleLRU;
 	protected final Duration                                      maxLifeTime;
 	protected final double                                        maxLifeTimeVariance;
+	protected final BiFunction<POOLABLE, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck;
+	protected final Duration                                      healthCheckInBackgroundInterval;
+	protected final Scheduler                                     healthCheckInBackgroundScheduler;
+	protected final Duration                                      healthCheckTimeout;
+	protected final int                                           healthCheckParallelism;
 
 	public DefaultPoolConfig(Mono<POOLABLE> allocator,
 			AllocationStrategy allocationStrategy,
@@ -87,6 +93,35 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			boolean isIdleLRU,
 			Duration maxLifeTime,
 			double maxLifeTimeVariance) {
+		this(allocator, allocationStrategy, maxPending, pendingAcquireTimer,
+				releaseHandler, destroyHandler, evictionPredicate,
+				evictInBackgroundInterval, evictInBackgroundScheduler,
+				acquisitionScheduler, metricsRecorder, clock, isIdleLRU,
+				maxLifeTime, maxLifeTimeVariance,
+				(poolable, meta) -> Mono.just(true), Duration.ZERO,
+				Schedulers.immediate(), Duration.ZERO, 1);
+	}
+
+	public DefaultPoolConfig(Mono<POOLABLE> allocator,
+			AllocationStrategy allocationStrategy,
+			int maxPending,
+			BiFunction<Runnable, Duration, Disposable> pendingAcquireTimer,
+			Function<POOLABLE, ? extends Publisher<Void>> releaseHandler,
+			Function<POOLABLE, ? extends Publisher<Void>> destroyHandler,
+			BiPredicate<POOLABLE, PooledRefMetadata> evictionPredicate,
+			Duration evictInBackgroundInterval,
+			Scheduler evictInBackgroundScheduler,
+			Scheduler acquisitionScheduler,
+			PoolMetricsRecorder metricsRecorder,
+			Clock clock,
+			boolean isIdleLRU,
+			Duration maxLifeTime,
+			double maxLifeTimeVariance,
+			BiFunction<POOLABLE, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck,
+			Duration healthCheckInBackgroundInterval,
+			Scheduler healthCheckInBackgroundScheduler,
+			Duration healthCheckTimeout,
+			int healthCheckParallelism) {
 		this.pendingAcquireTimer = pendingAcquireTimer;
 		this.allocator = allocator;
 		this.allocationStrategy = allocationStrategy;
@@ -102,6 +137,11 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 		this.isIdleLRU = isIdleLRU;
 		this.maxLifeTime = maxLifeTime;
 		this.maxLifeTimeVariance = maxLifeTimeVariance;
+		this.healthCheck = healthCheck;
+		this.healthCheckInBackgroundInterval = healthCheckInBackgroundInterval;
+		this.healthCheckInBackgroundScheduler = healthCheckInBackgroundScheduler;
+		this.healthCheckTimeout = healthCheckTimeout;
+		this.healthCheckParallelism = healthCheckParallelism;
 	}
 
 	/**
@@ -128,6 +168,11 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.isIdleLRU = toCopyDpc.isIdleLRU;
 			this.maxLifeTime = toCopyDpc.maxLifeTime;
 			this.maxLifeTimeVariance = toCopyDpc.maxLifeTimeVariance;
+			this.healthCheck = toCopyDpc.healthCheck;
+			this.healthCheckInBackgroundInterval = toCopyDpc.healthCheckInBackgroundInterval;
+			this.healthCheckInBackgroundScheduler = toCopyDpc.healthCheckInBackgroundScheduler;
+			this.healthCheckTimeout = toCopyDpc.healthCheckTimeout;
+			this.healthCheckParallelism = toCopyDpc.healthCheckParallelism;
 		}
 		else {
 			this.allocator = toCopy.allocator();
@@ -145,6 +190,11 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 			this.isIdleLRU = toCopy.reuseIdleResourcesInLruOrder();
 			this.maxLifeTime = toCopy.maxLifeTime();
 			this.maxLifeTimeVariance = toCopy.maxLifeTimeVariance();
+			this.healthCheck = toCopy.healthCheck();
+			this.healthCheckInBackgroundInterval = toCopy.healthCheckInBackgroundInterval();
+			this.healthCheckInBackgroundScheduler = toCopy.healthCheckInBackgroundScheduler();
+			this.healthCheckTimeout = toCopy.healthCheckTimeout();
+			this.healthCheckParallelism = toCopy.healthCheckParallelism();
 		}
 	}
 
@@ -221,5 +271,30 @@ public class DefaultPoolConfig<POOLABLE> implements PoolConfig<POOLABLE> {
 	@Override
 	public double maxLifeTimeVariance() {
 		return this.maxLifeTimeVariance;
+	}
+
+	@Override
+	public BiFunction<POOLABLE, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck() {
+		return this.healthCheck;
+	}
+
+	@Override
+	public Duration healthCheckInBackgroundInterval() {
+		return this.healthCheckInBackgroundInterval;
+	}
+
+	@Override
+	public Scheduler healthCheckInBackgroundScheduler() {
+		return this.healthCheckInBackgroundScheduler;
+	}
+
+	@Override
+	public Duration healthCheckTimeout() {
+		return this.healthCheckTimeout;
+	}
+
+	@Override
+	public int healthCheckParallelism() {
+		return this.healthCheckParallelism;
 	}
 }

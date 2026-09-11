@@ -35,7 +35,8 @@ ext {
 		].join(","),
 		"Bundle-Name" : "reactor-pool",
 		"Bundle-SymbolicName" : "io.projectreactor.addons.reactor-pool",
-		"Bundle-Version" : "$osgiVersion"
+		"Bundle-Version" : "$osgiVersion",
+		"-noextraheaders": "true"
 	]
 }
 
@@ -133,8 +134,8 @@ check.dependsOn japicmp
 
 jar {
 	manifest {
-		attributes("Created-By": "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})",
-			"Implementation-Title": project.name,
+		//Created-By is not set here, gradle/setup.gradle sets Build-Jdk-Spec instead
+		attributes("Implementation-Title": project.name,
 			"Implementation-Version": project.version,
 			"Automatic-Module-Name": "reactor.pool")
 	}

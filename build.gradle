@@ -126,6 +126,11 @@ configure(subprojects) { project ->
     }
   }
 
+  tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+  }
+
   apply plugin: 'io.spring.nullability'
   apply from: "${rootDir}/gradle/doc.gradle"
   apply from: "${rootDir}/gradle/setup.gradle"

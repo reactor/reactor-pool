@@ -46,6 +46,9 @@ javadoc {
 		] as String[])
 	}
 
+	// Report javadoc errors (e.g. unreachable external links) without failing the build
+	failOnError = false
+
 	maxMemory = "1024m"
 	destinationDir = layout.buildDirectory.dir("docs/javadoc").get().asFile
 	source project.sourceSets.main.allJava

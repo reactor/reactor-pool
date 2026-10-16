@@ -30,6 +30,8 @@ import reactor.core.Disposable;
 import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.PublisherProbe;
 
@@ -160,6 +162,88 @@ class PoolBuilderTest {
 
 		PoolConfig<String> defaults = PoolBuilder.from(Mono.just("test")).buildConfig();
 		assertThat(defaults.maxLifeTimeVariance()).as("default disabled").isZero();
+	}
+
+	@Test
+	void healthCheckDefaults() throws Exception {
+		PoolConfig<String> defaults = PoolBuilder.from(Mono.just("test")).buildConfig();
+
+		assertThat(defaults.healthCheckInBackgroundInterval()).as("default disabled").isEqualTo(Duration.ZERO);
+		assertThat(defaults.healthCheckTimeout()).as("default no timeout").isEqualTo(Duration.ZERO);
+		assertThat(defaults.healthCheckParallelism()).as("default parallelism").isEqualTo(1);
+		assertThat(Mono.from(defaults.healthCheck().apply("test", new TestUtils.TestPooledRef<>("test", 0, 0, 0).metadata())).block())
+				.as("default always healthy").isTrue();
+	}
+
+	@Test
+	void healthCheckCustomized() {
+		BiFunction<String, PooledRefMetadata, Mono<Boolean>> customHealthCheck = (poolable, meta) -> Mono.just(false);
+		PoolConfig<String> config = PoolBuilder.from(Mono.just("test"))
+				.healthCheck(customHealthCheck)
+				.buildConfig();
+
+		assertThat(config.healthCheck()).isSameAs(customHealthCheck);
+	}
+
+	@Test
+	void healthCheckInBackgroundValidation() {
+		PoolConfig<String> disabledExplicitly = PoolBuilder.from(Mono.just("test"))
+				.healthCheckInBackground(Duration.ZERO)
+				.buildConfig();
+		assertThat(disabledExplicitly.healthCheckInBackgroundInterval()).isEqualTo(Duration.ZERO);
+		assertThat(disabledExplicitly.healthCheckInBackgroundScheduler()).isSameAs(Schedulers.immediate());
+
+		PoolConfig<String> disabledMethod = PoolBuilder.from(Mono.just("test"))
+				.healthCheckInBackgroundDisabled()
+				.buildConfig();
+		assertThat(disabledMethod.healthCheckInBackgroundInterval()).isEqualTo(Duration.ZERO);
+
+		PoolConfig<String> enabled = PoolBuilder.from(Mono.just("test"))
+				.healthCheckInBackground(Duration.ofSeconds(5))
+				.buildConfig();
+		assertThat(enabled.healthCheckInBackgroundInterval()).isEqualTo(Duration.ofSeconds(5));
+		assertThat(enabled.healthCheckInBackgroundScheduler()).isSameAs(Schedulers.parallel());
+
+		Scheduler customScheduler = Schedulers.single();
+		PoolConfig<String> customized = PoolBuilder.from(Mono.just("test"))
+				.healthCheckInBackground(Duration.ofSeconds(5), customScheduler)
+				.buildConfig();
+		assertThat(customized.healthCheckInBackgroundScheduler()).isSameAs(customScheduler);
+
+		assertThatNullPointerException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckInBackground(null));
+		assertThatNullPointerException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckInBackground(Duration.ofSeconds(5), null));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckInBackground(Duration.ofSeconds(-1)));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckInBackground(Duration.ofSeconds(-1), Schedulers.parallel()));
+	}
+
+	@Test
+	void healthCheckTimeoutValidation() {
+		assertThatNullPointerException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckTimeout(null));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckTimeout(Duration.ofSeconds(-1)));
+
+		PoolConfig<String> config = PoolBuilder.from(Mono.just("test"))
+				.healthCheckTimeout(Duration.ofSeconds(2))
+				.buildConfig();
+		assertThat(config.healthCheckTimeout()).isEqualTo(Duration.ofSeconds(2));
+	}
+
+	@Test
+	void healthCheckParallelismValidation() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckParallelism(0));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> PoolBuilder.from(Mono.just("test")).healthCheckParallelism(-1));
+
+		PoolConfig<String> config = PoolBuilder.from(Mono.just("test"))
+				.healthCheckParallelism(4)
+				.buildConfig();
+		assertThat(config.healthCheckParallelism()).isEqualTo(4);
 	}
 
 	@Test

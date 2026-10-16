@@ -201,4 +201,71 @@ public interface PoolConfig<POOLABLE> {
 		return maxLifeTimeMs - ThreadLocalRandom.current().nextLong(varianceMs + 1);
 	}
 
+	/**
+	 * An asynchronous health check applied by a background reaping process to idle resources, in order to detect
+	 * resources that have become unhealthy (eg. a database connection that was silently dropped by the network or
+	 * the server) despite being within their configured idle/life time. Unlike {@link #evictionPredicate()}, which
+	 * is a synchronous {@link BiPredicate}, this returns a {@link Publisher} so that the check can perform a
+	 * non-blocking remote call (eg. a validation query) without blocking the pool's internals.
+	 * <p>
+	 * The resource is excluded from acquisition for the duration of the check. A {@code true} emission (or the
+	 * absence of any emission) is interpreted as healthy; a {@code false} emission, an error, or exceeding
+	 * {@link #healthCheckTimeout()} is interpreted as unhealthy and causes the resource to be destroyed.
+	 * <p>
+	 * Defaults to a health check that always considers the resource healthy (a no-op).
+	 *
+	 * @see #healthCheckInBackgroundInterval()
+	 * @since 1.3.0
+	 */
+	default BiFunction<POOLABLE, PooledRefMetadata, ? extends Publisher<Boolean>> healthCheck() {
+		return (poolable, meta) -> Mono.just(true); //TODO remove the default implementation in 2.0.0
+	}
+
+	/**
+	 * If the pool is configured to perform regular asynchronous health checks in the background, returns the
+	 * {@link Duration} representing the interval at which such checks are made. Otherwise returns
+	 * {@link Duration#ZERO} (the default, meaning disabled).
+	 *
+	 * @see #healthCheck()
+	 * @since 1.3.0
+	 */
+	default Duration healthCheckInBackgroundInterval() {
+		return Duration.ZERO; //TODO remove the default implementation in 2.0.0
+	}
+
+	/**
+	 * If the pool is configured to perform regular asynchronous health checks in the background, returns the
+	 * {@link Scheduler} on which the checks are scheduled. Otherwise returns {@link Schedulers#immediate()}
+	 * (the default).
+	 *
+	 * @see #healthCheck()
+	 * @since 1.3.0
+	 */
+	default Scheduler healthCheckInBackgroundScheduler() {
+		return Schedulers.immediate(); //TODO remove the default implementation in 2.0.0
+	}
+
+	/**
+	 * The maximum {@link Duration} a single {@link #healthCheck()} invocation is allowed to take before the
+	 * corresponding resource is considered unhealthy and destroyed. {@link Duration#ZERO} (the default) disables
+	 * the timeout, letting the {@link #healthCheck()} {@link Publisher} take as long as it needs.
+	 *
+	 * @see #healthCheck()
+	 * @since 1.3.0
+	 */
+	default Duration healthCheckTimeout() {
+		return Duration.ZERO; //TODO remove the default implementation in 2.0.0
+	}
+
+	/**
+	 * The maximum number of idle resources that can be concurrently undergoing a background {@link #healthCheck()}
+	 * at any given time. Defaults to {@literal 1}.
+	 *
+	 * @see #healthCheck()
+	 * @since 1.3.0
+	 */
+	default int healthCheckParallelism() {
+		return 1; //TODO remove the default implementation in 2.0.0
+	}
+
 }

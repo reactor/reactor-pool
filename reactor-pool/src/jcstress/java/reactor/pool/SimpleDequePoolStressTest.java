@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2020-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package reactor.pool;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.openjdk.jcstress.annotations.Actor;
 import org.openjdk.jcstress.annotations.Arbiter;
@@ -29,6 +30,10 @@ import org.openjdk.jcstress.infra.results.IIII_Result;
 import org.openjdk.jcstress.infra.results.III_Result;
 import org.openjdk.jcstress.infra.results.II_Result;
 
+import org.reactivestreams.Subscription;
+
+import reactor.core.CoreSubscriber;
+import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -219,6 +224,78 @@ public class SimpleDequePoolStressTest {
 			r.r1 = obtained.get();
 			r.r2 = rejected.get();
 			r.r3 = pool.pending.size();
+		}
+	}
+
+	@JCStressTest
+	@Outcome(id = "1, 0, 0", expect = ACCEPTABLE, desc = "delivered, timer had no effect")
+	@Outcome(id = "0, 1, 0", expect = ACCEPTABLE, desc = "timed out, resource went back to the pool")
+	@Outcome(expect = FORBIDDEN, desc = "borrower got both onNext and onError, or the resource leaked")
+	@State
+	public static class PendingAcquireTimeoutVsDelivery {
+
+		final AtomicReference<Runnable> timer = new AtomicReference<>();
+		final AtomicInteger onNext = new AtomicInteger();
+		final AtomicInteger onError = new AtomicInteger();
+		final AtomicReference<PooledRef<String>> delivered = new AtomicReference<>();
+
+		final SimpleDequePool<String> pool = PoolBuilder
+				.from(Mono.just("resource"))
+				.sizeBetween(0, 1)
+				//capture the timer task, an actor runs it
+				.pendingAcquireTimer((r, d) -> {
+					timer.set(r);
+					return Disposables.single();
+				})
+				.build(SimpleDequePool::new);
+
+		final PooledRef<String> held = pool.acquire().block();
+
+		{
+			//a raw subscriber, so that a signal arriving after another one is counted, not dropped
+			pool.acquire(Duration.ofMillis(100)).subscribe(new CoreSubscriber<PooledRef<String>>() {
+				@Override
+				public void onSubscribe(Subscription s) {
+					s.request(1);
+				}
+
+				@Override
+				public void onNext(PooledRef<String> ref) {
+					onNext.incrementAndGet();
+					delivered.set(ref);
+				}
+
+				@Override
+				public void onError(Throwable t) {
+					onError.incrementAndGet();
+				}
+
+				@Override
+				public void onComplete() {
+				}
+			});
+			if (timer.get() == null) throw new IllegalStateException("pending acquire timer should be armed");
+		}
+
+		@Actor
+		public void delivery() {
+			held.release().block();
+		}
+
+		@Actor
+		public void timeout() {
+			timer.get().run();
+		}
+
+		@Arbiter
+		public void arbiter(III_Result r) {
+			PooledRef<String> ref = delivered.get();
+			if (ref != null) {
+				ref.release().block();
+			}
+			r.r1 = onNext.get();
+			r.r2 = onError.get();
+			r.r3 = pool.acquiredSize();
 		}
 	}
 

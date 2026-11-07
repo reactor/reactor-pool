@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,11 +106,14 @@ public final class GracefulShutdownInstrumentedPool<T> implements InstrumentedPo
 		else {
 			return Mono.defer(() -> {
 				acquireTracker.incrementAndGet();
+				AtomicBoolean delivered = new AtomicBoolean();
 				return originalPool
 					.acquire()
-					//accommodate for the fact that the underlying pool might reject the acquire itself, or it could be cancelled
+					.doOnNext(ref -> delivered.set(true))
+					//accommodate for the fact that the underlying pool might reject the acquire itself, or it could be cancelled.
+					//once a ref has been delivered, only its release (or invalidate) counts it back down.
 					.doFinally(st -> {
-						if (st == SignalType.ON_ERROR || st == SignalType.CANCEL) {
+						if ((st == SignalType.ON_ERROR || st == SignalType.CANCEL) && !delivered.get()) {
 							acquireTracker.decrementAndGet();
 						}
 					})
@@ -128,11 +131,14 @@ public final class GracefulShutdownInstrumentedPool<T> implements InstrumentedPo
 		else {
 			return Mono.defer(() -> {
 				acquireTracker.incrementAndGet();
+				AtomicBoolean delivered = new AtomicBoolean();
 				return originalPool
 					.acquire(timeout)
-					//accommodate for the fact that the underlying pool might reject the acquire itself, or it could be cancelled
+					.doOnNext(ref -> delivered.set(true))
+					//accommodate for the fact that the underlying pool might reject the acquire itself, or it could be cancelled.
+					//once a ref has been delivered, only its release (or invalidate) counts it back down.
 					.doFinally(st -> {
-						if (st == SignalType.ON_ERROR || st == SignalType.CANCEL) {
+						if ((st == SignalType.ON_ERROR || st == SignalType.CANCEL) && !delivered.get()) {
 							acquireTracker.decrementAndGet();
 						}
 					})
@@ -293,13 +299,12 @@ public final class GracefulShutdownInstrumentedPool<T> implements InstrumentedPo
 			return Mono.defer(() -> {
 				if (compareAndSet(false, true)) {
 					long remaining = acquireTracker.decrementAndGet();
-					if (remaining > 0) {
-						return originalRef.invalidate();
-					}
-					else if (remaining == 0) {
+					if (remaining == 0) {
 						return originalRef.invalidate()
 							.then(Mono.defer(GracefulShutdownInstrumentedPool.this::tryGracefulDone));
 					}
+					//never skip the underlying invalidate, even if the count is off: that would leak the resource
+					return originalRef.invalidate();
 				}
 				return Mono.empty();
 			});
@@ -313,13 +318,12 @@ public final class GracefulShutdownInstrumentedPool<T> implements InstrumentedPo
 			return Mono.defer(() -> {
 				if (compareAndSet(false, true)) {
 					long remaining = acquireTracker.decrementAndGet();
-					if (remaining > 0) {
-						return originalRef.release();
-					}
-					else if (remaining == 0) {
+					if (remaining == 0) {
 						return originalRef.release()
 							.then(Mono.defer(GracefulShutdownInstrumentedPool.this::tryGracefulDone));
 					}
+					//never skip the underlying release, even if the count is off: that would leak the resource
+					return originalRef.release();
 				}
 				return Mono.empty();
 			});

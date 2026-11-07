@@ -55,6 +55,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import org.reactivestreams.Subscription;
+import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
 import reactor.core.Exceptions;
@@ -1263,6 +1264,129 @@ public class CommonPoolTest {
 
 		uniqueRef.release().block();
 		assertThat(resource).as("post timeout and after resource available").hasValue(1);
+	}
+
+	/**
+	 * The pending acquire timer runs on another thread, and stopPendingCountdown can't stop a timer
+	 * task that is already running. This test makes the timer fire from inside onNext, i.e. after
+	 * deliver has decided to deliver: the borrower must not also be failed.
+	 */
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void pendingAcquireTimerFiringDuringDeliveryDoesNotAlsoSignalAnError(PoolStyle configAdjuster) {
+		AtomicReference<Runnable> timer = new AtomicReference<>();
+		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
+				.from(Mono.fromCallable(AtomicInteger::new))
+				.sizeBetween(0, 1)
+				//capture the timer task instead of scheduling it, so the test decides when it fires
+				.pendingAcquireTimer((r, d) -> {
+					timer.set(r);
+					return Disposables.single();
+				});
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> held = pool.acquire().block();
+		assert held != null;
+		SignalRecorder signals = new SignalRecorder(timer::get);
+		pool.acquire(Duration.ofMillis(100)).subscribe(signals);
+		assertThat(timer.get()).as("pending acquire timer armed").isNotNull();
+
+		held.release().block(); //delivers to the pending borrower, which fires the timer from onNext
+
+		assertThat(signals.signals).containsExactly("onNext", "onComplete");
+		assertThat(pool.metrics().acquiredSize()).as("acquired while the ref is held").isOne();
+		signals.release();
+		assertThat(pool.metrics().acquiredSize()).as("acquired after release").isZero();
+	}
+
+	/**
+	 * Same race, with the timer firing after deliver has looked at the borrower but before it
+	 * signals onNext (here, while the slot is being marked acquired). Previously the borrower got
+	 * onError and then onNext, and the slot delivered to the already terminated subscriber was
+	 * never returned. The borrower must get one outcome only, and no slot may be lost.
+	 */
+	@ParameterizedTestWithName
+	@MethodSource("allPools")
+	void pendingAcquireTimerFiringAsTheSlotIsMarkedAcquiredLosesNoSlot(PoolStyle configAdjuster) {
+		AtomicReference<Runnable> timer = new AtomicReference<>();
+		TestUtils.InMemoryPoolMetrics metrics = new TestUtils.InMemoryPoolMetrics(Clock.systemUTC()) {
+			@Override
+			public synchronized void recordIdleTime(long millisecondsIdle) {
+				super.recordIdleTime(millisecondsIdle);
+				Runnable task = timer.getAndSet(null);
+				if (task != null) {
+					task.run(); //the timer fires just as the slot is marked acquired
+				}
+			}
+		};
+		PoolBuilder<AtomicInteger, ?> builder = PoolBuilder
+				.from(Mono.fromCallable(AtomicInteger::new))
+				.sizeBetween(0, 1)
+				.metricsRecorder(metrics)
+				.pendingAcquireTimer((r, d) -> {
+					timer.set(r);
+					return Disposables.single();
+				});
+		AbstractPool<AtomicInteger> pool = configAdjuster.apply(builder);
+
+		PooledRef<AtomicInteger> held = pool.acquire().block();
+		assert held != null;
+		SignalRecorder signals = new SignalRecorder(() -> null);
+		pool.acquire(Duration.ofMillis(100)).subscribe(signals);
+		assertThat(timer.get()).as("pending acquire timer armed").isNotNull();
+
+		held.release().block();
+
+		assertThat(new ArrayList<>(signals.signals)).as("signals")
+				.isIn(Arrays.asList("onNext", "onComplete"), Collections.singletonList("onError"));
+		if (signals.ref != null) {
+			signals.release();
+		}
+		assertThat(pool.metrics().acquiredSize()).as("acquired").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle").isOne();
+	}
+
+	/** Records every signal, and runs {@code onNextAction} (if any) from onNext. */
+	static final class SignalRecorder implements CoreSubscriber<PooledRef<AtomicInteger>> {
+
+		final List<String> signals = new CopyOnWriteArrayList<>();
+		final java.util.function.Supplier<@Nullable Runnable> onNextAction;
+		volatile @Nullable PooledRef<AtomicInteger> ref;
+
+		SignalRecorder(java.util.function.Supplier<@Nullable Runnable> onNextAction) {
+			this.onNextAction = onNextAction;
+		}
+
+		@Override
+		public void onSubscribe(Subscription s) {
+			s.request(1);
+		}
+
+		@Override
+		public void onNext(PooledRef<AtomicInteger> ref) {
+			signals.add("onNext");
+			this.ref = ref;
+			Runnable action = onNextAction.get();
+			if (action != null) {
+				action.run();
+			}
+		}
+
+		@Override
+		public void onError(Throwable t) {
+			signals.add("onError");
+		}
+
+		@Override
+		public void onComplete() {
+			signals.add("onComplete");
+		}
+
+		void release() {
+			PooledRef<AtomicInteger> r = ref;
+			assert r != null;
+			r.release().block();
+		}
 	}
 
 	@ParameterizedTestWithName

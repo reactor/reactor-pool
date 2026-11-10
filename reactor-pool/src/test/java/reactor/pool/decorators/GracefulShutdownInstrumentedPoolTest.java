@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2021-2026 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import reactor.core.Disposable;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -54,6 +55,41 @@ import static org.mockito.Mockito.times;
  * @author Simon Baslé
  */
 class GracefulShutdownInstrumentedPoolTest {
+
+	/**
+	 * A subscriber may cancel once it has the ref (e.g. from onNext, before onComplete). The ref is
+	 * still in use and will be released, so the cancel mustn't count the acquire down as well:
+	 * double counting made the count negative, after which every release was skipped and every
+	 * resource leaked.
+	 */
+	@Test
+	void cancelAfterDeliveryDoesNotSkipLaterReleases() {
+		GracefulShutdownInstrumentedPool<String> pool = PoolBuilder.from(Mono.just("foo"))
+			.sizeBetween(0, 2)
+			.buildPoolAndDecorateWith(InstrumentedPoolDecorators::gracefulShutdown);
+
+		AtomicReference<PooledRef<String>> delivered = new AtomicReference<>();
+		pool.acquire().subscribe(new BaseSubscriber<PooledRef<String>>() {
+			@Override
+			protected void hookOnNext(PooledRef<String> ref) {
+				delivered.set(ref);
+				cancel();
+			}
+		});
+		assertThat(delivered.get()).as("delivered").isNotNull();
+		delivered.get().release().block();
+
+		assertThat(pool.metrics().acquiredSize()).as("acquired after releasing the cancelled-after-delivery ref").isZero();
+
+		for (int i = 0; i < 3; i++) {
+			pool.acquire().flatMap(PooledRef::release).block();
+		}
+		assertThat(pool.metrics().acquiredSize()).as("acquired after later round trips").isZero();
+		assertThat(pool.metrics().idleSize()).as("idle").isOne();
+
+		pool.disposeGracefully(Duration.ofSeconds(1)).block(Duration.ofSeconds(5));
+		assertThat(pool.getOriginalPool().isDisposed()).as("graceful shutdown completes").isTrue();
+	}
 
 	@Test
 	void smokeTestDisposeGracefully() {

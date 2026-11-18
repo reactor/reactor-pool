@@ -17,10 +17,15 @@
 package reactor.pool;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -99,6 +104,24 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 
 	@Nullable Disposable evictionTask;
 
+	@Nullable Disposable healthCheckTask;
+
+	/**
+	 * Refs popped out of {@link #idleResources} for an in-flight sweep whose check hasn't resolved yet, or
+	 * {@code null} if no sweep is in flight. {@link #reofferOrDestroy(QueuePooledRef, boolean)} removes a ref
+	 * from this set before reoffering or destroying it, so {@link #disposeLater()} can safely destroy whatever
+	 * remains (eg. a check stuck on a {@link Publisher} that never emits) without touching an already-finalized
+	 * ref that may since have been acquired by a borrower.
+	 */
+	volatile @Nullable Set<QueuePooledRef<POOLABLE>> healthCheckSweepCandidates;
+
+	volatile @Nullable Disposable healthCheckSweepSubscription;
+
+	volatile             int                                        healthCheckWip;
+	@SuppressWarnings("rawtypes")
+	private static final AtomicIntegerFieldUpdater<SimpleDequePool> HEALTH_CHECK_WIP =
+		AtomicIntegerFieldUpdater.newUpdater(SimpleDequePool.class, "healthCheckWip");
+
 	SimpleDequePool(PoolConfig<POOLABLE> poolConfig) {
 		super(poolConfig, Loggers.getLogger(SimpleDequePool.class));
 		this.idleResourceLeastRecentlyUsed = poolConfig.reuseIdleResourcesInLruOrder();
@@ -107,6 +130,7 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		recordInteractionTimestamp();
 
 		scheduleEviction();
+		scheduleHealthCheck();
 	}
 
 	@Override
@@ -174,6 +198,165 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 		scheduleEviction();
 	}
 
+	void scheduleHealthCheck() {
+		if (isDisposed()) {
+			return;
+		}
+		if (!poolConfig.healthCheckInBackgroundInterval().isZero()) {
+			long nanosHealthCheckInterval = poolConfig.healthCheckInBackgroundInterval().toNanos();
+			this.healthCheckTask = poolConfig.healthCheckInBackgroundScheduler().schedule(this::healthCheckInBackground, nanosHealthCheckInterval, TimeUnit.NANOSECONDS);
+		}
+		else {
+			this.healthCheckTask = Disposables.disposed();
+		}
+	}
+
+	void healthCheckInBackground() {
+		@SuppressWarnings("unchecked")
+		Deque<QueuePooledRef<POOLABLE>> e = IDLE_RESOURCES.get(this);
+		if (e == null) {
+			//no need to schedule the task again, pool has been disposed
+			return;
+		}
+
+		//back off if there's pool activity or a sweep is already in progress, so as to not
+		//compete with drainLoop for idle resources nor pile up concurrent sweeps
+		if (pendingSize != 0 || !HEALTH_CHECK_WIP.compareAndSet(this, 0, 1)) {
+			scheduleHealthCheck();
+			return;
+		}
+
+		//select candidates under the same WIP guard evictInBackground/drainLoop use, so a ref can't be polled
+		//here at the same time eviction's iterator is destroying it. Mirrors evictInBackground's contended-WIP
+		//handling: back off this tick rather than wait if drain/eviction is currently holding it
+		int parallelism = poolConfig.healthCheckParallelism();
+		List<QueuePooledRef<POOLABLE>> candidates;
+		if (WIP.getAndIncrement(this) == 0) {
+			candidates = new ArrayList<>(parallelism);
+			for (int i = 0; i < parallelism; i++) {
+				QueuePooledRef<POOLABLE> ref = idleResourceLeastRecentlyUsed ? e.pollFirst() : e.pollLast();
+				if (ref == null) {
+					break;
+				}
+				decrementIdle();
+				candidates.add(ref);
+			}
+			if (WIP.decrementAndGet(this) > 0) {
+				drainLoop();
+			}
+		}
+		else {
+			//lost the race for WIP to eviction/drain: back off, try again next tick
+			candidates = Collections.emptyList();
+		}
+
+		if (candidates.isEmpty()) {
+			HEALTH_CHECK_WIP.set(this, 0);
+			scheduleHealthCheck();
+			return;
+		}
+
+		//tracked so disposeLater() can still destroy these if their individual check never resolves (see field javadoc)
+		Set<QueuePooledRef<POOLABLE>> inFlight = ConcurrentHashMap.newKeySet(candidates.size());
+		inFlight.addAll(candidates);
+		this.healthCheckSweepCandidates = inFlight;
+
+		this.healthCheckSweepSubscription = Flux.fromIterable(candidates)
+				.flatMap(this::healthCheckOne, parallelism)
+				.reduce(false, (anyDestroyed, destroyed) -> anyDestroyed || destroyed)
+				.doFinally(sig -> {
+					this.healthCheckSweepCandidates = null;
+					HEALTH_CHECK_WIP.set(this, 0);
+					scheduleHealthCheck();
+				})
+				.subscribe(anyDestroyed -> {
+					if (anyDestroyed) {
+						//best effort refill toward the configured minimum size
+						warmup().subscribe(count -> {},
+								warmupError -> this.logger.warn("Error while warming up pool after background health check:", warmupError));
+					}
+				}, error -> this.logger.warn("Error during background health check:", error));
+
+		//registration above isn't linearized with disposeLater(): if it ran its snapshot-and-cleanup pass in
+		//the gap between popping these candidates and finishing registration, it would never see them again.
+		//isDisposed() is a one-way transition, so checking it here reliably catches that and lets us clean up
+		if (isDisposed()) {
+			//capture before disposing the subscription: cancelling it runs doFinally synchronously, which
+			//would otherwise clear healthCheckSweepCandidates before we get to read it
+			Set<QueuePooledRef<POOLABLE>> stillInFlight = this.healthCheckSweepCandidates;
+			Disposable sub = this.healthCheckSweepSubscription;
+			if (sub != null) {
+				sub.dispose();
+			}
+			if (stillInFlight != null) {
+				for (QueuePooledRef<POOLABLE> ref : stillInFlight) {
+					//markDestroy is a CAS: safe even if this ref's check legitimately resolved and is
+					//concurrently going through reofferOrDestroy right now
+					if (ref.markDestroy()) {
+						destroyPoolable(ref).subscribe(v -> {},
+								destroyError -> this.logger.warn("Error while destroying resource after pool was disposed during health check sweep registration:", destroyError));
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * @return a {@link Mono} emitting {@code true} if the resource was destroyed, {@code false} if put back
+	 */
+	Mono<Boolean> healthCheckOne(QueuePooledRef<POOLABLE> ref) {
+		Duration timeout = poolConfig.healthCheckTimeout();
+		Mono<Boolean> check;
+		try {
+			check = Mono.from(poolConfig.healthCheck().apply(ref.poolable, ref));
+		}
+		catch (Throwable healthCheckError) {
+			check = Mono.error(healthCheckError);
+		}
+		if (!timeout.isZero()) {
+			check = check.timeout(timeout, Mono.just(Boolean.FALSE), poolConfig.healthCheckInBackgroundScheduler());
+		}
+		return check.defaultIfEmpty(Boolean.TRUE)
+		            .onErrorReturn(Boolean.FALSE)
+		            .map(healthy -> reofferOrDestroy(ref, healthy));
+	}
+
+	private boolean reofferOrDestroy(QueuePooledRef<POOLABLE> ref, boolean healthy) {
+		//must happen before reoffering/destroying below (see healthCheckSweepCandidates javadoc)
+		Set<QueuePooledRef<POOLABLE>> inFlight = this.healthCheckSweepCandidates;
+		if (inFlight != null) {
+			inFlight.remove(ref);
+		}
+
+		@SuppressWarnings("unchecked")
+		Deque<QueuePooledRef<POOLABLE>> irq = IDLE_RESOURCES.get(this);
+		if (healthy && irq != null) {
+			//offer to the end opposite where sweeps consume from, so successive sweeps rotate through the
+			//whole idle set instead of re-picking the same resource(s)
+			boolean added = idleResourceLeastRecentlyUsed ? irq.offerLast(ref) : irq.offerFirst(ref);
+			if (added) {
+				incrementIdle();
+			}
+			drain();
+			if (isDisposed() && ref.markDestroy()) {
+				if (added) {
+					decrementIdle();
+				}
+				destroyPoolable(ref).subscribe(v -> {},
+						destroyError -> this.logger.warn("Error while destroying resource after background health check:", destroyError));
+				return true;
+			}
+        }
+		else {
+			if (ref.markDestroy()) {
+				destroyPoolable(ref).subscribe(v -> {},
+						destroyError -> this.logger.warn("Error while destroying resource in background health check:", destroyError));
+				return true;
+			}
+        }
+        return false;
+    }
+
 	@Override
 	public Mono<Void> disposeLater() {
 		return Mono.defer(() -> {
@@ -186,9 +369,19 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 			@SuppressWarnings("unchecked") ConcurrentLinkedDeque<Borrower<POOLABLE>> q =
 					PENDING.getAndSet(this, TERMINATED);
 			if (q != TERMINATED) {
+				//read before disposing healthCheckSweepSubscription below, which clears this field via doFinally
+				Set<QueuePooledRef<POOLABLE>> inFlightHealthCheck = this.healthCheckSweepCandidates;
+
 				//stop reaper thread
 				if (this.evictionTask != null) {
 					this.evictionTask.dispose();
+				}
+				if (this.healthCheckTask != null) {
+					this.healthCheckTask.dispose();
+				}
+				//cancels the sweep, but doesn't run reofferOrDestroy, so inFlightHealthCheck still needs handling below
+				if (this.healthCheckSweepSubscription != null) {
+					this.healthCheckSweepSubscription.dispose();
 				}
 
 				Borrower<POOLABLE> p;
@@ -201,17 +394,31 @@ public class SimpleDequePool<POOLABLE> extends AbstractPool<POOLABLE> {
 				@SuppressWarnings("unchecked")
 				Queue<QueuePooledRef<POOLABLE>> e =
 						IDLE_RESOURCES.getAndSet(this, null);
-				if (e != null) {
+
+				if (e != null || inFlightHealthCheck != null) {
 					Mono<Void> destroyMonos = Mono.empty();
-					while (!e.isEmpty()) {
-						QueuePooledRef<POOLABLE> ref = e.poll();
-						if (ref.markDestroy()) {
-							decrementIdle();
-							destroyMonos = destroyMonos.and(destroyPoolable(ref));
+					if (e != null) {
+						//poll-until-null, not "while(!isEmpty()) poll()": a concurrent health check sweep can
+						//still be polling this same deque, so isEmpty()+poll() can't be treated as atomic
+						QueuePooledRef<POOLABLE> ref;
+						while ((ref = e.poll()) != null) {
+							if (ref.markDestroy()) {
+								decrementIdle();
+								destroyMonos = destroyMonos.and(destroyPoolable(ref));
+							}
+						}
+						//we're not setting IDLE_SIZE to zero here on purpose, as competing
+						//markDestroy might happen concurrently which would bring it below 0
+					}
+					if (inFlightHealthCheck != null) {
+						for (QueuePooledRef<POOLABLE> ref : inFlightHealthCheck) {
+							//markDestroy is a CAS: safe even if reofferOrDestroy concurrently wins the race
+							//for this same ref (eg. the check resolved right as dispose was happening)
+							if (ref.markDestroy()) {
+								destroyMonos = destroyMonos.and(destroyPoolable(ref));
+							}
 						}
 					}
-					//we're not setting IDLE_SIZE to zero here on purpose, as competing
-					//markDestroy might happen concurrently which would bring it below 0
 					return destroyMonos;
 				}
 			}

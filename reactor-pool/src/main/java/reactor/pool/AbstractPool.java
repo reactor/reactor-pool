@@ -487,8 +487,12 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 
 		void deliver(AbstractPooledRef<POOLABLE> poolSlot) {
 			stopPendingCountdown(true);
-			if (get()) {
-				//CANCELLED
+			// Claim the borrower atomically, like run() does: the pending acquire timer may
+			// already be running on another thread, and stopPendingCountdown can't stop it.
+			// Checking get() alone let both deliver and run() signal the same subscriber
+			// (onNext and onError, in either order).
+			if (!compareAndSet(false, true)) {
+				//CANCELLED or timed out
 				poolSlot.release().subscribe(aVoid -> {}, e -> Operators.onErrorDropped(e, Context.empty())); //actual mustn't receive onError
 			}
 			else {
@@ -500,7 +504,7 @@ abstract class AbstractPool<POOLABLE> implements InstrumentedPool<POOLABLE>, Ins
 
 		void fail(Throwable error) {
 			stopPendingCountdown(false);
-			if (!get()) {
+			if (compareAndSet(false, true)) {
 				actual.onError(error);
 			}
 		}
